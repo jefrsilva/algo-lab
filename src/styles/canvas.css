@@ -1,0 +1,1015 @@
+.graph-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.graph-canvas * {
+  -webkit-user-drag: none;
+}
+
+.grid-dot {
+  fill: var(--grid-dot);
+}
+
+/* ---- frames ---- */
+
+.frame-rect {
+  fill: color-mix(in srgb, var(--bg-2) 55%, transparent);
+  stroke: var(--border-strong);
+  stroke-width: 1.5;
+  transition: stroke 0.2s ease, fill 0.2s ease;
+}
+
+.frame-header {
+  fill: var(--node-header);
+  stroke: none;
+}
+
+.frame.selected .frame-rect {
+  stroke: var(--sel);
+  stroke-width: 2.5;
+}
+
+.frame.selected .frame-header {
+  fill: color-mix(in srgb, var(--sel) 16%, transparent);
+}
+
+.frame-label {
+  fill: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  pointer-events: none;
+  user-select: none;
+}
+
+.frame.selected .frame-label {
+  fill: var(--sel);
+}
+
+/* Frames "aux" (fila/pilha/visitados do modo Executar do macro) — mesma
+   geometria de um frame comum, mas tracejado e sem interação, pra ficar
+   claro que é uma leitura derivada do passo atual, não algo editável. */
+.frame.frame-aux .frame-rect {
+  stroke-dasharray: 6 5;
+  fill: color-mix(in srgb, var(--bg-2) 35%, transparent);
+}
+
+.frame.frame-aux .frame-header {
+  fill: color-mix(in srgb, var(--node-header) 55%, transparent);
+}
+
+.frame.drop-valid .frame-rect {
+  stroke: var(--sel);
+  stroke-width: 2.5;
+  fill: color-mix(in srgb, var(--sel) 14%, transparent);
+}
+
+.frame.drop-invalid .frame-rect {
+  stroke: var(--danger);
+  stroke-width: 2.5;
+  fill: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+.frame-close-circle {
+  fill: transparent;
+  stroke: var(--text-2);
+  stroke-width: 1.4;
+  transition: fill 0.15s ease, stroke 0.15s ease;
+}
+
+.frame-close-x {
+  fill: var(--text-2);
+  font-size: 13px;
+  font-family: var(--font-sans);
+  pointer-events: none;
+  user-select: none;
+}
+
+.frame-close:hover .frame-close-circle {
+  fill: color-mix(in srgb, var(--danger) 18%, transparent);
+  stroke: var(--danger);
+}
+
+/* ---- nós ---- */
+
+.node {
+  cursor: grab;
+  will-change: transform;
+}
+
+.node.dragging {
+  cursor: grabbing;
+}
+
+.node:not(.dragging) {
+  transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.no-enter-transition,
+.no-enter-transition * {
+  transition: none !important;
+}
+
+.node-circle {
+  fill: var(--node-fill);
+  stroke: var(--node-stroke);
+  stroke-width: 2;
+  transition: fill 0.3s ease, stroke 0.3s ease, filter 0.3s ease;
+}
+
+.node.free .node-circle {
+  fill: var(--bg-2);
+  stroke: var(--accent);
+  stroke-dasharray: 4 3;
+}
+
+.node.dragging .node-circle {
+  filter: drop-shadow(0 6px 14px var(--shadow-color));
+  stroke: var(--sel);
+}
+
+.node-label {
+  fill: var(--text-0);
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 700;
+  pointer-events: none;
+  user-select: none;
+}
+
+.node-top-label {
+  fill: var(--sel);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  pointer-events: none;
+  user-select: none;
+}
+
+.node.current .node-circle {
+  fill: var(--node-current);
+  stroke: var(--node-current);
+}
+
+.node.current .node-label {
+  fill: var(--on-exec);
+}
+
+.node.visited .node-circle {
+  fill: color-mix(in srgb, var(--node-visited) 18%, transparent);
+  stroke: var(--node-visited);
+}
+
+.node.in-aux .node-circle {
+  stroke: var(--node-aux);
+  stroke-width: 3.5;
+}
+
+/* ---- arestas ---- */
+
+.edge-line {
+  stroke: var(--edge-color);
+  stroke-width: 2.5;
+  transition: x1 0.5s cubic-bezier(0.22, 1, 0.36, 1), y1 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+    x2 0.5s cubic-bezier(0.22, 1, 0.36, 1), y2 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+    stroke 0.3s ease, stroke-width 0.3s ease;
+}
+
+.edge.active .edge-line {
+  stroke: var(--edge-active);
+  stroke-width: 3;
+}
+
+.arrowhead-path {
+  fill: var(--edge-color);
+}
+
+.arrowhead-path-selected {
+  fill: var(--sel);
+}
+
+.preview-edge-line {
+  stroke: var(--sel);
+  stroke-width: 2.5;
+  stroke-dasharray: 6 4;
+  pointer-events: none;
+}
+
+/* ---- destaque (pulso de um único clique) ---- */
+
+@keyframes flash-node {
+  0% {
+    stroke: var(--node-stroke);
+    stroke-width: 2;
+    filter: none;
+  }
+  30% {
+    stroke: var(--exec);
+    stroke-width: 6;
+    filter: none;
+  }
+  100% {
+    stroke: var(--node-stroke);
+    stroke-width: 2;
+    filter: none;
+  }
+}
+
+.node.flash .node-circle {
+  animation: flash-node 0.8s ease-out;
+}
+
+@keyframes flash-frame {
+  0% {
+    stroke: var(--border);
+    filter: none;
+  }
+  30% {
+    stroke: var(--exec);
+    stroke-width: 4;
+    filter: none;
+  }
+  100% {
+    stroke: var(--border);
+    filter: none;
+  }
+}
+
+.frame.flash .frame-rect {
+  animation: flash-frame 0.8s ease-out;
+}
+
+/* ---- modo micro: contorno de destaque ("halo") ----
+   Seleção e "alvo do ponteiro" eram marcados com brilho difuso
+   (drop-shadow), que borrava a borda e o valor escrito dentro do nó —
+   especialmente em vídeo comprimido. Agora cada nó tem um contorno externo
+   (`.node-halo`, criado em MicroCanvasView, afastado alguns px da caixa)
+   que só aparece nesses estados: nítido, sem desfoque. */
+
+.node-halo {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 2;
+  pointer-events: none;
+  transition: stroke 0.2s ease, opacity 0.2s ease;
+}
+
+/* selecionado: o halo vira uma faixa cheia (preenchimento translúcido no
+   vão entre a caixa e o contorno + contorno sólido de 3px) — junto com o
+   fundo tingido da própria caixa, a seleção salta à vista num relance. */
+.selected > .node-halo {
+  stroke: var(--sel);
+  stroke-width: 3;
+  fill: color-mix(in srgb, var(--sel) 35%, transparent);
+}
+
+.linked > .node-halo {
+  stroke: var(--target);
+  stroke-width: 2;
+  opacity: 0.7;
+}
+
+/* pulso ao selecionar (struct / ponteiro / array / variável): o halo
+   engrossa e volta, uma vez só (ver MicroCanvasView#_pulseSelect) */
+@keyframes micro-select-pulse {
+  0% {
+    stroke-width: 3;
+  }
+  35% {
+    stroke-width: 9;
+  }
+  100% {
+    stroke-width: 3;
+  }
+}
+
+.select-flash > .node-halo {
+  animation: micro-select-pulse 0.6s ease-out;
+}
+
+/* ---- cursores por modo de interação ---- */
+
+.canvas-container[data-mode='highlight'] .node,
+.canvas-container[data-mode='highlight'] .frame-rect,
+.canvas-container[data-mode='highlight'] .frame-header {
+  cursor: pointer;
+}
+
+.canvas-container[data-mode='connect'] .node {
+  cursor: crosshair;
+}
+
+/* ---- modo micro: nós de estrutura (prev | data | next) ---- */
+
+.micro-canvas {
+  cursor: default;
+}
+
+/* focável por código (ver App#_onMicroPointerDown/_onKeyDown, Tab pro
+   código) — sem anel de foco visível, consistente com o resto do app. */
+.micro-canvas:focus {
+  outline: none;
+}
+
+.struct-node,
+.pointer-node {
+  cursor: grab;
+  will-change: transform;
+}
+
+.struct-node.dragging,
+.pointer-node.dragging {
+  cursor: grabbing;
+}
+
+.struct-node:not(.dragging),
+.pointer-node:not(.dragging) {
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.struct-box {
+  fill: var(--node-fill);
+  stroke: var(--node-stroke);
+  stroke-width: 2;
+  transition: stroke 0.2s ease, filter 0.2s ease;
+}
+
+.struct-node.selected .struct-box {
+  stroke: var(--sel);
+  stroke-width: 3;
+  fill: var(--node-selected-fill);
+}
+
+.struct-node.dragging .struct-box {
+  filter: drop-shadow(0 6px 14px var(--shadow-color));
+  stroke: var(--sel);
+}
+
+/* alvo do ponteiro selecionado (destaque secundário) */
+.struct-node.linked .struct-box {
+  stroke: var(--target);
+  stroke-width: 3;
+  fill: var(--node-linked-fill);
+}
+
+/* ---- modo micro: nós de estrutura simplificados (Ctrl+A, círculo só com
+   "data") — mesmos estados visuais de .struct-box, só a forma muda. ---- */
+
+.struct-circle {
+  fill: var(--node-fill);
+  stroke: var(--node-stroke);
+  stroke-width: 2;
+  transition: stroke 0.2s ease, filter 0.2s ease;
+}
+
+.struct-node.selected .struct-circle {
+  stroke: var(--sel);
+  stroke-width: 3;
+  fill: var(--node-selected-fill);
+}
+
+.struct-node.dragging .struct-circle {
+  filter: drop-shadow(0 6px 14px var(--shadow-color));
+  stroke: var(--sel);
+}
+
+.struct-node.linked .struct-circle {
+  stroke: var(--target);
+  stroke-width: 3;
+  fill: var(--node-linked-fill);
+}
+
+.struct-divider {
+  stroke: var(--node-divider);
+  stroke-width: 1.5;
+}
+
+/* nome do campo (prev/data/next…) em minúsculas, igual ao que o aluno
+   escreve no código (`no.next`) — fonte sans por ser mais estreita que a
+   mono e caber "right"/"nbrs" na célula de 34px já em 11px. */
+.struct-field-cap {
+  fill: var(--text-2);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  pointer-events: none;
+  user-select: none;
+}
+
+.struct-data-label {
+  fill: var(--text-0);
+  font-family: var(--font-mono);
+  font-size: 17px;
+  font-weight: 700;
+  pointer-events: none;
+  user-select: none;
+  cursor: text;
+}
+
+.struct-null-mark {
+  fill: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 15px;
+  pointer-events: none;
+  user-select: none;
+}
+
+.struct-port {
+  fill: var(--bg-1);
+  stroke: var(--accent);
+  stroke-width: 2;
+  cursor: crosshair;
+  transition: fill 0.15s ease, r 0.15s ease, cx 0.25s cubic-bezier(0.22, 1, 0.36, 1), cy 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.struct-port:hover {
+  fill: var(--accent);
+}
+
+.pointer-box {
+  fill: color-mix(in srgb, var(--accent) 14%, var(--bg-0));
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: 6 3;
+  transition: stroke 0.2s ease, filter 0.2s ease;
+}
+
+.pointer-node.unset .pointer-box {
+  stroke: var(--text-2);
+}
+
+/* selecionado: traço contínuo (sem tracejado) + halo — dá pra distinguir
+   de um ponteiro comum mesmo sem depender só da cor. */
+.pointer-node.selected .pointer-box {
+  stroke: var(--sel);
+  stroke-width: 3;
+  stroke-dasharray: none;
+  fill: color-mix(in srgb, var(--sel) 40%, var(--bg-0));
+}
+
+.pointer-node.selected .pointer-label {
+  fill: var(--text-0);
+}
+
+.pointer-node.dragging .pointer-box {
+  filter: drop-shadow(0 6px 14px var(--shadow-color));
+}
+
+.pointer-label {
+  fill: var(--accent-strong);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 700;
+  pointer-events: none;
+  user-select: none;
+}
+
+.pointer-node.unset .pointer-label {
+  fill: var(--text-2);
+}
+
+/* ponteiro de leitura auto-criado por "nome[i]" no código (ver
+   MicroRuntimeAdapter#_showReadCursor) — cor diferente da dos ponteiros
+   "de verdade" (head/tail) que o usuário cria, pra não confundir os dois.
+   Violeta (--cursor), e não âmbar, pra não se confundir com o "executando
+   agora" (--exec) da linha do passo / nó atual. */
+.pointer-node.cursor .pointer-box {
+  fill: color-mix(in srgb, var(--cursor) 14%, var(--bg-0));
+  stroke: var(--cursor);
+}
+
+.pointer-node.cursor .pointer-label {
+  fill: var(--cursor);
+}
+
+.pointer-node.cursor.selected .pointer-box {
+  stroke: var(--cursor);
+  fill: color-mix(in srgb, var(--cursor) 40%, var(--bg-0));
+}
+
+.pointer-node.cursor.selected > .node-halo {
+  stroke: var(--cursor);
+  fill: color-mix(in srgb, var(--cursor) 35%, transparent);
+}
+
+/* ponteiro-rótulo de um array (ver App#_createArrayLabelPointer) — mostra o
+   nome do array (que não tem mais barra de título própria) e se comporta
+   como qualquer outro ponteiro (pino, arraste, seta até o alvo); a borda
+   tracejada só sinaliza visualmente que o botão direito nele abre o popup de
+   configurações do array. */
+.pointer-node.array-label .pointer-box {
+  stroke-dasharray: 3 3;
+}
+
+/* ---- modo micro: variáveis soltas (caixinha nome + valor) ---- */
+
+.variable-node {
+  cursor: grab;
+  will-change: transform;
+}
+
+.variable-node.dragging {
+  cursor: grabbing;
+}
+
+.variable-node:not(.dragging) {
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.variable-box {
+  fill: var(--node-fill);
+  stroke: var(--node-stroke);
+  stroke-width: 2;
+  transition: stroke 0.2s ease, filter 0.2s ease;
+}
+
+.variable-node.selected .variable-box {
+  stroke: var(--sel);
+  stroke-width: 3;
+  fill: var(--node-selected-fill);
+}
+
+.variable-node.selected .variable-header {
+  fill: color-mix(in srgb, var(--sel) 38%, var(--node-fill));
+}
+
+.variable-node.dragging .variable-box {
+  filter: drop-shadow(0 6px 14px var(--shadow-color));
+  stroke: var(--sel);
+}
+
+.variable-header {
+  fill: var(--node-header);
+  stroke: none;
+}
+
+.variable-name {
+  fill: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  pointer-events: none;
+  user-select: none;
+}
+
+.variable-node.selected .variable-name {
+  fill: var(--text-0);
+}
+
+/* textos secundários (nome do campo, ∅, índice) sobre o fundo tingido da
+   seleção — na cor de texto principal pra manter o contraste */
+.struct-node.selected .struct-field-cap,
+.struct-node.selected .struct-null-mark,
+.array-node.selected .array-index-label,
+.array-node.selected .struct-null-mark {
+  fill: var(--text-0);
+}
+
+.variable-value {
+  fill: var(--text-0);
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 700;
+  pointer-events: none;
+  user-select: none;
+  cursor: text;
+}
+
+.micro-edge-line {
+  fill: none;
+  stroke: var(--edge-color);
+  stroke-width: 2.75;
+  transition: d 0.35s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease, stroke-width 0.2s ease;
+}
+
+.micro-edge-line.selected {
+  stroke: var(--sel);
+  stroke-width: 3.5;
+}
+
+/* ---- modo micro: arrays ---- */
+
+.array-node {
+  cursor: grab;
+  will-change: transform;
+}
+
+.array-node.dragging {
+  cursor: grabbing;
+}
+
+.array-node:not(.dragging) {
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.array-box {
+  fill: var(--node-fill);
+  stroke: var(--node-stroke);
+  stroke-width: 2;
+  transition: stroke 0.2s ease, filter 0.2s ease;
+}
+
+.array-node.selected .array-box {
+  stroke: var(--sel);
+  stroke-width: 3;
+  fill: var(--node-selected-fill);
+}
+
+.array-node.selected .array-cell:not(.array-cell-target) {
+  fill: var(--cell-selected-fill);
+}
+
+.array-node.dragging .array-box {
+  filter: drop-shadow(0 6px 14px var(--shadow-color));
+  stroke: var(--sel);
+}
+
+/* array apontado pelo ponteiro-rótulo selecionado (ver App#_createArrayLabelPointer) —
+   mesmo destaque secundário "alvo do ponteiro selecionado" usado pros structs. */
+.array-node.linked .array-box {
+  stroke: var(--target);
+  stroke-width: 3;
+  fill: var(--node-linked-fill);
+}
+
+.array-cell {
+  fill: var(--cell-fill);
+  stroke: var(--node-stroke);
+  stroke-width: 1.5;
+  transition: stroke 0.2s ease, fill 0.2s ease;
+}
+
+/* alvo do ponteiro selecionado (destaque secundário) */
+.array-cell.array-cell-target {
+  fill: color-mix(in srgb, var(--target) 22%, var(--cell-fill));
+  stroke: var(--target);
+  stroke-width: 3;
+}
+
+.array-cell-value {
+  cursor: text;
+}
+
+.array-cell-ref {
+  cursor: default;
+}
+
+/* faixa do índice de cada posição — arrastar dali cria um cursor pra ela */
+.array-index-hit {
+  fill: transparent;
+  cursor: crosshair;
+}
+
+.array-index-label {
+  fill: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  pointer-events: none;
+  user-select: none;
+}
+
+.array-value-label {
+  fill: var(--text-0);
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 700;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* matriz (ver MicroCanvasView#_renderMatrices) — índices da linha e da
+   coluna da célula lida por um cursor "m[i][j]" (ou apontada pelo ponteiro
+   selecionado) acendem na cor de "alvo", junto com a própria célula: é o que
+   deixa a coordenada legível sem precisar contar linhas/colunas. Vem depois
+   da regra de seleção pra vencer o empate de especificidade. */
+.array-node .array-index-label.matrix-index-active {
+  fill: var(--target);
+  font-weight: 800;
+  font-size: 13px;
+}
+
+/* dict reaproveita TODAS as classes .array-* acima (mesma aparência de
+   célula/pino/rótulo) — só a caixa externa ganha um traço na cor de destaque
+   pra dar pra distinguir de um array num relance. */
+.dict-node .array-box {
+  stroke: var(--accent);
+}
+
+.dict-node.selected .array-box {
+  stroke: var(--sel);
+}
+
+/* ---- modo micro: cor manual de um elemento (Alt+1…Alt+9; Alt+0 volta à
+   cor padrão — ver App#_applyMicroPaletteColor) ----
+   MicroCanvasView#_applyColors põe `--node-color` + `.micro-colored` no <g>
+   do elemento; aqui os MESMOS tokens que as regras acima usam são
+   redefinidos a partir dessa cor, então todos os estados (normal,
+   selecionado, arrastando) continuam valendo sem regra nova — selecionado
+   vira um tom mais forte da cor escolhida (preenchimento, traço e halo), não
+   o azul de --sel. As misturas partem de --bg-0/--bg-1/--text-0, nunca de
+   --node-fill/--cell-fill: esses estão sendo redefinidos aqui mesmo, e uma
+   referência circular invalidaria o token. */
+.micro-colored {
+  --sel: var(--node-color);
+  --accent: var(--node-color);
+  --accent-strong: color-mix(in srgb, var(--node-color) 70%, var(--text-0));
+  --cursor: var(--node-color);
+  --node-stroke: var(--node-color);
+  --node-divider: color-mix(in srgb, var(--node-color) 55%, var(--bg-1));
+  --node-fill: color-mix(in srgb, var(--node-color) 18%, var(--bg-1));
+  --node-header: color-mix(in srgb, var(--node-color) 32%, var(--bg-1));
+  --cell-fill: color-mix(in srgb, var(--node-color) 10%, var(--bg-0));
+  --node-selected-fill: color-mix(in srgb, var(--node-color) 45%, var(--bg-1));
+  --cell-selected-fill: color-mix(in srgb, var(--node-color) 30%, var(--bg-0));
+}
+
+/* ---- modo micro: labels de texto soltas (modo "Texto" da barra inferior) ---- */
+
+.label-node {
+  cursor: grab;
+}
+
+.label-node.dragging {
+  cursor: grabbing;
+}
+
+.label-node:not(.dragging) {
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.label-box {
+  fill: transparent;
+  stroke: transparent;
+  transition: fill 0.2s ease, stroke 0.2s ease;
+}
+
+.label-node.selected .label-box {
+  fill: color-mix(in srgb, var(--sel) 12%, transparent);
+  stroke: var(--sel);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+
+.label-text {
+  /* mesma fonte/peso do editor inline usado pra digitar o texto
+     (.inline-value-editor, ver controls.css) — senão a label muda de
+     aparência entre "enquanto digitando" e "depois de confirmada". */
+  font-family: var(--font-mono);
+  font-weight: 700;
+  text-anchor: start;
+  dominant-baseline: middle;
+  white-space: pre;
+  pointer-events: none;
+  user-select: none;
+}
+
+.label-node.editing .label-text {
+  visibility: hidden;
+}
+
+/* ---- modo micro: áreas hachuradas (modo "Área" da barra inferior) ---- */
+
+/* fundo translúcido (20%) na cor da área (cor aplicada via style em
+   MicroCanvasView#_renderAreas) — marca a região sem esconder o que está
+   dentro dela. */
+.area-node {
+  cursor: grab;
+}
+
+.area-node.dragging {
+  cursor: grabbing;
+}
+
+.area-fill {
+  fill-opacity: 0.2;
+  stroke: none;
+}
+
+.area-border {
+  fill: none;
+  stroke-width: 1.5;
+  stroke-opacity: 0.85;
+}
+
+.area-outline {
+  fill: none;
+  stroke: transparent;
+  pointer-events: none;
+}
+
+.area-node.selected .area-outline {
+  stroke: var(--sel);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+}
+
+.area-handle {
+  fill: var(--bg-0);
+  stroke: var(--sel);
+}
+
+.area-handle-nw,
+.area-handle-se {
+  cursor: nwse-resize;
+}
+
+.area-handle-ne,
+.area-handle-sw {
+  cursor: nesw-resize;
+}
+
+.area-handle-n,
+.area-handle-s {
+  cursor: ns-resize;
+}
+
+.area-handle-e,
+.area-handle-w {
+  cursor: ew-resize;
+}
+
+.micro-container[data-mode='area'] .micro-canvas,
+.micro-container[data-mode='area'] .area-node {
+  cursor: crosshair;
+}
+
+/* ---- modo micro: gráficos de complexidade Big-O (modo "Gráfico") ---- */
+
+.chart-node {
+  cursor: grab;
+}
+
+.chart-node.dragging {
+  cursor: grabbing;
+}
+
+.chart-bg {
+  fill: color-mix(in srgb, var(--bg-1) 88%, transparent);
+  stroke: var(--border);
+  stroke-width: 1.2;
+}
+
+.chart-outline {
+  fill: none;
+  stroke: transparent;
+  pointer-events: none;
+}
+
+.chart-node.selected .chart-outline {
+  stroke: var(--sel);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+}
+
+.chart-axes {
+  fill: none;
+  stroke: var(--text-2);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.chart-axis-label {
+  font-family: var(--font-mono);
+  font-size: 12px; /* = CHART_AXIS_FONT (MicroCanvasView.js) */
+  font-weight: 700;
+  fill: var(--text-1);
+  text-anchor: middle;
+  dominant-baseline: middle;
+  white-space: pre;
+  user-select: none;
+}
+
+/* em edição in place: o título some por baixo do editor (ver App#_editMicroChartAxisInPlace) */
+.chart-axis-label.editing {
+  visibility: hidden;
+}
+
+.chart-tick {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  fill: var(--text-2);
+  dominant-baseline: middle;
+  pointer-events: none;
+  user-select: none;
+}
+
+.chart-empty-hint {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  fill: var(--text-2);
+  text-anchor: middle;
+  dominant-baseline: middle;
+  pointer-events: none;
+  user-select: none;
+}
+
+.chart-curve {
+  fill: none;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.chart-curve-label {
+  font-family: var(--font-mono);
+  font-size: 11px; /* = CHART_CURVE_FONT (MicroCanvasView.js) */
+  font-weight: 700;
+  dominant-baseline: middle;
+  pointer-events: none;
+  user-select: none;
+}
+
+.micro-container[data-mode='chart'] .micro-canvas,
+.micro-container[data-mode='chart'] .chart-node {
+  cursor: crosshair;
+}
+
+/* ---- modo micro: seleção em área (modo Selecionar, arraste em espaço vazio) ---- */
+
+.selection-rect {
+  fill: color-mix(in srgb, var(--sel) 12%, transparent);
+  stroke: var(--sel);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+  pointer-events: none;
+}
+
+/* ---- modo micro: cursor por modo da barra de ferramentas inferior ---- */
+
+/* Cursor customizado (um "T") pro modo Texto — em vez do cursor de texto
+   padrão do navegador (barra em "I"), já que aqui o clique não posiciona um
+   cursor de digitação num texto existente, e sim CRIA uma label nova. */
+.micro-container[data-mode='text'] .micro-canvas {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ctext x='2' y='19' font-family='Georgia, serif' font-size='22' font-weight='700' fill='%235eb0ff' stroke='%230d1117' stroke-width='1'%3ET%3C/text%3E%3C/svg%3E")
+    8 12,
+    text;
+}
+
+/* ---- modo micro: fora do escopo da chamada em execução ----
+   Durante a reprodução, tudo que a chamada ativa não enxerga (variáveis de
+   outros frames, listas de outras chamadas, setas que saem deles — ver
+   App#_microOutOfScopeIds) fica translúcido, pra o olho ir direto pro que
+   está sendo executado. */
+.micro-dimmed {
+  opacity: 0.1;
+  transition: opacity 0.2s ease;
+  /* nem hover/cursor — o hit testing de verdade também ignora (ver
+     App#_microPickable) */
+  pointer-events: none;
+}
+
+
+/* janela deslizante ("new sliding window", ver MicroCanvasView#_renderWindowBrackets):
+   colchete sob as posições entre os dois cursores — na cor dos cursores de
+   leitura, que são quem delimita a janela; mais grosso com um deles selecionado */
+.window-bracket {
+  fill: none;
+  stroke: var(--cursor);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.window-bracket.selected {
+  stroke-width: 3.5;
+}
+
+/* puxador do array (ver MicroCanvasView#arrayHandleRect): aba à esquerda
+   (horizontal) ou em cima (vertical), como a barra de título de uma janela —
+   soltar o pino de um ponteiro nela liga ao array inteiro; arrastar move o
+   array. Acompanha a borda da caixa (seleção, alvo de ponteiro). */
+.array-handle {
+  fill: var(--node-header);
+  stroke: var(--node-stroke);
+  stroke-width: 2;
+  cursor: grab;
+  transition: stroke 0.2s ease;
+}
+
+.array-handle-grip {
+  fill: var(--text-2);
+  pointer-events: none;
+}
+
+.array-node.selected .array-handle {
+  stroke: var(--sel);
+}
+
+.array-node.linked .array-handle {
+  stroke: var(--target);
+}

@@ -1,0 +1,1250 @@
+.add-frame-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.add-frame-btn {
+  text-align: center;
+}
+
+.hint-text {
+  line-height: 1.45;
+  margin: 0 0 12px;
+}
+
+.btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.btn {
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+  color: var(--text-0);
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--bg-3);
+  border-color: var(--border-strong);
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+
+.btn.primary:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+
+.btn.danger {
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+  color: var(--danger);
+}
+
+.btn.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border-color: var(--danger);
+}
+
+.btn.subtle {
+  background: transparent;
+  color: var(--text-1);
+}
+
+select {
+  width: 100%;
+  padding: 7px 8px;
+  margin-bottom: 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+  color: var(--text-0);
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+}
+
+.edge-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+}
+
+.start-select {
+  margin-top: 4px;
+}
+
+/* Playback bar */
+.playback-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.playback-btn {
+  min-width: 34px;
+  text-align: center;
+}
+
+.step-slider {
+  flex: 1;
+  accent-color: var(--accent);
+}
+
+.step-counter {
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-0);
+  min-width: 60px;
+  text-align: right;
+}
+
+.speed-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: var(--text-1);
+}
+
+.speed-label input {
+  accent-color: var(--accent);
+}
+
+/* Info panel */
+.pseudocode {
+  background: var(--bg-0);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px 0;
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  line-height: 1.6;
+  overflow-x: auto;
+  margin: 0;
+}
+
+.code-line {
+  padding: 2px 14px;
+  white-space: pre;
+  color: var(--text-1);
+}
+
+.code-line.active {
+  background: color-mix(in srgb, var(--exec) 18%, transparent);
+  color: var(--text-0);
+  border-left: 3px solid var(--exec);
+}
+
+.step-description {
+  margin: 14px 0 0;
+  font-size: 0.95rem;
+  color: var(--text-0);
+  line-height: 1.5;
+}
+
+.aux-structure {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.aux-chip {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--node-aux) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--node-aux) 45%, transparent);
+  color: var(--node-aux);
+  font-family: var(--font-mono);
+  font-size: 0.88rem;
+}
+
+.visited-chip {
+  background: color-mix(in srgb, var(--node-visited) 12%, transparent);
+  border-color: color-mix(in srgb, var(--node-visited) 45%, transparent);
+  color: var(--node-visited);
+}
+
+/* Popup de criação de nó (canvas) */
+.node-popup {
+  position: absolute;
+  /* deslocamento em relação ao ponto de ancoragem — variável porque a
+     animação `popup-in` reaproveita o MESMO deslocamento (ver abaixo) */
+  --popup-dx: -50%;
+  --popup-dy: -50%;
+  transform: translate(var(--popup-dx), var(--popup-dy));
+  z-index: 20;
+  background: var(--bg-2);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-md);
+  padding: 10px;
+  box-shadow: 0 10px 30px var(--shadow-color);
+  animation: popup-in 0.15s ease;
+}
+
+/* usa o deslocamento de cada popup (--popup-dx/--popup-dy) — com um valor
+   fixo aqui, o popup de configurações (ancorado pelo topo, não pelo centro)
+   terminava a animação meia altura acima e dava um salto pro lugar certo */
+@keyframes popup-in {
+  from {
+    transform: translate(var(--popup-dx), var(--popup-dy)) scale(0.85);
+    opacity: 0;
+  }
+  to {
+    transform: translate(var(--popup-dx), var(--popup-dy)) scale(1);
+    opacity: 1;
+  }
+}
+
+.node-popup-input {
+  width: 90px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-0);
+  color: var(--text-0);
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  text-align: center;
+}
+
+.node-popup-input.invalid {
+  border-color: var(--danger);
+}
+
+.node-popup-input.is-text {
+  width: 120px;
+  text-align: left;
+}
+
+.node-popup-hint {
+  margin-top: 6px;
+  font-size: 0.78rem;
+  color: var(--text-2);
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* Edição inline de valores (nó/célula de array/variável) — sem popup, o
+   input ocupa o próprio lugar do valor no canvas. */
+.inline-value-editor {
+  position: absolute;
+  z-index: 20;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: none;
+  outline: 2px solid var(--sel);
+  outline-offset: -2px;
+  border-radius: 4px;
+  background: var(--bg-0);
+  color: var(--text-0);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  text-align: center;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--sel) 25%, transparent);
+}
+
+.inline-value-editor::-webkit-outer-spin-button,
+.inline-value-editor::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.inline-value-editor {
+  -moz-appearance: textfield;
+}
+
+/* versão multi-linha (labels de texto): alinhada à esquerda como o render
+   (padding/line-height vêm inline, ver App#_editMicroLabelInPlace) */
+.inline-value-editor.multiline {
+  text-align: left;
+  resize: none;
+  overflow: hidden;
+  white-space: pre;
+}
+
+/* Popup de configurações do array (nome, tamanho, orientação) */
+.array-settings-popup {
+  position: absolute;
+  /* centrado na horizontal, pendurado pelo topo (ver popup-in) */
+  --popup-dx: -50%;
+  --popup-dy: 0px;
+  transform: translate(var(--popup-dx), var(--popup-dy));
+  z-index: 20;
+  background: var(--bg-2);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  box-shadow: 0 10px 30px var(--shadow-color);
+  animation: popup-in 0.15s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  /* cresce até caber a linha mais larga — com largura fixa (240px), a linha
+     "Orientação" + os dois botões vazava pra fora do painel */
+  width: max-content;
+  min-width: 240px;
+}
+
+.array-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.array-settings-row label {
+  font-size: 0.85rem;
+  color: var(--text-1);
+  white-space: nowrap;
+}
+
+.array-settings-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-0);
+  color: var(--text-0);
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  text-align: right;
+}
+
+.array-settings-input[type='text'] {
+  text-align: left;
+}
+
+.array-settings-orientation {
+  display: flex;
+  gap: 4px;
+}
+
+.array-orient-btn {
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-0);
+  color: var(--text-1);
+  cursor: pointer;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.array-orient-btn:hover {
+  border-color: var(--accent);
+}
+
+.array-orient-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+
+.array-settings-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+}
+
+/* Label flutuante indicando a operação prestes a ser realizada (arraste) */
+.drag-hint-label {
+  position: absolute;
+  z-index: 25;
+  pointer-events: none;
+  background: var(--sel);
+  color: var(--on-sel);
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 4px 9px;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 6px 16px var(--shadow-color);
+  white-space: nowrap;
+}
+
+.drag-hint-label.invalid {
+  background: var(--danger);
+  color: var(--on-danger);
+}
+
+/* Tela dividida do macro — MESMO padrão do `.micro-split`: canvas à
+   esquerda, código à direita, lado a lado, sempre visível (ver
+   App.js#_buildLayout). `.macro-row` é o wrapper flex que contém
+   `.canvas-container` + `.macro-code-area`. */
+.macro-row {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* `.canvas-container` fora daqui usa `flex: 1` (basis 0%) — dentro do
+   `.macro-row` precisa da MESMA base percentual que `.macro-code-area`
+   (basis 0% vs 50% não dividiria meio a meio: o item com basis 0 cresceria
+   bem menos que o resto, sobrando quase tudo pro outro lado). */
+.macro-row .canvas-container {
+  flex: 1 1 50%;
+}
+
+.macro-code-area {
+  flex: 1 1 50%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1);
+  border-left: 1px solid var(--border);
+}
+
+.macro-code-start-row {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.macro-code-algo-select,
+.macro-code-start-select {
+  width: auto;
+  margin: 0;
+  padding: 5px 8px;
+  font-size: 0.88rem;
+}
+
+.macro-code-start-label {
+  font-size: 0.85rem;
+  color: var(--text-1);
+  white-space: nowrap;
+}
+
+.macro-code-editor-inner {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.macro-code-error {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 14px;
+  font-family: var(--font-mono);
+  color: var(--danger);
+  white-space: pre-wrap;
+}
+
+/* Barra flutuante de modos (parte inferior do canvas) */
+.mode-toolbar-host {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 15;
+  pointer-events: none;
+}
+
+/* Título editável, centralizado no topo do canvas (macro ou micro, ver
+   src/ui/CanvasTitle.js) — elemento HTML fora do viewport SVG que recebe
+   zoom/pan, então o tamanho aqui é sempre o mesmo na tela, não escala com
+   o zoom do canvas. */
+.canvas-title {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 16;
+  font-family: var(--font-sans);
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--text-0);
+  padding: 4px 12px;
+  border-radius: var(--radius-md, 6px);
+  cursor: text;
+  max-width: min(70vw, 520px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.15s ease;
+}
+
+.canvas-title:hover {
+  background: var(--bg-2);
+}
+
+.canvas-title.is-placeholder {
+  color: var(--text-2);
+  font-weight: 600;
+}
+
+.canvas-title-input {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 16;
+  font-family: var(--font-sans);
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--text-0);
+  background: var(--bg-2);
+  border: 1px solid var(--sel);
+  border-radius: var(--radius-md, 6px);
+  padding: 3px 11px;
+  width: min(70vw, 420px);
+  text-align: center;
+  outline: none;
+}
+
+.mode-toolbar {
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 10px 30px var(--shadow-color);
+  pointer-events: auto;
+}
+
+.mode-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-1);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.mode-btn svg {
+  width: 22px;
+  height: 22px;
+}
+
+/* cor atual da ferramenta de áreas (Alt+1..Alt+0) no canto do botão */
+.mode-btn {
+  position: relative;
+}
+
+.mode-btn-swatch {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1.5px solid var(--bg-2);
+  pointer-events: none;
+}
+
+.mode-btn:hover {
+  background: var(--bg-3);
+  color: var(--text-0);
+}
+
+.mode-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+
+/* Alternância de modo de visualização (macro / micro), na barra superior */
+.view-mode-toggle {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.view-mode-btn {
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--text-1);
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.view-mode-btn:hover {
+  color: var(--text-0);
+}
+
+.view-mode-btn.active {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+/* Botões flutuantes de canto do canvas micro — menu (canto superior
+   esquerdo) e centralizar vista (canto superior direito). Substituem a
+   antiga barra de título do app (ver App.js#_buildLayout). */
+.canvas-top-left-controls,
+.canvas-top-right-controls {
+  position: absolute;
+  top: 14px;
+  z-index: 16;
+  pointer-events: none;
+}
+
+.canvas-top-left-controls {
+  left: 14px;
+}
+
+.canvas-top-right-controls {
+  right: 14px;
+}
+
+/* logo no canto inferior esquerdo do canvas — mesmo respiro da barra de
+   modos (bottom: 18px); só decorativa, não bloqueia cliques no canvas */
+.canvas-logo {
+  position: absolute;
+  left: 18px;
+  bottom: 18px;
+  z-index: 15;
+  width: 52px;
+  height: 64px;
+  color: var(--logo);
+  pointer-events: none;
+}
+
+.canvas-icon-btn {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+  color: var(--text-1);
+  cursor: pointer;
+  box-shadow: 0 6px 18px var(--shadow-color);
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.canvas-icon-btn:hover {
+  background: var(--bg-3);
+  color: var(--text-0);
+}
+
+.canvas-icon-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.app-menu {
+  position: relative;
+  pointer-events: auto;
+}
+
+.app-menu-dropdown {
+  position: absolute;
+  top: 46px;
+  left: 0;
+  min-width: 210px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 10px 30px var(--shadow-color);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  transform-origin: top left;
+  animation: menu-in 0.15s ease;
+}
+
+/* animação própria — NÃO reaproveitar `popup-in`: aquela embute o
+   translate(-50%, -50%) dos popups centralizados no clique, e fazia este
+   dropdown "pular" de cima/esquerda até o lugar ao abrir. */
+@keyframes menu-in {
+  from {
+    transform: translateY(-4px) scale(0.97);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.app-menu-dropdown[hidden] {
+  display: none;
+}
+
+.app-menu-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+
+.app-menu-item {
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--text-0);
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+
+.app-menu-item:hover {
+  background: var(--bg-3);
+}
+
+/* Campo de texto (multi-linha) do LabelSettingsPopup */
+.label-settings-text {
+  resize: vertical;
+  font-family: var(--font-mono);
+  white-space: pre;
+}
+
+/* ChartSettingsPopup (gráfico Big-O) — reaproveita `.array-settings-*`;
+   só a lista de funções (caixa + amostra da cor da curva + nome) é própria */
+.chart-settings-popup {
+  min-width: 320px;
+}
+
+.chart-settings-title {
+  font-size: 0.85rem;
+  color: var(--text-1);
+}
+
+.chart-settings-functions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed var(--border);
+}
+
+.chart-settings-fn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  color: var(--text-0);
+  cursor: pointer;
+}
+
+.chart-settings-fn:hover {
+  background: var(--bg-3);
+}
+
+.chart-settings-fn input {
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* "Títulos dos eixos" vem logo depois das linhas de escala — mesma
+   separação tracejada que a lista de funções tem embaixo */
+.array-settings-row + .chart-settings-title {
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+}
+
+.chart-settings-slider {
+  flex: 1;
+  min-width: 90px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.chart-settings-number {
+  flex: 0 0 auto;
+  width: 84px;
+}
+
+.chart-settings-number:disabled {
+  color: var(--text-2);
+  cursor: default;
+}
+
+.chart-settings-swatch {
+  width: 18px;
+  height: 4px;
+  border-radius: 2px;
+}
+
+/* Seletor de cor do LabelSettingsPopup — reaproveita as demais classes
+   `.array-settings-*` (ver controls.css acima), só o input de cor em si
+   precisa de um tamanho próprio (input[type=color] nativo do browser). */
+.label-settings-color {
+  width: 44px;
+  height: 28px;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-0);
+  cursor: pointer;
+}
+
+/* Diálogo modal centralizado (ver src/ui/Dialog.js) — substitui
+   window.confirm/window.alert nativos. Ao contrário dos popups de
+   `.node-popup`/`.array-settings-popup` (ancorados numa coordenada de tela
+   perto do clique que os abriu), este cobre a janela inteira com um fundo
+   escurecido e centraliza a caixa via flexbox, por cima de QUALQUER outra
+   coisa na tela (z-index acima da mode-toolbar/menu/popups contextuais). */
+.app-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--backdrop);
+  animation: dialog-backdrop-in 0.15s ease;
+}
+
+@keyframes dialog-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.app-dialog {
+  width: min(90vw, 400px);
+  background: var(--bg-2);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  box-shadow: 0 20px 50px var(--shadow-color);
+  animation: dialog-in 0.15s ease;
+}
+
+@keyframes dialog-in {
+  from {
+    transform: scale(0.92);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.app-dialog-title {
+  margin: 0 0 8px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-0);
+}
+
+.app-dialog-message {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--text-1);
+}
+
+.app-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+
+/* Janela de Configurações (ver src/ui/SettingsDialog.js) — reaproveita a
+   caixa/fundo do `.app-dialog`, só mais larga, com seções de linhas
+   "rótulo à esquerda, controle à direita". */
+.app-dialog.settings-dialog {
+  width: min(92vw, 560px);
+  max-height: min(88vh, 720px);
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-body {
+  overflow-y: auto;
+  margin: 4px -20px 0;
+  padding: 0 20px;
+}
+
+.settings-section + .settings-section {
+  margin-top: 14px;
+}
+
+.settings-section-title {
+  margin: 8px 0 2px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-section .settings-row:last-child {
+  border-bottom: none;
+}
+
+.settings-label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+}
+
+.settings-label-text {
+  font-size: 0.95rem;
+  color: var(--text-0);
+}
+
+.settings-shortcut {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-2);
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.settings-hint {
+  flex-basis: 100%;
+  font-size: 0.8rem;
+  color: var(--text-2);
+}
+
+.settings-control {
+  flex-shrink: 0;
+}
+
+/* botões segmentados — mesma cara do seletor Sandbox/Simulação do código */
+.settings-seg {
+  display: inline-flex;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.settings-seg-btn,
+.settings-stepper-btn {
+  border: none;
+  background: var(--bg-1);
+  color: var(--text-1);
+  font-size: 13px;
+  font-family: var(--font-sans);
+  padding: 6px 11px;
+  cursor: pointer;
+  line-height: 1.2;
+}
+
+.settings-seg-btn + .settings-seg-btn {
+  border-left: 1px solid var(--border);
+}
+
+.settings-seg-btn:hover,
+.settings-stepper-btn:hover:not(:disabled) {
+  color: var(--text-0);
+  background: var(--bg-3);
+}
+
+.settings-seg-btn.active,
+.settings-seg-btn.active:hover {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 700;
+}
+
+.settings-seg-btn:focus-visible,
+.settings-stepper-btn:focus-visible,
+.settings-switch:focus-visible,
+.settings-range input:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 1px;
+}
+
+.settings-switch {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-1);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.settings-switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--text-2);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.settings-switch[aria-checked='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.settings-switch[aria-checked='true'] .settings-switch-knob {
+  transform: translateX(18px);
+  background: var(--on-accent);
+}
+
+.settings-stepper {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.settings-stepper-btn {
+  width: 32px;
+  padding: 6px 0;
+  font-size: 15px;
+}
+
+.settings-stepper-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.settings-stepper-value {
+  min-width: 36px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-0);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  padding: 6px 0;
+}
+
+.settings-range {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-range input {
+  width: 150px;
+  accent-color: var(--accent);
+}
+
+.settings-range-value {
+  min-width: 40px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-0);
+}
+
+.settings-note {
+  margin: 14px 0 0;
+  font-size: 0.8rem;
+  color: var(--text-2);
+}
+
+.settings-actions {
+  justify-content: space-between;
+  margin-top: 12px;
+}
+
+@media (max-width: 520px) {
+  .settings-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+}
+
+
+/* Quick action (Ctrl+Espaço, ver src/ui/QuickActionPalette.js): campo de
+   comando no topo do canvas, com a lista de comandos que casam logo abaixo.
+   O texto cinza (comando que o Enter executaria) é um div POR TRÁS do input
+   transparente, na mesma fonte mono — alinha caractere a caractere. */
+.quick-action {
+  position: absolute;
+  top: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  width: min(460px, calc(100% - 32px));
+  background: var(--bg-2);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-md);
+  box-shadow: 0 10px 30px var(--shadow-color);
+  padding: 8px;
+  animation: quick-action-in 0.12s ease;
+}
+
+@keyframes quick-action-in {
+  from {
+    transform: translate(-50%, -4px);
+    opacity: 0;
+  }
+  to {
+    transform: translate(-50%, 0);
+    opacity: 1;
+  }
+}
+
+.quick-action-field {
+  position: relative;
+}
+
+.quick-action-input,
+.quick-action-ghost {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px 10px;
+  font-family: var(--font-mono);
+  font-size: 15px;
+  line-height: 20px;
+  white-space: pre;
+}
+
+.quick-action-input {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-0);
+  outline: none;
+}
+
+.quick-action-input:focus {
+  border-color: var(--accent);
+}
+
+.quick-action-input::placeholder {
+  color: var(--text-2);
+}
+
+.quick-action-ghost {
+  position: absolute;
+  inset: 0;
+  border: 1px solid transparent;
+  background: var(--bg-0);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.quick-action-ghost-typed {
+  visibility: hidden;
+}
+
+.quick-action-ghost-rest {
+  color: var(--text-2);
+}
+
+.quick-action-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+}
+
+.quick-action-list[hidden] {
+  display: none;
+}
+
+.quick-action-item {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.quick-action-item:hover {
+  background: var(--bg-3);
+}
+
+.quick-action-item.selected {
+  background: color-mix(in srgb, var(--accent) 22%, var(--bg-2));
+}
+
+.quick-action-item-name {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--text-0);
+  white-space: nowrap;
+}
+
+.quick-action-item-desc {
+  font-size: 0.85rem;
+  color: var(--text-2);
+}
+
+.quick-action-item.disabled .quick-action-item-name {
+  color: var(--text-2);
+}
+
+.quick-action-empty {
+  padding: 6px 10px;
+  font-size: 0.9rem;
+  color: var(--text-2);
+}

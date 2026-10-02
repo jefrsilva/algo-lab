@@ -1,0 +1,877 @@
+.micro-split {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  position: relative;
+}
+
+.micro-split[hidden] {
+  display: none;
+}
+
+/* coluna esquerda: canvas (flex:1) + console embaixo (ver App#_buildLayout) */
+/* começa com 2/3 pro canvas e 1/3 pro painel de código (ver
+   .code-editor-panel) — a divisória (App#_setupSplitResizer) muda depois */
+.micro-split .micro-main {
+  flex: 1 1 67%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+}
+
+.micro-main .micro-container {
+  min-height: 0;
+}
+
+/* Painel de código/execução oculto (Ctrl+H, ver App#_toggleCodePanel) — o
+ * canvas (+ árvore de chamadas, se visível) ocupa o espaço todo sozinho.
+ * `!important` necessário pro `.micro-main`: sobrepõe o `style.flex`
+ * em px que o arraste da divisória grava inline (ver _setupSplitResizer). */
+.micro-split.code-panel-hidden .micro-main {
+  flex: 1 1 100% !important;
+  border-right: none;
+}
+
+.micro-split.code-panel-hidden .code-editor-panel,
+.micro-split.code-panel-hidden .split-resizer {
+  display: none;
+}
+
+/* painel da árvore de chamadas (recursão, ver src/ui/CallTree.js) — só
+   aparece quando o programa rodado fez pelo menos uma chamada de função de
+   usuário; escondido (via atributo hidden) fora disso. */
+.call-tree-panel {
+  flex: 0 0 220px;
+  min-width: 0;
+  border-right: 1px solid var(--border);
+  background: var(--bg-1);
+  overflow-y: auto;
+  padding: 8px 6px;
+  position: relative; /* referência do offsetTop (ver CallTree#_keepActiveVisible) */
+}
+
+/* visualização reduzida: coluna estreita de bolinhas (ver CallTree#_makeDot) */
+.call-tree-panel.compact {
+  flex-basis: 56px;
+  padding: 6px 4px;
+}
+
+.call-tree-panel[hidden] {
+  display: none;
+}
+
+/* Divisória arrastável entre a visualização (canvas + árvore de chamadas) e
+ * o painel de código (ver App#_setupSplitResizer). */
+.split-resizer {
+  flex: 0 0 6px;
+  cursor: col-resize;
+  background: var(--border);
+  transition: background 0.15s ease;
+}
+
+.split-resizer:hover,
+.split-resizer.dragging {
+  background: var(--accent);
+}
+
+.call-tree-header {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-bottom: 6px;
+}
+
+.call-tree-panel.compact .call-tree-header {
+  flex-direction: column;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 6px;
+}
+
+.call-tree-title {
+  flex: 1;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-2);
+  padding: 4px 8px 2px;
+}
+
+.call-tree-header-btn {
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm, 4px);
+  color: var(--text-2);
+  font-size: 0.95rem;
+  line-height: 1;
+  width: 26px;
+  height: 26px;
+  cursor: pointer;
+}
+
+.call-tree-header-btn:hover {
+  background: var(--bg-2);
+  color: var(--text-0);
+}
+
+.call-tree-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.call-tree-node {
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm, 4px);
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  padding: 5px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.call-tree-node:hover {
+  background: var(--bg-2);
+}
+
+.call-tree-node.on-path {
+  color: var(--text-0);
+  font-weight: 600;
+}
+
+.call-tree-node.active {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 700;
+}
+
+/* uma bolinha por chamada, recuada pela profundidade (padding-left inline);
+   vazada = chamada fora da pilha atual, cheia = na pilha, maior = ativa */
+.call-tree-panel.compact .call-tree-list {
+  gap: 0;
+}
+
+.call-tree-dot {
+  display: flex;
+  align-items: center;
+  height: 12px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm, 4px);
+  padding: 0;
+  cursor: pointer;
+}
+
+.call-tree-dot:hover {
+  background: var(--bg-2);
+}
+
+.call-tree-dot-mark {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  margin-left: 4px;
+  border-radius: 50%;
+  border: 1.5px solid var(--text-2);
+}
+
+.call-tree-dot.on-path .call-tree-dot-mark {
+  background: var(--text-1);
+  border-color: var(--text-1);
+}
+
+.call-tree-dot.active .call-tree-dot-mark {
+  width: 10px;
+  height: 10px;
+  margin-left: 2px;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* wrapper externo do painel de código: editor (flex:1) + barra de reprodução
+   do modo "Executar" (altura própria, só aparece nesse modo) empilhados */
+.code-editor-panel {
+  flex: 1 1 33%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1);
+}
+
+.code-editor-inner {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* borda inferior arrastável do painel de código + faixa vazia reservada
+   embaixo dela (ex: webcam numa gravação) — ver App#_setupCodeBottomResizer */
+.code-bottom-resizer {
+  flex: 0 0 6px;
+  cursor: row-resize;
+  background: var(--border);
+  transition: background 0.15s ease;
+  touch-action: none;
+}
+
+.code-bottom-resizer:hover,
+.code-bottom-resizer.dragging {
+  background: var(--accent);
+}
+
+.code-bottom-reserved {
+  flex: 0 0 auto;
+  height: 0;
+  background: var(--bg-0);
+}
+
+.micro-run-bar {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--border);
+  background: var(--bg-1);
+  padding: 8px 12px;
+}
+
+.micro-run-bar[hidden] {
+  display: none;
+}
+
+.micro-run-bar .playback-controls {
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+
+.micro-run-bar .step-slider {
+  flex-basis: 100%;
+  order: 1;
+}
+
+.micro-run-error {
+  margin: 0;
+  font-size: 14px;
+  font-family: var(--font-mono);
+  color: var(--danger);
+}
+
+/* saída de "print(...)" — classe compartilhada entre o console do modo micro
+   (embaixo do canvas, App#_renderMicroConsole) e o do macro (embaixo do
+   editor, App#_renderMacroConsole); escondido quando não há nada a mostrar.
+   Mostra no máximo 3 linhas (ver CONSOLE_MAX_LINES em App.js). */
+.code-console {
+  flex: 0 0 auto;
+  max-height: 180px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+  background: var(--bg-0);
+  padding: 6px 12px;
+}
+
+.code-console[hidden] {
+  display: none;
+}
+
+/* tamanho = o do painel de código (`--code-font-size`, repassado pelo
+   CodeEditor via onFontSizeChange); uma linha visual por linha de saída,
+   pra que o limite de 3 linhas valha também na altura do painel. */
+.code-console-line {
+  margin: 0;
+  padding: 2px 0;
+  font-size: var(--code-font-size, 15px);
+  font-family: var(--font-mono);
+  color: var(--text-0);
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- console do modo micro (ver src/ui/ConsoleWindow.js) ---- */
+.micro-console {
+  position: relative;
+  max-height: none;
+  overflow: hidden;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.micro-console .console-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 6px 70px 6px 12px; /* à direita: espaço dos botões (limpar + alternância) */
+}
+
+/* encaixado: sem barra de título — só os botões, no canto superior direito.
+   Eles ficam por cima do texto (absolute), então não dão altura à faixa: a
+   altura mínima garante que caibam (4 + 26 + 4) mesmo sem nenhuma linha. */
+.micro-console:not(.floating) {
+  min-height: 36px;
+}
+
+.micro-console:not(.floating) .console-header {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  z-index: 1;
+  display: flex;
+  gap: 2px;
+}
+
+.micro-console:not(.floating) .console-title,
+.micro-console:not(.floating) .console-resize {
+  display: none;
+}
+
+.console-mode-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.console-mode-btn:hover {
+  background: var(--bg-3);
+  border-color: var(--border);
+  color: var(--text-0);
+}
+
+.console-mode-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* flutuante: janela sobre o canvas, fundo a 30% pra não esconder o que está
+   embaixo. Abaixo da barra de modos/botões de canto (15/16) e dos popups
+   (20). Posição/tamanho em px, inline (ConsoleWindow#_applyRect). */
+.micro-console.floating {
+  position: absolute;
+  z-index: 14;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--bg-1) 30%, transparent);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--shadow-color) 40%, transparent);
+}
+
+.micro-console.floating .console-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 4px 3px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-strong) 60%, transparent);
+  cursor: move;
+  user-select: none;
+  touch-action: none;
+}
+
+.console-title {
+  flex: 1;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-1);
+}
+
+.micro-console.floating .console-body {
+  overflow-y: auto;
+  padding-right: 12px;
+}
+
+/* texto legível mesmo sobre o que estiver no canvas, sem tapar o fundo */
+.micro-console.floating .code-console-line,
+.micro-console.floating .console-title {
+  text-shadow: 0 0 3px var(--bg-0), 0 0 6px var(--bg-0);
+}
+
+.micro-console.floating.dragging {
+  user-select: none;
+}
+
+/* alças de redimensionamento (bordas + cantos) */
+.console-resize {
+  position: absolute;
+  touch-action: none;
+}
+
+.console-resize-n,
+.console-resize-s {
+  left: 8px;
+  right: 8px;
+  height: 6px;
+  cursor: ns-resize;
+}
+
+.console-resize-e,
+.console-resize-w {
+  top: 8px;
+  bottom: 8px;
+  width: 6px;
+  cursor: ew-resize;
+}
+
+.console-resize-n { top: -3px; }
+.console-resize-s { bottom: -3px; }
+.console-resize-e { right: -3px; }
+.console-resize-w { left: -3px; }
+
+.console-resize-ne,
+.console-resize-nw,
+.console-resize-se,
+.console-resize-sw {
+  width: 12px;
+  height: 12px;
+}
+
+.console-resize-ne { top: -3px; right: -3px; cursor: nesw-resize; }
+.console-resize-sw { bottom: -3px; left: -3px; cursor: nesw-resize; }
+.console-resize-nw { top: -3px; left: -3px; cursor: nwse-resize; }
+.console-resize-se { bottom: -3px; right: -3px; cursor: nwse-resize; }
+
+/* aviso do interpretador (ver MicroRuntimeAdapter#warn) — ex.: lista de
+   listas irregular, "[[0] * c] * l" */
+.code-console-line.warn {
+  color: var(--warning);
+}
+
+/* resultado de "if/elif/while condição:" avaliado no Sandbox (ver
+   App#_evaluateCondition) */
+.code-console-line.cond-true {
+  color: var(--success);
+}
+
+.code-console-line.cond-false {
+  color: var(--danger);
+}
+
+/* painel estreito (começa com 1/3 da tela): em vez de espremer os botões
+   (cortava o "Simulação"), o grupo de tamanho do texto desce pra uma
+   segunda linha, ainda alinhado à direita */
+.code-editor-toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-1);
+}
+
+.code-editor-font-btn {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+  color: var(--text-1);
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  line-height: 1;
+  padding: 0;
+}
+
+.code-editor-font-btn:hover {
+  background: var(--bg-3);
+  color: var(--text-0);
+}
+
+.code-editor-font-size {
+  font-size: 13px;
+  color: var(--text-1);
+  min-width: 24px;
+  text-align: center;
+  font-family: var(--font-mono);
+}
+
+.code-editor-mode-toggle {
+  display: inline-flex;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.code-editor-mode-btn {
+  border: none;
+  background: var(--bg-2);
+  color: var(--text-1);
+  font-size: 13px;
+  font-family: var(--font-sans);
+  padding: 6px 12px;
+  cursor: pointer;
+  line-height: 1.2;
+}
+
+.code-editor-mode-btn + .code-editor-mode-btn {
+  border-left: 1px solid var(--border);
+}
+
+.code-editor-mode-btn:hover {
+  color: var(--text-0);
+}
+
+.code-editor-mode-btn.active {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 700;
+}
+
+/* botões só com ícone logo ao lado do seletor de modo: ▶ (rodar, verde) e os
+   extras adicionados por quem usa o editor (ver CodeEditor#addToolbarButton —
+   ex: pilha de chamadas). Só aparecem na Simulação. */
+.code-editor-run-btn,
+.code-editor-tool-btn {
+  width: 30px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+  color: var(--text-1);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  flex-shrink: 0;
+}
+
+/* o display acima venceria o [hidden] do navegador — sem isso os botões da
+   Simulação continuavam aparecendo no Sandbox */
+.code-editor-run-btn[hidden],
+.code-editor-tool-btn[hidden] {
+  display: none;
+}
+
+.code-editor-tool-btn {
+  margin-left: 4px;
+}
+
+.code-editor-run-btn {
+  margin-left: 4px;
+  color: var(--success);
+}
+
+.code-editor-toolbar-main {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* tamanho do texto (− 22 +), alinhado à direita da barra */
+.code-editor-font-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.code-editor-tool-btn:hover {
+  background: var(--bg-3);
+  color: var(--text-0);
+}
+
+.code-editor-run-btn:hover {
+  background: color-mix(in srgb, var(--success) 18%, var(--bg-2));
+  border-color: var(--success);
+}
+
+/* ligado (ex: pilha de chamadas visível) */
+.code-editor-tool-btn.on {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.code-editor {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  font-family: var(--font-mono);
+  font-size: var(--code-font-size, 13px);
+}
+
+.code-editor-gutter {
+  flex: 0 0 auto;
+  width: 56px;
+  overflow: hidden;
+  position: relative;
+  background: var(--bg-1);
+  border-right: 1px solid var(--border);
+  user-select: none;
+}
+
+.code-editor-gutter-inner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding-top: 10px;
+  will-change: transform;
+}
+
+.code-editor-gutter-row {
+  height: var(--code-line-height, 20px);
+  display: flex;
+  align-items: stretch;
+}
+
+.code-editor-bp-zone {
+  flex: 0 0 16px;
+  position: relative;
+  cursor: pointer;
+}
+
+.code-editor-bp-zone::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--exec);
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  transition: opacity 0.1s ease;
+}
+
+.code-editor-bp-zone:hover::before {
+  opacity: 0.35;
+}
+
+.code-editor-bp-zone.active::before {
+  opacity: 1;
+}
+
+.code-editor-gutter-num {
+  flex: 1;
+  height: var(--code-line-height, 20px);
+  line-height: var(--code-line-height, 20px);
+  text-align: right;
+  padding-right: 8px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.code-editor-gutter-num:hover {
+  color: var(--text-1);
+}
+
+.code-editor-gutter-num.active {
+  color: var(--text-0);
+  font-weight: 700;
+}
+
+.code-editor-body {
+  flex: 1;
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--bg-0);
+}
+
+.code-editor-line-bg {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: var(--code-line-height, 20px);
+  top: 10px;
+  background: color-mix(in srgb, var(--text-0) 5%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--text-0) 10%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--text-0) 10%, transparent);
+  pointer-events: none;
+  will-change: transform;
+}
+
+/* linha marcada / linha em execução no passo atual — âmbar (--exec), a
+   mesma cor de "executando agora" usada no canvas. */
+.code-editor-line-mark {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: var(--code-line-height, 20px);
+  top: 10px;
+  background: color-mix(in srgb, var(--exec) 20%, transparent);
+  border-left: 4px solid var(--exec);
+  pointer-events: none;
+  will-change: transform;
+}
+
+/* Pulso de feedback do modo manual (Ctrl+Enter numa linha só) — verde numa
+   execução bem-sucedida, vermelho num erro de sintaxe ou numa operação
+   impossível contra o modelo atual (ver CodeEditor#flashLine). Some sozinho
+   ao fim da animação (o próprio elemento se remove no "animationend"). */
+.code-editor-line-flash {
+  position: absolute;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  animation: code-editor-line-flash 0.7s ease-out forwards;
+}
+
+.code-editor-line-flash.success {
+  background: var(--success);
+}
+
+.code-editor-line-flash.error {
+  background: var(--danger);
+}
+
+@keyframes code-editor-line-flash {
+  0% {
+    opacity: 0.5;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.code-editor-highlight-wrap {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.code-editor-highlight,
+.code-editor-textarea {
+  position: absolute;
+  top: 0;
+  left: 0;
+  margin: 0;
+  padding: 10px 12px;
+  min-width: 100%;
+  min-height: 100%;
+  font-family: var(--font-mono);
+  font-size: var(--code-font-size, 13px);
+  line-height: var(--code-line-height, 20px);
+  white-space: pre;
+  tab-size: 4;
+  box-sizing: border-box;
+}
+
+.code-editor-highlight {
+  color: var(--text-0);
+  will-change: transform;
+}
+
+.code-editor-highlight code {
+  font-family: inherit;
+  display: block;
+}
+
+.code-editor-line {
+  min-height: var(--code-line-height, 20px);
+  opacity: 1;
+  transition: opacity 0.15s ease;
+}
+
+/* linha marcada (Ctrl+Seta direita, ou clique no gutter): as demais ficam
+   menos opacas para reforçar o destaque — pensado pra aulas ao vivo. */
+.code-editor.line-focus .code-editor-line {
+  opacity: 0.4;
+}
+
+.code-editor.line-focus .code-editor-line.marked {
+  opacity: 1;
+}
+
+.code-editor-textarea {
+  width: 100%;
+  height: 100%;
+  right: 0;
+  bottom: 0;
+  color: transparent;
+  background: transparent;
+  caret-color: var(--text-0);
+  border: none;
+  outline: none;
+  resize: none;
+  overflow: auto;
+  z-index: 2;
+}
+
+/* paleta de sintaxe própria — evita azul (seleção) e âmbar (execução),
+   que no editor ficam reservados pro nome selecionado e pra linha do passo. */
+.tok-keyword {
+  color: var(--tok-keyword);
+  font-weight: 700;
+}
+
+.tok-string {
+  color: var(--tok-string);
+}
+
+.tok-number {
+  color: var(--tok-number);
+}
+
+.tok-comment {
+  color: var(--tok-comment);
+  font-style: italic;
+}
+
+/* nome ligado ao que está selecionado no canvas — mesma cor da seleção lá
+   (--sel), pra associar visualmente os dois lados da tela. */
+.tok-model-ref {
+  color: var(--on-sel);
+  background: var(--sel);
+  font-weight: 700;
+  border-radius: 4px;
+  padding: 1px 3px;
+  margin: 0 -3px;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--sel) 55%, transparent);
+}
+
+@keyframes code-select-pulse {
+  0% {
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--sel) 55%, transparent);
+  }
+  35% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--sel) 40%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--sel) 55%, transparent);
+  }
+}
+
+.code-editor.name-pulse .tok-model-ref {
+  animation: code-select-pulse 0.65s ease-out;
+}
+
+/* Com uma linha destacada, o identificador selecionado só deve chamar
+   atenção nessa linha: nas demais, o "selo" de referência do modelo
+   desaparece e o texto volta a ser um identificador comum (que já fica
+   dimerizado junto com o resto da linha). */
+.code-editor.line-focus .code-editor-line:not(.marked) .tok-model-ref {
+  background: none;
+  color: inherit;
+  font-weight: 400;
+  border-radius: 0;
+  padding: 0;
+  margin: 0;
+  box-shadow: none;
+  animation: none;
+}

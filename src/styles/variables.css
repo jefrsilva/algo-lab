@@ -1,0 +1,131 @@
+/* Tokens de cor/tipografia. Pensado pra legibilidade em aula online (tela
+   compartilhada, vídeo comprimido): texto secundário com contraste >= 4.5:1,
+   setas e bordas bem mais claras que o fundo, e UMA cor por significado no
+   canvas e no editor de código:
+
+     --sel     azul    o que está selecionado (canvas) / o nome correspondente no código
+     --target  verde   alvo do ponteiro selecionado
+     --exec    âmbar   o que está executando agora (linha do passo, nó "atual")
+     --cursor  violeta ponteiro de leitura auto-criado por `v[i]`
+     --danger  vermelho erro / operação inválida
+
+   Tema escuro é o padrão; o claro (ver src/app/theme.js) só redefine os
+   tokens em `:root[data-theme='light']`. Tons translúcidos são derivados com
+   color-mix() a partir desses tokens, então acompanham o tema sozinhos. */
+:root {
+  color-scheme: dark;
+
+  --bg-0: #0d1117;
+  --bg-1: #131a24;
+  --bg-2: #1b2333;
+  --bg-3: #26314a;
+  --border: #33405c;
+  --border-strong: #4d5d80;
+
+  --text-0: #f1f5fb;
+  --text-1: #bcc6d9;
+  --text-2: #95a2bb;
+
+  --accent: #5eb0ff;
+  --accent-strong: #8fd3ff;
+  --on-accent: #04121f;
+  --success: #4ade80;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --on-danger: #200606;
+
+  --sel: #8fd3ff;
+  --on-sel: #04121f;
+  --target: #4ade80;
+  --exec: #ffb547;
+  --on-exec: #1b1200;
+  --cursor: #c4a5ff;
+
+  --node-fill: #1e2a44;
+  --node-stroke: #6b80a8;
+  --node-divider: #465a80;
+  --node-header: #2a3859;
+  /* fundo do nó selecionado: tingido com --sel, bem distinto do fundo
+     dos demais (só a borda mudar não bastava pra achar a seleção rápido) */
+  --node-selected-fill: color-mix(in srgb, var(--sel) 32%, var(--node-fill));
+  --cell-selected-fill: color-mix(in srgb, var(--sel) 22%, var(--cell-fill));
+  --node-linked-fill: color-mix(in srgb, var(--target) 16%, var(--node-fill));
+  --cell-fill: #172036;
+  --node-current: var(--exec);
+  --node-visited: var(--target);
+  --node-aux: var(--sel);
+
+  --edge-color: #98a8c8;
+  --edge-active: var(--exec);
+  --grid-dot: #1c2436;
+
+  --tok-keyword: #d2a8ff;
+  --tok-string: #a5d6a7;
+  --tok-number: #f4a283;
+  --tok-comment: #8793ab;
+
+  --logo: #eeeff1;
+
+  --shadow-color: rgba(0, 0, 0, 0.5);
+  --backdrop: rgba(6, 10, 18, 0.6);
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+
+  --font-sans: 'Atkinson Hyperlegible Next', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Code', Consolas, monospace;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --bg-0: #f7f9fc;
+  --bg-1: #edf1f7;
+  --bg-2: #ffffff;
+  --bg-3: #e1e8f2;
+  --border: #c9d2e0;
+  --border-strong: #a3b0c5;
+
+  --text-0: #111827;
+  --text-1: #364156;
+  --text-2: #56627a;
+
+  --accent: #1f6fd1;
+  --accent-strong: #0b53ad;
+  --on-accent: #ffffff;
+  --success: #15803d;
+  --warning: #b45309;
+  --danger: #dc2626;
+  --on-danger: #ffffff;
+
+  --sel: #1668d4;
+  --on-sel: #ffffff;
+  --target: #16a34a;
+  --exec: #c27400;
+  --on-exec: #1b1200;
+  --cursor: #7c3aed;
+
+  --node-fill: #ffffff;
+  --node-stroke: #7384a3;
+  --node-divider: #c3cddd;
+  --node-header: #e6ecf5;
+  --node-selected-fill: color-mix(in srgb, var(--sel) 28%, var(--node-fill));
+  --cell-selected-fill: color-mix(in srgb, var(--sel) 18%, var(--cell-fill));
+  --node-linked-fill: color-mix(in srgb, var(--target) 12%, var(--node-fill));
+  --cell-fill: #f3f6fa;
+
+  --edge-color: #56647f;
+  --grid-dot: #e2e7ef;
+
+  --tok-keyword: #8b3fd9;
+  --tok-string: #1f7a3a;
+  --tok-number: #b8481c;
+  --tok-comment: #5f6b82;
+
+  /* a cor original da logo (#eeeff1) some no fundo claro */
+  --logo: #111827;
+
+  --shadow-color: rgba(30, 41, 59, 0.18);
+  --backdrop: rgba(15, 23, 42, 0.35);
+}

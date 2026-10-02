@@ -1,0 +1,30 @@
+@keyframes pop-in {
+  from {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.node-pop {
+  animation: pop-in 0.3s ease;
+}
+
+/* nó "atual" do macro — pulso do contorno (espessura), sem brilho difuso,
+   que borrava o valor escrito dentro do círculo. */
+@keyframes pulse {
+  0%,
+  100% {
+    stroke-width: 3;
+  }
+  50% {
+    stroke-width: 6;
+  }
+}
+
+.node.current .node-circle {
+  animation: pulse 1.1s ease-in-out infinite;
+}

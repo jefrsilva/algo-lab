@@ -4,11 +4,9 @@ import { runProgram } from '../interpreter/interpreter.js';
 const AUTOPLAY_BASE_MS = 700;
 
 /**
- * Motor de execução do modo "Executar" do editor de código — espelha o
- * mesmo padrão (steps/stepIndex/playing, goToStep/togglePlay/setSpeed) que
- * BFS/DFS já usam no modo macro (ver App.js:83-85,406-474 e
- * src/algorithms/traversal.js), com uma diferença central: os steps de lá são
- * só uma decoração sobre uma estrutura que não muda; aqui cada linha do
+ * Motor de execução do modo "Executar" do editor de código
+ * (steps/stepIndex/playing, goToStep/togglePlay/setSpeed). Os passos não são
+ * só uma decoração sobre uma estrutura que não muda: cada linha do
  * programa MUDA o MicroModel de verdade (move ponteiro, religa campo, altera
  * célula) — então navegar entre passos precisa restaurar um SNAPSHOT do
  * modelo, não só re-desenhar uma decoração por cima.

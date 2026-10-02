@@ -82,13 +82,6 @@
  *                                        e escrita), "len(m[i])", "sum(m[i])",
  *                                        "print(m[i])", "x in m[i]", "for x in
  *                                        m[i]" — nunca vira variável própria
- *   - {kind:'reflist', ids: string[]}  — lista de referências a struct (ex:
- *                                        vizinhos de um nó de grafo), só
- *                                        existe como retorno de `getAttr` e só
- *                                        é consumida pelo "for" (mesma família
- *                                        de 'range' — nunca circula além
- *                                        disso, não é um valor de primeira
- *                                        classe atribuível)
  *
  * `evaluate` retorna `undefined` quando a expressão não pôde ser resolvida
  * (nome desconhecido, campo/índice inválido, chamada de função que não seja
@@ -101,9 +94,8 @@
  * "texto.find(...)", "texto.count(...)",
  * "print(...)", "nome.append(valor)", "nome.pop([índice])",
  * "nome.insert(i, valor)", "nome.remove(valor)",
- * "nome.get(chave)", "nome.keys()", "nome.values()", "nome.items()",
- * "marcar_atual(nó)",
- * "marcar_visitado(nó)"; as demais só têm a sintaxe aceita, não são
+ * "nome.get(chave)", "nome.keys()", "nome.values()", "nome.items()"; as
+ * demais só têm a sintaxe aceita, não são
  * executadas) — o mesmo critério de "ignora a linha silenciosamente" que a
  * ferramenta já usava.
  *
@@ -128,11 +120,6 @@
  *   assignName(name, value) -> void
  *   assignAttr(structValue, attr, value) -> void
  *   assignIndex(arrayName, indexNumber, value) -> void
- *   markState(structId, estado) -> void (opcional)     — "marcar_atual(nó)"/
- *                                                         "marcar_visitado(nó)",
- *                                                         só usado pelo modo
- *                                                         "Executar" do macro
- *                                                         (ver MacroRuntimeAdapter)
  *   iterateArray(arrayName) -> TypedValue[] | undefined (opcional) — "for nome
  *                                                         in array:", "in"/"not
  *                                                         in", slice, sum/min/
@@ -221,15 +208,14 @@ export const DictValue = (entries, sourceName) => ({ kind: 'dict', entries, ...(
 /** `step` pode ser negativo (contagem regressiva), nunca zero — ver o caso
  * "range" em `evaluate`. */
 export const RangeValue = (start, stop, step = 1) => ({ kind: 'range', start, stop, step });
-export const ReflistValue = (ids) => ({ kind: 'reflist', ids });
 /** Só existe como valor de "enumerate(nome)", só consumido pelo "for" (mesma
- * família de 'range'/'reflist' — ver interpreter.js#resolveIterable). Cada
+ * família de 'range' — ver interpreter.js#resolveIterable). Cada
  * par é uma tupla JS `[Scalar(índice), valorTipado]`, não um valor tipado —
  * é o que permite "for i, v in enumerate(arr):" fazer bind de DUAS variáveis
  * por item (ver ast.js#For). */
 export const PairsValue = (pairs) => ({ kind: 'pairs', pairs });
 /** Só existe como valor de "dict.keys()"/"dict.values()", só consumido pelo
- * "for" (mesma família de 'range'/'reflist'/'pairs' — ver
+ * "for" (mesma família de 'range'/'pairs' — ver
  * interpreter.js#resolveIterable). `items` já são valores tipados prontos. */
 export const IterValue = (items) => ({ kind: 'iter', items });
 /** "nome" quando "nome" é um array já vivo no modelo — array não é valor de
@@ -395,7 +381,6 @@ export function iterableItems(value, env) {
     for (let i = start; step > 0 ? i < stop : i > stop; i += step) items.push(Scalar(i));
     return items;
   }
-  if (value?.kind === 'reflist') return value.ids.map((id) => StructRef(id));
   if (value?.kind === 'pairs') return value.pairs;
   if (value?.kind === 'iter') return value.items;
   if (value?.kind === 'arrayref') return env.iterateArray ? env.iterateArray(value.name) : undefined;
@@ -1569,18 +1554,6 @@ export function evaluate(node, env) {
           return NoneValue;
         }
 
-        // "marcar_atual(nó)" / "marcar_visitado(nó)" — instrumentação pro modo
-        // "Executar" do macro (ver MacroRuntimeAdapter#markState): não mudam
-        // nada no programa, só avisam o visualizador o que destacar naquele
-        // passo. `env.markState` é opcional — sem ele (ex: modo micro), a
-        // chamada só devolve None sem efeito, mesmo critério de sempre.
-        if ((fname === 'marcar_atual' || fname === 'marcar_visitado') && node.args.length === 1) {
-          const arg = evaluate(node.args[0], env);
-          if (arg === undefined || arg.kind !== 'struct') return undefined;
-          env.markState?.(arg.id, fname === 'marcar_atual' ? 'current' : 'visited');
-          return NoneValue;
-        }
-
         return undefined;
       }
 
@@ -2033,9 +2006,9 @@ export function assign(targetNode, value, env) {
     // array): o Map já resolvido É a própria variável (ou uma RECONSTRUÇÃO
     // dele, ver MicroRuntimeAdapter#resolveName, quando dict tem entidade
     // visual própria no modelo). `env.assignDictKey` (opcional) é o canal
-    // dedicado pra escrever de volta nesse caso — quando ausente (ex:
-    // MacroRuntimeAdapter, onde dict continua sendo só uma variável de
-    // rascunho guardando o Map cru), cai no fallback de sempre: muta o Map
+    // dedicado pra escrever de volta nesse caso — quando ausente (dict
+    // guardado só como variável de rascunho, com o Map cru), cai no
+    // fallback de sempre: muta o Map
     // resolvido IN PLACE e reatribui através de `assignName`. Só faz sentido
     // com um NOME direto (célula de dict não é endereçável por outra
     // expressão — dict aninhado não é suportado, ver DictValue).

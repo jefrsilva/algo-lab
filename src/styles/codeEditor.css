@@ -260,9 +260,8 @@
   color: var(--danger);
 }
 
-/* saída de "print(...)" — classe compartilhada entre o console do modo micro
-   (embaixo do canvas, App#_renderMicroConsole) e o do macro (embaixo do
-   editor, App#_renderMacroConsole); escondido quando não há nada a mostrar.
+/* saída de "print(...)" — console embaixo do canvas (ver
+   App#_renderMicroConsole/ConsoleWindow); escondido quando não há nada a mostrar.
    Mostra no máximo 3 linhas (ver CONSOLE_MAX_LINES em App.js). */
 .code-console {
   flex: 0 0 auto;

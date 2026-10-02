@@ -20,8 +20,7 @@ const MARGIN = 12; // folga mínima entre a janela e as bordas do canvas ao posi
 const RESIZE_DIRS = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
 
 /** Preenche `el` com `lines` — uma por `<p>`, mais recente por último — e
- * rola até o fim. Compartilhado com o console do macro (App#_renderConsoleLines).
- * Reconstrói o conteúdo inteiro a cada render (não vale a pena diffar). */
+ * rola até o fim. Reconstrói o conteúdo inteiro a cada render (não vale a pena diffar). */
 export function fillConsoleLines(el, lines) {
   el.innerHTML = '';
   lines.forEach((line) => {

@@ -16,6 +16,10 @@ npm run preview   # preview a production build
 
 There is no test suite, no linter, and no type checker configured in this repo (`package.json` only has the three Vite scripts). Verify changes by running the app in a browser and exercising the feature manually (the `.claude/launch.json` dev-server config is named `algo-visualizer`, port 5173).
 
+## Deploy
+
+Hosted on **Cloudflare Pages** via its Git integration (no workflow in this repo): build command `npm run build`, output directory `dist`, Node version pinned by `.node-version`. `public/_headers` (copied into `dist/` by Vite) sets long-lived caching for the hashed `/assets/*` files. The app is served from the domain root, so `vite.config.js` needs no `base`; if it ever moves to a subpath (e.g. GitHub Pages), `base` must be set.
+
 ## Big-picture architecture
 
 `src/main.js` does one thing: `new App(root)` from [src/app/App.js](src/app/App.js). Everything else hangs off that one class, which builds the entire DOM UI by hand (`document.createElement`, no JSX/templates) and owns all top-level state.

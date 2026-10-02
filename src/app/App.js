@@ -1,22 +1,6 @@
-import { LinkedList } from '../core/structures/LinkedList.js';
-import { Stack } from '../core/structures/Stack.js';
-import { Queue } from '../core/structures/Queue.js';
-import { BinaryTree } from '../core/structures/BinaryTree.js';
-import { Graph } from '../core/structures/Graph.js';
 import { nextId } from '../core/id.js';
 import { MicroModel, MAX_ARRAY_SIZE } from '../core/micro/MicroModel.js';
 
-import { CanvasView, LABEL_H, FRAME_TYPE_LABELS } from '../render/CanvasView.js';
-import {
-  listLayout,
-  queueLayout,
-  stackLayout,
-  treeLayout,
-  forceLayout,
-  graphContentSize,
-  indexFromLocalX,
-  NODE_RADIUS,
-} from '../render/layouts.js';
 import {
   MicroCanvasView,
   STRUCT_W,
@@ -64,17 +48,12 @@ import { parseExpression } from '../interpreter/parser.js';
 import { MicroRuntimeAdapter } from './MicroRuntimeAdapter.js';
 import { microLayoutKey } from './microLayoutKey.js';
 import { MicroProgramRunner } from './MicroProgramRunner.js';
-import { MacroRuntimeAdapter } from './MacroRuntimeAdapter.js';
-import { runMacroProgram } from '../algorithms/runMacroProgram.js';
-import { MACRO_EXAMPLES } from './macroExamplePrograms.js';
 
-import { Sidebar } from '../ui/Sidebar.js';
 import { PlaybackControls } from '../ui/PlaybackControls.js';
 import { NodePopup } from '../ui/NodePopup.js';
 import { ArraySettingsPopup } from '../ui/ArraySettingsPopup.js';
 import { InlineValueEditor } from '../ui/InlineValueEditor.js';
 import { ModeToolbar } from '../ui/ModeToolbar.js';
-import { DragHintLabel } from '../ui/DragHintLabel.js';
 import { CodeEditor } from '../ui/CodeEditor.js';
 import { CallTree } from '../ui/CallTree.js';
 import { CanvasTitle } from '../ui/CanvasTitle.js';
@@ -82,15 +61,14 @@ import { LabelSettingsPopup } from '../ui/LabelSettingsPopup.js';
 import { ChartSettingsPopup } from '../ui/ChartSettingsPopup.js';
 import { AppMenu } from '../ui/AppMenu.js';
 import { Dialog } from '../ui/Dialog.js';
-import { ConsoleWindow, fillConsoleLines } from '../ui/ConsoleWindow.js';
+import { ConsoleWindow } from '../ui/ConsoleWindow.js';
 import { QuickActionPalette } from '../ui/QuickActionPalette.js';
 import { SettingsDialog } from '../ui/SettingsDialog.js';
 import { applyTheme } from './theme.js';
 import { getSetting, setSetting, SETTINGS_DEFAULTS } from './settings.js';
 
-/** Modos da barra de ferramentas inferior do canvas micro (ver
- * App#_buildLayout/_setMicroMode) — bem menor que os modos do macro (que
- * ficam intactos, mas sem UI pra alcançá-los, ver nota em _buildLayout). */
+/** Modos da barra de ferramentas inferior do canvas (ver
+ * App#_buildLayout/_setMicroMode). */
 const MICRO_MODES = [
   { id: 'select', label: 'Selecionar / Mover', shortcut: '1 / V' },
   { id: 'text', label: 'Texto (cor: Alt+1…Alt+0)', shortcut: '2 / T' },
@@ -144,9 +122,7 @@ const ELEMENT_COLORS = [...AREA_COLORS.slice(0, 9), null];
 
 const EMPTY_SET = new Set();
 const CONSOLE_MAX_LINES = 3; // linhas de saída visíveis no console (ver _renderConsoleLines)
-const AUTOPLAY_BASE_MS = 900;
 const CLICK_THRESHOLD = 4;
-const RANDOM_VALUE = () => Math.floor(Math.random() * 90) + 10;
 
 export class App {
   constructor(root) {
@@ -157,21 +133,7 @@ export class App {
     // qualquer que seja o estado do resto do layout.
     this.dialog = new Dialog();
 
-    this.frames = new Map(); // id -> frame
-    this.freeNodes = new Map(); // id -> {id,value,x,y}
-    this.selectedFrameId = null;
-    this.selectedNodeId = null;
-
-    this.viewport = { tx: 0, ty: 0, scale: 1 };
-
-    this.mode = 'select'; // 'select' | 'connect' | 'highlight'
-
-    // A alternância macro/micro saiu da UI (ver _buildLayout) — o app sempre
-    // abre (e fica) no modo micro, com canvas e código vazios. Todo o modelo
-    // e a lógica do macro continuam intactos (frames/freeNodes acima, mais
-    // os métodos _*Frame/_onPointerDown/etc mais abaixo) só que inalcançáveis
-    // por enquanto, sem nenhum botão que leve a eles.
-    this.viewMode = 'micro';
+    // o app abre com canvas e código vazios
     this.micro = new MicroModel();
     this.microViewport = { tx: 0, ty: 0, scale: 1 };
     this.microMode = 'select'; // 'select' | 'text' | 'area' — modos da barra inferior (ver MICRO_MODES)
@@ -238,31 +200,6 @@ export class App {
     this._microSelectionPreview = null; // {x0,y0,x1,y1} durante um arraste de seleção em área
     this._spaceDown = false; // barra de espaço — botão direito passa a mover o canvas enquanto pressionada
 
-    this.algorithmType = 'bfs';
-    this._algoFrameId = null;
-    this.steps = [];
-    this.stepIndex = -1;
-    this.playing = false;
-    this.speed = 1;
-    this.playTimer = null;
-
-    // Execução do macro por código (ver MacroRuntimeAdapter/runMacroProgram)
-    // — editor próprio, sempre visível ao lado do canvas (ver
-    // `_buildLayout`), independente do editor do modo micro.
-    this._macroCodeAuxName = 'fila';
-    this._macroCodeActive = false;
-    this._macroCodeLastFrameId = null;
-
-    this._pointer = null;
-    this._dragPreviewNodeId = null;
-    this._dragPreviewPos = null;
-    this._dragHintInfo = null;
-    this._connectPreviewFrom = null;
-    this._connectPreviewPos = null;
-    this._nodeIndex = new Map();
-
-    this._boundMove = (e) => this._onPointerMoveWindow(e);
-    this._boundUp = (e) => this._onPointerUpWindow(e);
     this._boundKeyDown = (e) => this._onKeyDown(e);
     this._boundKeyUp = (e) => this._onKeyUp(e);
     window.addEventListener('keydown', this._boundKeyDown);
@@ -285,20 +222,14 @@ export class App {
     const shell = document.createElement('div');
     shell.className = 'app-shell';
 
-    // Sem barra de título — o app abre direto no canvas (modo micro, sempre
-    // ativo, ver constructor). "Centralizar vista" e o menu viram botões
-    // flutuantes no canto do canvas (ver mais abaixo, depois de microContainer
-    // existir), não elementos de header.
+    // Sem barra de título — o app abre direto no canvas. "Centralizar vista"
+    // e o menu viram botões flutuantes no canto do canvas (ver mais abaixo,
+    // depois de microContainer existir), não elementos de header.
     const main = document.createElement('main');
     main.className = 'main-grid';
 
-    const sidebarEl = document.createElement('aside');
-    sidebarEl.className = 'sidebar';
-
     const canvasArea = document.createElement('section');
     canvasArea.className = 'canvas-area';
-    const canvasContainer = document.createElement('div');
-    canvasContainer.className = 'canvas-container';
     const microSplit = document.createElement('div');
     microSplit.className = 'micro-split';
     const microContainer = document.createElement('div');
@@ -342,112 +273,12 @@ export class App {
     microSplit.appendChild(splitResizer);
     microSplit.appendChild(codeEditorPanel);
     this._setupSplitResizer(microSplit, microMain, splitResizer);
-    const playbackBar = document.createElement('div');
-    playbackBar.className = 'playback-bar';
-
-    // Tela dividida do macro — MESMO padrão do `microSplit`: canvas à
-    // esquerda, editor de código à direita, lado a lado, SEMPRE visível (não
-    // é um painel que abre/fecha) — mesmo modo de operação do micro: montar
-    // a estrutura à mão (Sidebar/canvas) OU escrever código contra ela,
-    // ambos sempre disponíveis ao mesmo tempo, sem alternar entre "modos".
-    // Substitui de vez o antigo par "botão de algoritmo pronto + InfoPanel
-    // com pseudocódigo/fila/visitados em texto" — eram dois jeitos
-    // redundantes de fazer a mesma coisa. Ver _renderMacroCodePanel/
-    // _runMacroCode.
-    const macroRow = document.createElement('div');
-    macroRow.className = 'macro-row';
-    const macroCodeArea = document.createElement('div');
-    macroCodeArea.className = 'macro-code-area';
-    const macroCodeStartRow = document.createElement('div');
-    macroCodeStartRow.className = 'macro-code-start-row';
-    const macroCodeAlgoSelect = document.createElement('select');
-    macroCodeAlgoSelect.className = 'macro-code-algo-select';
-    ['bfs', 'dfs'].forEach((algo) => {
-      const opt = document.createElement('option');
-      opt.value = algo;
-      opt.textContent = algo.toUpperCase();
-      macroCodeAlgoSelect.appendChild(opt);
-    });
-    macroCodeAlgoSelect.addEventListener('change', () => {
-      this.algorithmType = macroCodeAlgoSelect.value;
-      this._seedMacroCode();
-      this._runMacroCode(this.macroCodeEditor.getValue());
-    });
-    this.macroCodeAlgoSelect = macroCodeAlgoSelect;
-    const macroCodeStartLabel = document.createElement('label');
-    macroCodeStartLabel.textContent = 'Nó inicial';
-    macroCodeStartLabel.className = 'macro-code-start-label';
-    const macroCodeStartSelect = document.createElement('select');
-    macroCodeStartSelect.className = 'macro-code-start-select';
-    macroCodeStartSelect.addEventListener('change', () => this._runMacroCode(this.macroCodeEditor.getValue()));
-    macroCodeStartRow.appendChild(macroCodeAlgoSelect);
-    macroCodeStartRow.appendChild(macroCodeStartLabel);
-    macroCodeStartRow.appendChild(macroCodeStartSelect);
-    const macroCodeEditorContainer = document.createElement('div');
-    macroCodeEditorContainer.className = 'macro-code-editor-inner';
-    const macroCodeError = document.createElement('p');
-    macroCodeError.className = 'macro-code-error';
-    const macroConsoleContainer = document.createElement('div');
-    macroConsoleContainer.className = 'code-console';
-    macroConsoleContainer.hidden = true;
-    macroCodeArea.appendChild(macroCodeStartRow);
-    macroCodeArea.appendChild(macroCodeEditorContainer);
-    macroCodeArea.appendChild(macroCodeError);
-    macroCodeArea.appendChild(macroConsoleContainer);
-    this.macroCodeArea = macroCodeArea;
-    this.macroCodeStartSelect = macroCodeStartSelect;
-    this.macroCodeErrorEl = macroCodeError;
-    this.macroConsoleContainer = macroConsoleContainer;
-    this.macroCodeEditor = new CodeEditor(macroCodeEditorContainer, {
-      onRun: (source) => this._runMacroCode(source),
-      // Modo "Manual" do editor (executar 1 linha por vez contra um modelo de
-      // ponteiros) não faz sentido pro macro — aqui não existe "linha solta",
-      // só o programa inteiro contra a estrutura. Fica inerte de propósito.
-      onExecuteStatement: () => {},
-    });
-    this.macroCodeEditor._setMode('run');
-
-    macroRow.appendChild(canvasContainer);
-    macroRow.appendChild(macroCodeArea);
-    // `macroRow`/`playbackBar`/`sidebarEl` NÃO são anexados ao DOM visível —
-    // o macro fica sem UI pra alcançá-lo (ver nota no topo de _buildLayout),
-    // mas os objetos abaixo (CanvasView, Sidebar, etc.) continuam construídos
-    // normalmente sobre esses containers soltos, então nenhum outro método
-    // deste arquivo (todos escritos supondo que eles existem) quebra.
     canvasArea.appendChild(microSplit);
 
     main.appendChild(canvasArea);
 
     shell.appendChild(main);
     this.root.appendChild(shell);
-
-    this.shell = shell;
-    this.shell.dataset.viewMode = this.viewMode;
-
-    this.canvasContainer = canvasContainer;
-    this.canvasContainer.dataset.mode = this.mode;
-    this.canvasView = new CanvasView(canvasContainer);
-    this.popup = new NodePopup(canvasContainer);
-    this.dragHint = new DragHintLabel(canvasContainer);
-
-    const modeToolbarHost = document.createElement('div');
-    modeToolbarHost.className = 'mode-toolbar-host';
-    canvasContainer.appendChild(modeToolbarHost);
-    this.modeToolbar = new ModeToolbar(modeToolbarHost, this._actions());
-
-    this.macroCanvasTitle = new CanvasTitle(canvasContainer, { placeholder: 'Sem título' });
-
-    this.canvasView.svg.addEventListener('pointerdown', (e) => this._onPointerDown(e));
-    this.canvasView.svg.addEventListener('wheel', (e) => this._onWheel(e), { passive: false });
-    this.canvasView.svg.addEventListener('dblclick', (e) => this._onDblClick(e));
-    this.canvasView.svg.addEventListener('contextmenu', (e) => e.preventDefault());
-    // SVGs/imagens são arrastáveis nativamente por padrão no navegador; isso
-    // compete com o nosso próprio arraste via pointer events e faz o gesto
-    // ser processado de forma incompleta. Bloqueia o drag nativo do browser.
-    this.canvasView.svg.addEventListener('dragstart', (e) => e.preventDefault());
-
-    this.sidebar = new Sidebar(sidebarEl, this._actions());
-    this.playback = new PlaybackControls(playbackBar, this._actions());
 
     this.microSplit = microSplit;
     this.microSplit.classList.toggle('code-panel-hidden', this.codePanelHidden);
@@ -556,9 +387,8 @@ export class App {
 
     this.microContainer.dataset.mode = this.microMode;
 
-    // barra de ferramentas do modo micro (Selecionar/Texto), canto inferior
-    // do canvas — reaproveita o mesmo componente/CSS da barra do macro
-    // (`.mode-toolbar-host`/`.mode-toolbar`), com uma lista de modos própria.
+    // barra de ferramentas do modo micro (Selecionar/Texto/Área/Gráfico),
+    // canto inferior do canvas (`.mode-toolbar-host`/`.mode-toolbar`).
     const microModeToolbarHost = document.createElement('div');
     microModeToolbarHost.className = 'mode-toolbar-host';
     microContainer.appendChild(microModeToolbarHost);
@@ -620,35 +450,6 @@ export class App {
     });
   }
 
-  _seedExample() {
-    this._addFrame('list', { x: -260, y: -160 });
-    const listFrame = this._lastAddedFrame;
-    [10, 24, 37, 52].forEach((v) => listFrame.structure.pushBack(v));
-
-    this._addFrame('stack', { x: 140, y: -160 });
-    const stackFrame = this._lastAddedFrame;
-    [5, 12, 19].forEach((v) => stackFrame.structure.push(v));
-
-    this._addFrame('tree', { x: -260, y: 80 });
-    const treeFrame = this._lastAddedFrame;
-    [50, 30, 70, 20, 40, 60, 80].forEach((v) => treeFrame.structure.insert(v));
-
-    // Grafo pronto (com arestas) e JÁ selecionado — assim o editor de
-    // código (sempre visível, ver _buildLayout) já tem contra o que rodar
-    // desde a primeira tela, mesmo espírito do exemplo pronto do micro.
-    this._addFrame('graph', { x: 140, y: 80 });
-    const graphFrame = this._lastAddedFrame;
-    const ids = [1, 2, 3, 4, 5, 6].map((v) => graphFrame.structure.addNode(v).id);
-    graphFrame.structure.addEdge(ids[0], ids[1]);
-    graphFrame.structure.addEdge(ids[0], ids[2]);
-    graphFrame.structure.addEdge(ids[1], ids[3]);
-    graphFrame.structure.addEdge(ids[2], ids[4]);
-    graphFrame.structure.addEdge(ids[3], ids[5]);
-
-    this.selectedFrameId = graphFrame.id;
-    this.selectedNodeId = ids[0];
-  }
-
   _seedMicroExample() {
     const n1 = this.micro.addStruct(-260, -40, 10);
     const n2 = this.micro.addStruct(-80, -40, 24);
@@ -661,303 +462,6 @@ export class App {
     this.micro.setPointerTarget(head.id, { kind: 'struct', id: n1.id });
     const tail = this.micro.addPointer(100, -150, 'tail');
     this.micro.setPointerTarget(tail.id, { kind: 'struct', id: n3.id });
-  }
-
-  // ---- ações (usadas pela Sidebar/PlaybackControls) ----
-
-  _actions() {
-    return {
-      setMode: (mode) => this._setMode(mode),
-      addFrame: (type) => this._addFrame(type),
-      populateRandom: (frameId) => this._populateRandom(frameId),
-      clearFrame: (frameId) => this._clearFrame(frameId),
-      removeFrame: (frameId) => this._removeFrame(frameId),
-      addGraphEdge: (frameId, from, to) => this._addGraphEdge(frameId, from, to),
-      goToStep: (i) => this._goToStep(i),
-      togglePlay: () => this._togglePlay(),
-      setSpeed: (s) => {
-        this.speed = s;
-        if (this.playing) this._schedulePlay();
-      },
-    };
-  }
-
-  _makeStructure(type) {
-    switch (type) {
-      case 'list':
-        return new LinkedList();
-      case 'stack':
-        return new Stack();
-      case 'queue':
-        return new Queue();
-      case 'tree':
-        return new BinaryTree();
-      case 'graph':
-        return new Graph();
-      default:
-        throw new Error(`Tipo de estrutura desconhecido: ${type}`);
-    }
-  }
-
-  _addFrame(type, atWorld = null) {
-    const id = nextId('frame');
-    let origin = atWorld;
-    if (!origin) {
-      const size = this.canvasView.getSize();
-      const center = this.canvasView.screenToWorld(size.width / 2, size.height / 2, this.viewport);
-      const cascade = (this.frames.size % 6) * 28;
-      origin = { x: center.x - 140 + cascade, y: center.y - 90 + cascade };
-    }
-    const frame = {
-      id,
-      type,
-      x: origin.x,
-      y: origin.y,
-      width: 280,
-      height: 160,
-      structure: this._makeStructure(type),
-      positions: new Map(),
-      positionsDirty: type === 'graph',
-    };
-    this.frames.set(id, frame);
-    this._lastAddedFrame = frame;
-    this.selectedFrameId = id;
-    this.selectedNodeId = null;
-    this._invalidatePlayback();
-    this.renderAll();
-    return frame;
-  }
-
-  _populateRandom(frameId) {
-    const frame = this.frames.get(frameId);
-    if (!frame) return;
-    if (frame.type === 'graph') {
-      frame.structure = Graph.random(6, 0.25, false);
-      frame.positions.clear();
-      frame.positionsDirty = true;
-    } else if (frame.type === 'list') {
-      frame.structure.clear();
-      const n = 3 + Math.floor(Math.random() * 3);
-      for (let i = 0; i < n; i += 1) frame.structure.pushBack(RANDOM_VALUE());
-    } else if (frame.type === 'stack') {
-      frame.structure.clear();
-      const n = 3 + Math.floor(Math.random() * 3);
-      for (let i = 0; i < n; i += 1) frame.structure.push(RANDOM_VALUE());
-    } else if (frame.type === 'queue') {
-      frame.structure.clear();
-      const n = 3 + Math.floor(Math.random() * 3);
-      for (let i = 0; i < n; i += 1) frame.structure.enqueue(RANDOM_VALUE());
-    } else if (frame.type === 'tree') {
-      frame.structure.clear();
-      const values = new Set();
-      while (values.size < 7) values.add(RANDOM_VALUE());
-      values.forEach((v) => frame.structure.insert(v));
-    }
-    this._invalidatePlayback();
-    this.renderAll();
-  }
-
-  _clearFrame(frameId) {
-    const frame = this.frames.get(frameId);
-    if (!frame) return;
-    frame.structure.clear();
-    if (frame.type === 'graph') {
-      frame.positions.clear();
-      frame.positionsDirty = false;
-    }
-    this._invalidatePlayback();
-    this.renderAll();
-  }
-
-  _removeFrame(frameId) {
-    this.frames.delete(frameId);
-    if (this.selectedFrameId === frameId) {
-      this.selectedFrameId = null;
-      this.selectedNodeId = null;
-    }
-    this._invalidatePlayback();
-    this.renderAll();
-  }
-
-  _addGraphEdge(frameId, fromId, toId) {
-    const frame = this.frames.get(frameId);
-    if (!frame || fromId === toId) return;
-    frame.structure.addEdge(fromId, toId);
-    this._invalidatePlayback();
-    this.renderAll();
-  }
-
-  /** Garante que o editor tem algum programa carregado pro `algorithmType`
-   * atual (chamado uma vez na inicialização, e de novo se o usuário trocar
-   * BFS/DFS no seletor do próprio painel) — ver macroExamplePrograms.js. */
-  _seedMacroCode() {
-    if (this._macroCodeSeededFor === this.algorithmType) return;
-    const example = MACRO_EXAMPLES[this.algorithmType] ?? MACRO_EXAMPLES.bfs;
-    this.macroCodeEditor.setValue(example.program);
-    this._macroCodeAuxName = example.auxName;
-    this._macroCodeSeededFor = this.algorithmType;
-  }
-
-  /** Roda `source` (escrito pelo usuário no editor, sempre visível ao lado
-   * do canvas — ver `_buildLayout`) contra a estrutura do frame selecionado,
-   * através de um `MacroRuntimeAdapter` novo a cada execução (ver
-   * runMacroProgram.js). Os passos resultantes alimentam `this.steps`/
-   * `this.stepIndex`, consumidos por `CanvasView`/`PlaybackControls` —
-   * único caminho de execução do macro agora (não existe mais um botão de
-   * "algoritmo pronto" separado). */
-  _runMacroCode(source) {
-    const frame = this.selectedFrameId ? this.frames.get(this.selectedFrameId) : null;
-    const startId = this.macroCodeStartSelect.value;
-    if (!frame || !startId) return;
-    const env = new MacroRuntimeAdapter(frame.structure, { startId });
-    const result = runMacroProgram(source, env, {
-      auxName: this._macroCodeAuxName,
-      sourceLines: source.split('\n'),
-    });
-    if (!result.ok) {
-      const { error } = result;
-      this.macroCodeErrorEl.textContent = `Erro de sintaxe${error.at != null ? ` (linha ${error.at + 1})` : ''}: ${error.message}`;
-      return;
-    }
-    this.macroCodeErrorEl.textContent = '';
-    this.steps = result.steps;
-    this.stepIndex = this.steps.length ? 0 : -1;
-    this._algoFrameId = frame.id;
-    this.playing = false;
-    // `pseudoLine` de cada passo é a LINHA DO PRÓPRIO PROGRAMA — o destaque
-    // vai direto pro editor (`macroCodeEditor.setExecutionLine`, ver
-    // `_renderMacroCodePanel`), não existe mais um pseudocódigo enlatado.
-    this._macroCodeActive = true;
-    this.renderAll();
-  }
-
-  /** Atualiza visibilidade + opções do seletor de nó inicial + destaque da
-   * linha em execução no editor — nunca toca `macroCodeEditor.setValue(...)`
-   * (ver `_seedMacroCode`), pra não perder o cursor/seleção do usuário no
-   * meio da digitação. */
-  /** Sincroniza o painel de código sempre visível (seletor de algoritmo,
-   * seletor de nó inicial, destaque da linha em execução) com o estado
-   * atual. Quando o frame selecionado MUDA (usuário clicou noutra estrutura
-   * no canvas/sandbox), roda o programa de novo automaticamente contra o
-   * novo frame — mesmo espírito do micro, onde o código reage ao que está
-   * selecionado sem precisar de um botão à parte. */
-  _renderMacroCodePanel() {
-    this.macroCodeAlgoSelect.value = this.algorithmType;
-    const frame = this.selectedFrameId ? this.frames.get(this.selectedFrameId) : null;
-    const nodes = frame ? frame.structure.toGraph().nodes : [];
-    const prevValue = this.macroCodeStartSelect.value;
-    this.macroCodeStartSelect.innerHTML = '';
-    if (nodes.length === 0) {
-      const opt = document.createElement('option');
-      opt.textContent = '— frame vazio —';
-      this.macroCodeStartSelect.appendChild(opt);
-      this.macroCodeStartSelect.disabled = true;
-    } else {
-      this.macroCodeStartSelect.disabled = false;
-      nodes.forEach(({ id, label }) => {
-        const opt = document.createElement('option');
-        opt.value = id;
-        opt.textContent = `Nó ${label}`;
-        this.macroCodeStartSelect.appendChild(opt);
-      });
-      if (nodes.some((n) => n.id === prevValue)) this.macroCodeStartSelect.value = prevValue;
-    }
-    if (this._macroCodeActive) {
-      const step = this.steps[this.stepIndex];
-      if (step) this.macroCodeEditor.setExecutionLine(step.pseudoLine);
-    }
-    if (frame && frame.id !== this._macroCodeLastFrameId && nodes.length > 0) {
-      this._macroCodeLastFrameId = frame.id;
-      this._runMacroCode(this.macroCodeEditor.getValue());
-    }
-    this._renderMacroConsole();
-  }
-
-  _invalidatePlayback() {
-    this.steps = [];
-    this.stepIndex = -1;
-    this.playing = false;
-    this._algoFrameId = null;
-    this._macroCodeActive = false;
-    if (this.playTimer) {
-      clearTimeout(this.playTimer);
-      this.playTimer = null;
-    }
-  }
-
-  _goToStep(i) {
-    const clamped = Math.max(0, Math.min(i, this.steps.length - 1));
-    this.stepIndex = clamped;
-    if (clamped >= this.steps.length - 1) {
-      this.playing = false;
-      if (this.playTimer) {
-        clearTimeout(this.playTimer);
-        this.playTimer = null;
-      }
-    }
-    this.renderAll();
-  }
-
-  _togglePlay() {
-    if (this.steps.length === 0) return;
-    this.playing = !this.playing;
-    if (this.playing) {
-      if (this.stepIndex >= this.steps.length - 1) this.stepIndex = 0;
-      this._schedulePlay();
-    } else if (this.playTimer) {
-      clearTimeout(this.playTimer);
-      this.playTimer = null;
-    }
-    this.renderAll();
-  }
-
-  _schedulePlay() {
-    if (this.playTimer) clearTimeout(this.playTimer);
-    if (!this.playing) return;
-    this.playTimer = setTimeout(() => {
-      if (this.stepIndex >= this.steps.length - 1) {
-        this.playing = false;
-        this.renderAll();
-        return;
-      }
-      this.stepIndex += 1;
-      this.renderAll();
-      this._schedulePlay();
-    }, AUTOPLAY_BASE_MS / this.speed);
-  }
-
-  // ---- modo de visualização (macro / micro) ----
-
-  _setViewMode(viewMode) {
-    if (this.viewMode === viewMode) return;
-    this.viewMode = viewMode;
-    this.shell.dataset.viewMode = viewMode;
-    this.canvasContainer.hidden = viewMode !== 'macro';
-    this.microSplit.hidden = viewMode !== 'micro';
-    this.macroToggleBtn.classList.toggle('active', viewMode === 'macro');
-    this.microToggleBtn.classList.toggle('active', viewMode === 'micro');
-    this.renderAll();
-  }
-
-  _resetActiveViewport() {
-    if (this.viewMode === 'micro') this._resetMicroViewport();
-    else this._resetViewport();
-  }
-
-  // ---- modo de interação ----
-
-  _setMode(mode) {
-    if (this.mode === mode) return;
-    this.mode = mode;
-    this.canvasContainer.dataset.mode = mode;
-    this._pointer = null;
-    this._dragPreviewNodeId = null;
-    this._dragPreviewPos = null;
-    this._dragHintInfo = null;
-    this.dragHint.hide();
-    this._connectPreviewFrom = null;
-    this._connectPreviewPos = null;
-    this.renderAll();
   }
 
   /** Atalhos de teclado do modo micro (único modo alcançável pela UI, ver
@@ -1272,16 +776,6 @@ export class App {
 
   // ---- pan / zoom ----
 
-  _resetViewport() {
-    const size = this.canvasView.getSize();
-    this.viewport = { tx: size.width / 2, ty: size.height / 2, scale: 1 };
-    this._applyViewport();
-  }
-
-  _applyViewport() {
-    this.canvasView.setViewport(this.viewport);
-  }
-
   _resetMicroViewport() {
     const size = this.microView.getSize();
     this.microViewport = { tx: size.width / 2, ty: size.height / 2, scale: 1 };
@@ -1530,496 +1024,6 @@ export class App {
     this._setMicroMode('select');
     this._fitMicroViewport();
     this.renderAll();
-  }
-
-  _onWheel(e) {
-    e.preventDefault();
-    const screenPt = this._screenPointFromEvent(e);
-    const worldBefore = this._toWorld(screenPt);
-    const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
-    const newScale = Math.max(0.3, Math.min(2.5, this.viewport.scale * factor));
-    this.viewport.tx = screenPt.x - worldBefore.x * newScale;
-    this.viewport.ty = screenPt.y - worldBefore.y * newScale;
-    this.viewport.scale = newScale;
-    this._applyViewport();
-  }
-
-  _screenPointFromEvent(e) {
-    const rect = this.canvasView.getSize();
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
-  }
-
-  _toWorld(screenPt) {
-    return this.canvasView.screenToWorld(screenPt.x, screenPt.y, this.viewport);
-  }
-
-  // ---- hit testing (contra o modelo, não o DOM) ----
-
-  _findNodeAt(worldPt, excludeId = null) {
-    for (const n of this._nodeIndex.values()) {
-      if (excludeId && n.id === excludeId) continue;
-      if (Math.hypot(n.x - worldPt.x, n.y - worldPt.y) <= NODE_RADIUS + 4) return n;
-    }
-    return null;
-  }
-
-  _findFrameAt(worldPt) {
-    const frames = Array.from(this.frames.values());
-    for (let i = frames.length - 1; i >= 0; i -= 1) {
-      const f = frames[i];
-      if (worldPt.x >= f.x && worldPt.x <= f.x + f.width && worldPt.y >= f.y && worldPt.y <= f.y + f.height) return f;
-    }
-    return null;
-  }
-
-  _findCloseButtonAt(worldPt) {
-    for (const f of this.frames.values()) {
-      const cx = f.x + f.width - 18;
-      const cy = f.y + 20;
-      if (Math.hypot(cx - worldPt.x, cy - worldPt.y) <= 12) return f;
-    }
-    return null;
-  }
-
-  // ---- gestos (pointer) ----
-
-  _onPointerDown(e) {
-    if (e.button !== 0 || this.popup.isOpen) return;
-    const screenPt = this._screenPointFromEvent(e);
-    const worldPt = this._toWorld(screenPt);
-
-    const closeFrame = this._findCloseButtonAt(worldPt);
-    if (closeFrame) {
-      this._removeFrame(closeFrame.id);
-      return;
-    }
-
-    const hitNode = this._findNodeAt(worldPt);
-    const hitFrame = !hitNode ? this._findFrameAt(worldPt) : null;
-
-    this._pointer = {
-      downScreen: screenPt,
-      lastScreen: screenPt,
-      moved: false,
-      hit: hitNode ? 'node' : hitFrame ? 'frame' : 'canvas',
-      nodeId: hitNode?.id ?? null,
-      frameId: hitFrame?.id ?? null,
-    };
-
-    window.addEventListener('pointermove', this._boundMove);
-    window.addEventListener('pointerup', this._boundUp);
-  }
-
-  _onPointerMoveWindow(e) {
-    if (!this._pointer) return;
-    const screenPt = this._screenPointFromEvent(e);
-    const dx = screenPt.x - this._pointer.downScreen.x;
-    const dy = screenPt.y - this._pointer.downScreen.y;
-    if (!this._pointer.moved && Math.hypot(dx, dy) > CLICK_THRESHOLD) this._pointer.moved = true;
-    if (!this._pointer.moved) return;
-
-    const ddx = screenPt.x - this._pointer.lastScreen.x;
-    const ddy = screenPt.y - this._pointer.lastScreen.y;
-
-    if (this.mode === 'select') {
-      if (this._pointer.hit === 'node') {
-        this._dragPreviewNodeId = this._pointer.nodeId;
-        const worldPt = this._toWorld(screenPt);
-        this._dragPreviewPos = worldPt;
-        this._dragHintInfo = this._computeDragHint(this._pointer.nodeId, worldPt);
-        if (this._dragHintInfo) {
-          this.dragHint.show(screenPt.x, screenPt.y, this._dragHintInfo.text, this._dragHintInfo.valid);
-        } else {
-          this.dragHint.hide();
-        }
-        this._renderCanvasOnly();
-      } else if (this._pointer.hit === 'frame') {
-        const frame = this.frames.get(this._pointer.frameId);
-        if (frame) {
-          frame.x += ddx / this.viewport.scale;
-          frame.y += ddy / this.viewport.scale;
-          this._renderCanvasOnly();
-        }
-      } else {
-        this.viewport.tx += ddx;
-        this.viewport.ty += ddy;
-        this._applyViewport();
-      }
-    } else if (this.mode === 'connect') {
-      const entry = this._pointer.hit === 'node' ? this._nodeIndex.get(this._pointer.nodeId) : null;
-      const isGraphNode = entry?.kind === 'frame' && this.frames.get(entry.frameId)?.type === 'graph';
-      if (isGraphNode) {
-        this._connectPreviewFrom = this._pointer.nodeId;
-        this._connectPreviewPos = this._toWorld(screenPt);
-        this._renderCanvasOnly();
-      } else {
-        this.viewport.tx += ddx;
-        this.viewport.ty += ddy;
-        this._applyViewport();
-      }
-    } else if (this.mode === 'highlight') {
-      if (this._pointer.hit === 'canvas') {
-        this.viewport.tx += ddx;
-        this.viewport.ty += ddy;
-        this._applyViewport();
-      }
-      // arrastar um nó/frame no modo destacar não move nada — só o clique conta
-    }
-
-    this._pointer.lastScreen = screenPt;
-  }
-
-  _onPointerUpWindow(e) {
-    if (!this._pointer) return;
-    const screenPt = this._screenPointFromEvent(e);
-    const worldPt = this._toWorld(screenPt);
-    const { hit, moved, nodeId, frameId } = this._pointer;
-
-    if (this.mode === 'select') {
-      if (!moved) {
-        if (hit === 'node') this._selectNode(nodeId);
-        else if (hit === 'frame') this._selectFrame(frameId);
-        else this._openCreatePopup(screenPt, worldPt);
-      } else if (hit === 'node') {
-        this._finishNodeDrag(nodeId, worldPt);
-      }
-    } else if (this.mode === 'connect') {
-      if (!moved) {
-        if (hit === 'node') this._selectNode(nodeId);
-        else if (hit === 'frame') this._selectFrame(frameId);
-      } else if (hit === 'node') {
-        this._finishConnectDrag(nodeId, worldPt, screenPt);
-      }
-      this._connectPreviewFrom = null;
-      this._connectPreviewPos = null;
-    } else if (this.mode === 'highlight') {
-      if (!moved) {
-        if (hit === 'node') this._pulseNode(nodeId);
-        else if (hit === 'frame') this._pulseFrame(frameId);
-      }
-    }
-
-    this._pointer = null;
-    this._dragPreviewNodeId = null;
-    this._dragPreviewPos = null;
-    this._dragHintInfo = null;
-    this.dragHint.hide();
-    window.removeEventListener('pointermove', this._boundMove);
-    window.removeEventListener('pointerup', this._boundUp);
-    this.renderAll();
-  }
-
-  _pulseNode(nodeId) {
-    this.canvasView.pulseNode(nodeId);
-  }
-
-  _pulseFrame(frameId) {
-    this.canvasView.pulseFrame(frameId);
-  }
-
-  _finishConnectDrag(nodeId, worldPt, screenPt) {
-    const entry = this._nodeIndex.get(nodeId);
-    if (!entry || entry.kind !== 'frame') return;
-    const frame = this.frames.get(entry.frameId);
-    if (!frame || frame.type !== 'graph') return;
-
-    const other = this._findNodeAt(worldPt, nodeId);
-    if (other && other.kind === 'frame' && other.frameId === frame.id) {
-      frame.structure.addEdge(nodeId, other.id);
-      this._invalidatePlayback();
-      return;
-    }
-
-    const targetFrame = this._findFrameAt(worldPt);
-    if (!targetFrame || targetFrame.id !== frame.id) return;
-
-    this.popup.open(screenPt.x, screenPt.y, (value) => {
-      const localX = worldPt.x - frame.x;
-      const localY = worldPt.y - frame.y - LABEL_H;
-      const node = frame.structure.addNode(value);
-      const size = graphContentSize(frame.structure.nodes.size);
-      const x = Math.max(NODE_RADIUS + 6, Math.min(size.width - NODE_RADIUS - 6, localX));
-      const y = Math.max(NODE_RADIUS + 6, Math.min(size.height - NODE_RADIUS - 6, localY));
-      frame.positions.set(node.id, { x, y });
-      frame.structure.addEdge(nodeId, node.id);
-      this._invalidatePlayback();
-      this.renderAll();
-    });
-  }
-
-  _onDblClick(e) {
-    const screenPt = this._screenPointFromEvent(e);
-    const worldPt = this._toWorld(screenPt);
-    const node = this._findNodeAt(worldPt);
-    if (!node) return;
-    if (node.kind === 'free') {
-      this.freeNodes.delete(node.id);
-      this.renderAll();
-      return;
-    }
-    const frame = this.frames.get(node.frameId);
-    if (!frame) return;
-    const removed = this._tryRemoveFromFrame(frame, node.id);
-    if (removed) this._invalidatePlayback();
-    this.renderAll();
-  }
-
-  _selectNode(nodeId) {
-    const entry = this._nodeIndex.get(nodeId);
-    if (!entry) return;
-    if (entry.kind === 'frame') {
-      this.selectedFrameId = entry.frameId;
-      this.selectedNodeId = nodeId;
-    }
-  }
-
-  _selectFrame(frameId) {
-    this.selectedFrameId = frameId;
-    this.selectedNodeId = null;
-  }
-
-  _openCreatePopup(screenPt, worldPt) {
-    this.popup.open(screenPt.x, screenPt.y, (value) => {
-      const id = nextId('free');
-      this.freeNodes.set(id, { id, value, x: worldPt.x, y: worldPt.y });
-      this.renderAll();
-    });
-  }
-
-  /** Calcula a operação que seria executada se o nó fosse solto agora (para o label de arraste). */
-  _computeDragHint(nodeId, worldPt) {
-    const entry = this._nodeIndex.get(nodeId);
-    if (!entry) return null;
-    const targetFrame = this._findFrameAt(worldPt);
-
-    if (entry.kind === 'free') {
-      if (!targetFrame) return null;
-      return this._insertHint(targetFrame, worldPt);
-    }
-
-    const homeFrame = this.frames.get(entry.frameId);
-    if (!homeFrame) return null;
-
-    if (targetFrame) return null; // reposição no mesmo frame, ou mover entre frames (não suportado)
-    return this._removeHint(homeFrame, nodeId);
-  }
-
-  _insertHint(frame, worldPt) {
-    const frameId = frame.id;
-    switch (frame.type) {
-      case 'list': {
-        const localX = worldPt.x - frame.x;
-        const total = frame.structure.nodes.length;
-        const idx = indexFromLocalX(localX, total);
-        let text = 'Inserir';
-        if (total > 0) {
-          if (idx <= 0) text = 'Inserir no início';
-          else if (idx >= total) text = 'Inserir no fim';
-          else text = `Inserir na posição ${idx}`;
-        }
-        return { frameId, text, valid: true };
-      }
-      case 'stack':
-        return { frameId, text: 'Push (empilhar)', valid: true };
-      case 'queue':
-        return { frameId, text: 'Enqueue (inserir no fim)', valid: true };
-      case 'tree':
-        return { frameId, text: 'Inserir', valid: true };
-      case 'graph':
-        return { frameId, text: 'Adicionar nó', valid: true };
-      default:
-        return null;
-    }
-  }
-
-  _removeHint(frame, nodeId) {
-    const frameId = frame.id;
-    switch (frame.type) {
-      case 'list':
-        return { frameId, text: 'Remover', valid: true };
-      case 'stack': {
-        const items = frame.structure.items;
-        const isTop = items.length > 0 && items[items.length - 1].id === nodeId;
-        return isTop
-          ? { frameId, text: 'Pop (desempilhar)', valid: true }
-          : { frameId, text: 'Só é possível remover o topo', valid: false };
-      }
-      case 'queue': {
-        const items = frame.structure.items;
-        const isFront = items.length > 0 && items[0].id === nodeId;
-        const isBack = items.length > 0 && items[items.length - 1].id === nodeId;
-        if (isFront) return { frameId, text: 'Dequeue (remover início)', valid: true };
-        if (isBack) return { frameId, text: 'Remover fim', valid: true };
-        return { frameId, text: 'Só é possível remover das pontas', valid: false };
-      }
-      case 'tree': {
-        const isLeaf = frame.structure.isLeaf(nodeId);
-        return isLeaf
-          ? { frameId, text: 'Remover folha', valid: true }
-          : { frameId, text: 'Só é possível remover folhas', valid: false };
-      }
-      case 'graph':
-        return { frameId, text: 'Remover nó', valid: true };
-      default:
-        return null;
-    }
-  }
-
-  _finishNodeDrag(nodeId, worldPt) {
-    const entry = this._nodeIndex.get(nodeId);
-    if (!entry) return;
-    const targetFrame = this._findFrameAt(worldPt);
-
-    if (entry.kind === 'free') {
-      const free = this.freeNodes.get(nodeId);
-      if (!free) return;
-      if (targetFrame) {
-        this._dropValueIntoFrame(targetFrame, free.value, worldPt);
-        this.freeNodes.delete(nodeId);
-      } else {
-        free.x = worldPt.x;
-        free.y = worldPt.y;
-      }
-      return;
-    }
-
-    const homeFrame = this.frames.get(entry.frameId);
-    if (!homeFrame) return;
-
-    if (targetFrame && targetFrame.id === homeFrame.id) {
-      if (homeFrame.type === 'graph') {
-        const localX = worldPt.x - homeFrame.x;
-        const localY = worldPt.y - homeFrame.y - LABEL_H;
-        homeFrame.positions.set(nodeId, { x: localX, y: localY });
-        this._invalidatePlayback();
-      }
-      // demais tipos: posição é ditada pela estrutura — o re-render encaixa o nó de volta
-    } else if (!targetFrame) {
-      const removed = this._tryRemoveFromFrame(homeFrame, nodeId);
-      if (removed) {
-        const id = nextId('free');
-        this.freeNodes.set(id, { id, value: removed.value, x: worldPt.x, y: worldPt.y });
-        this._invalidatePlayback();
-      }
-    }
-    // solto dentro de outro frame: não suportado ainda — o nó volta pra posição da estrutura
-  }
-
-  _dropValueIntoFrame(frame, value, worldPt) {
-    const localX = worldPt.x - frame.x;
-    const localY = worldPt.y - frame.y - LABEL_H;
-
-    switch (frame.type) {
-      case 'list': {
-        const idx = indexFromLocalX(localX, frame.structure.nodes.length);
-        frame.structure.insertAt(idx, value);
-        break;
-      }
-      case 'queue':
-        frame.structure.enqueue(value);
-        break;
-      case 'stack':
-        frame.structure.push(value);
-        break;
-      case 'tree':
-        frame.structure.insert(value);
-        break;
-      case 'graph': {
-        const node = frame.structure.addNode(value);
-        const size = graphContentSize(frame.structure.nodes.size);
-        const x = Math.max(NODE_RADIUS + 6, Math.min(size.width - NODE_RADIUS - 6, localX));
-        const y = Math.max(NODE_RADIUS + 6, Math.min(size.height - NODE_RADIUS - 6, localY));
-        frame.positions.set(node.id, { x, y });
-        break;
-      }
-      default:
-        break;
-    }
-    this._invalidatePlayback();
-  }
-
-  /** Tenta remover um nó de um frame; retorna { id, value } se conseguiu, senão null. */
-  _tryRemoveFromFrame(frame, nodeId) {
-    switch (frame.type) {
-      case 'list':
-        return frame.structure.removeById(nodeId);
-      case 'stack': {
-        const items = frame.structure.items;
-        if (items.length && items[items.length - 1].id === nodeId) return frame.structure.pop();
-        return null;
-      }
-      case 'queue': {
-        const items = frame.structure.items;
-        if (items.length && items[0].id === nodeId) return frame.structure.dequeue();
-        if (items.length && items[items.length - 1].id === nodeId) return frame.structure.dequeueBack();
-        return null;
-      }
-      case 'tree': {
-        const node = frame.structure.getNodeById(nodeId);
-        if (!node || !frame.structure.isLeaf(nodeId)) return null;
-        frame.structure.remove(node.value);
-        return { id: nodeId, value: node.value };
-      }
-      case 'graph': {
-        const node = frame.structure.nodes.get(nodeId);
-        if (!node) return null;
-        frame.structure.removeNode(nodeId);
-        frame.positions.delete(nodeId);
-        return { id: nodeId, value: node.value };
-      }
-      default:
-        return null;
-    }
-  }
-
-  // ---- layout de conteúdo por frame ----
-
-  _computeFrameLayout(frame) {
-    const { nodes: rawNodes, edges, root } = frame.structure.toGraph();
-    if (frame.type === 'list') {
-      const layout = listLayout(rawNodes);
-      return { ...layout, nodes: layout.nodes.map((n) => ({ ...n, topLabel: this._listTopLabel(n, rawNodes.length) })), edges };
-    }
-    if (frame.type === 'queue') {
-      const layout = queueLayout(rawNodes);
-      return { ...layout, nodes: layout.nodes.map((n) => ({ ...n, topLabel: this._queueTopLabel(n, rawNodes.length) })), edges };
-    }
-    if (frame.type === 'stack') {
-      const layout = stackLayout(rawNodes);
-      return { ...layout, nodes: layout.nodes.map((n) => ({ ...n, topLabel: n.meta?.isTop ? 'Topo' : null })), edges };
-    }
-    if (frame.type === 'tree') return { ...treeLayout(rawNodes, edges, root), edges };
-
-    // grafo
-    const size = graphContentSize(rawNodes.length);
-    let positioned;
-    if (frame.positionsDirty) {
-      const seed = Object.fromEntries(frame.positions);
-      positioned = forceLayout(rawNodes, edges, size, seed);
-      positioned.forEach((n) => frame.positions.set(n.id, { x: n.x, y: n.y }));
-      frame.positionsDirty = false;
-    } else {
-      positioned = rawNodes.map((n) => ({
-        ...n,
-        ...(frame.positions.get(n.id) ?? { x: size.width / 2, y: size.height / 2 }),
-      }));
-    }
-    return { nodes: positioned, edges, width: size.width, height: size.height };
-  }
-
-  _listTopLabel(node, total) {
-    const index = node.meta?.index;
-    if (total <= 1) return index === 0 ? 'Início / Fim' : null;
-    if (index === 0) return 'Início';
-    if (index === total - 1) return 'Fim';
-    return null;
-  }
-
-  _queueTopLabel(node, total) {
-    if (total <= 1) return node.meta?.isFront ? 'Entrada / Saída' : null;
-    if (node.meta?.isFront) return 'Saída';
-    if (node.meta?.isBack) return 'Entrada';
-    return null;
   }
 
   _microViewportCenter() {
@@ -5408,10 +4412,9 @@ export class App {
     this._renderMicroConsole();
   }
 
-  /** Barra de reprodução do modo "Executar" — mesmo componente
-   * (`PlaybackControls`) que o modo macro usa pra BFS/DFS, só que tocando o
-   * `MicroProgramRunner` em vez do `this.steps` do macro. Some quando não há
-   * passos (fora do modo "run", ou "run" sem ter rodado ainda). */
+  /** Barra de reprodução do modo "Executar" (`PlaybackControls`), tocando o
+   * `MicroProgramRunner`. Some quando não há passos (fora do modo "run", ou
+   * "run" sem ter rodado ainda). */
   _renderMicroRunBar() {
     const { error } = this.microRunner;
     this.microRunBarContainer.hidden = !this.microRunner.hasSteps && !error;
@@ -5477,214 +4480,9 @@ export class App {
     this._renderMicroConsole();
   }
 
-  /** Console do modo macro — mesma ideia de `_renderMicroConsole`, mas só
-   * existe reprodução por passo aqui (não há "manual" pro macro, ver
-   * `onExecuteStatement: () => {}` no construtor do `macroCodeEditor`):
-   * `this.steps[i].output`, capturado por runMacroProgram.js. Passos de
-   * BFS/DFS "prontos" (sem código, ver traversal.js) não têm esse campo —
-   * `?? []` cobre isso normalmente (console fica escondido). */
-  _renderMacroConsole() {
-    const step = this.steps[this.stepIndex];
-    this._renderConsoleLines(this.macroConsoleContainer, step?.output ?? []);
-  }
-
-  /** Preenche o console do macro (`.code-console`) com `lines` (ver
-   * fillConsoleLines). Só as últimas `CONSOLE_MAX_LINES` aparecem — o
-   * console não pode crescer às custas do editor. */
-  _renderConsoleLines(container, lines) {
-    container.hidden = lines.length === 0;
-    if (lines.length === 0) return;
-    fillConsoleLines(container, lines.slice(-CONSOLE_MAX_LINES));
-  }
-
   // ---- render ----
 
   renderAll() {
-    if (this.viewMode === 'micro') {
-      this._renderMicroOnly();
-      return;
-    }
-    this._renderCanvasOnly();
-    this._renderSidebar();
-    this._renderPlayback();
-    this._renderModeToolbar();
-    this._renderMacroCodePanel();
+    this._renderMicroOnly();
   }
-
-  _renderModeToolbar() {
-    this.modeToolbar.render({ mode: this.mode });
-  }
-
-  _rebuildWorldModel() {
-    const nodeIndex = new Map();
-    const framesRender = [];
-    const nodesBase = [];
-    const edgesBase = [];
-
-    for (const frame of this.frames.values()) {
-      const layout = this._computeFrameLayout(frame);
-      frame.width = layout.width;
-      frame.height = LABEL_H + layout.height;
-
-      framesRender.push({
-        id: frame.id,
-        type: frame.type,
-        label: FRAME_TYPE_LABELS[frame.type],
-        x: frame.x,
-        y: frame.y,
-        width: frame.width,
-        height: frame.height,
-        selected: frame.id === this.selectedFrameId,
-      });
-
-      layout.nodes.forEach((n) => {
-        const worldX = frame.x + n.x;
-        const worldY = frame.y + LABEL_H + n.y;
-        nodeIndex.set(n.id, { id: n.id, x: worldX, y: worldY, label: n.label, kind: 'frame', frameId: frame.id });
-        nodesBase.push({ id: n.id, x: worldX, y: worldY, label: n.label, topLabel: n.topLabel ?? null });
-      });
-
-      layout.edges.forEach((e) => {
-        const source = nodeIndex.get(e.source);
-        const target = nodeIndex.get(e.target);
-        if (!source || !target) return;
-        edgesBase.push({ id: e.id, sourceId: e.source, targetId: e.target, source, target, directed: e.directed });
-      });
-    }
-
-    for (const free of this.freeNodes.values()) {
-      nodeIndex.set(free.id, { id: free.id, x: free.x, y: free.y, label: String(free.value), kind: 'free' });
-      nodesBase.push({ id: free.id, x: free.x, y: free.y, label: String(free.value), free: true });
-    }
-
-    this._nodeIndex = nodeIndex;
-    this._framesRender = framesRender;
-    this._nodesBase = nodesBase;
-    this._edgesBase = edgesBase;
-  }
-
-  /** Estruturas auxiliares do modo "Executar" do macro (a fila/pilha e o
-   * "visitados" que o programa do usuário manipula) desenhadas como
-   * estruturas de VERDADE no canvas — mesma geometria (`queueLayout`/
-   * `stackLayout`/`listLayout`, ver render/layouts.js) e o mesmo tipo de
-   * frame/nó que uma Fila/Pilha/Lista montada à mão no sandbox — em vez de
-   * texto solto na barra lateral (que aliás fica escondida enquanto este
-   * painel está aberto, ver CSS [data-macro-code-open]).
-   *
-   * Cada nó auxiliar é uma CÓPIA (id com sufixo `::fila`/`::visitados`) do nó
-   * de verdade do grafo, mesmo rótulo — o grafo original não é duplicado,
-   * só "espelhado" pra dentro da estrutura auxiliar que o contém naquele
-   * passo. `state` reaproveita as mesmas classes de cor que o grafo já usa
-   * (in-aux azul, visited verde), pra bater visualmente com o destaque do
-   * nó correspondente no grafo.
-   */
-  _buildMacroAuxFrames(step) {
-    if (!this._macroCodeActive || !step || !this._algoFrameId) return { frames: [], nodes: [] };
-    const graphFrame = this.frames.get(this._algoFrameId);
-    if (!graphFrame) return { frames: [], nodes: [] };
-    const labelById = new Map(graphFrame.structure.toGraph().nodes.map((n) => [n.id, n.label]));
-
-    const frames = [];
-    const nodes = [];
-    const x = graphFrame.x + graphFrame.width + 60;
-    let y = graphFrame.y;
-
-    const addAuxFrame = (idSuffix, title, ids, layoutFn, state) => {
-      const shadowNodes = ids.map((id) => ({ id: `${id}::${idSuffix}`, label: labelById.get(id) ?? '?' }));
-      const layout = layoutFn(shadowNodes);
-      const width = Math.max(layout.width, 150);
-      const height = LABEL_H + layout.height;
-      frames.push({ id: `aux:${idSuffix}`, type: 'aux', label: title, x, y, width, height, selected: false });
-      layout.nodes.forEach((n) => {
-        nodes.push({ id: n.id, x: x + n.x, y: y + LABEL_H + n.y, label: n.label, topLabel: null, state });
-      });
-      y += height + 40;
-    };
-
-    const auxTitle = this._macroCodeAuxName === 'pilha' ? 'Pilha' : 'Fila';
-    const auxLayout = this._macroCodeAuxName === 'pilha' ? stackLayout : queueLayout;
-    addAuxFrame(this._macroCodeAuxName, auxTitle, step.auxIds, auxLayout, 'in-aux');
-    addAuxFrame('visitados', 'Visitados', step.visited, listLayout, 'visited');
-
-    return { frames, nodes };
-  }
-
-  _renderCanvasOnly() {
-    this._rebuildWorldModel();
-    const step = this.steps[this.stepIndex];
-
-    const nodes = this._nodesBase.map((n) => {
-      let { x, y } = n;
-      const dragging = this._dragPreviewNodeId === n.id;
-      if (dragging && this._dragPreviewPos) {
-        x = this._dragPreviewPos.x;
-        y = this._dragPreviewPos.y;
-      }
-      let state = null;
-      if (step) {
-        if (step.visited.includes(n.id)) state = 'visited';
-        if (step.auxIds.includes(n.id)) state = 'in-aux';
-        if (step.currentId === n.id) state = 'current';
-      }
-      return { ...n, x, y, dragging, state, selected: n.id === this.selectedNodeId };
-    });
-    const nodeById = new Map(nodes.map((n) => [n.id, n]));
-
-    const edges = this._edgesBase.map((e) => {
-      const active =
-        !!step?.edge &&
-        ((step.edge.from === e.sourceId && step.edge.to === e.targetId) ||
-          (step.edge.from === e.targetId && step.edge.to === e.sourceId));
-      const source = nodeById.get(e.sourceId) ?? e.source;
-      const target = nodeById.get(e.targetId) ?? e.target;
-      return { id: e.id, source, target, directed: e.directed, active };
-    });
-
-    let previewEdge = null;
-    if (this.mode === 'connect' && this._connectPreviewFrom && this._connectPreviewPos) {
-      const fromNode = nodeById.get(this._connectPreviewFrom);
-      if (fromNode) previewEdge = { source: { x: fromNode.x, y: fromNode.y }, target: this._connectPreviewPos };
-    }
-
-    const frames = this._framesRender.map((f) => ({
-      ...f,
-      dropState:
-        this._dragHintInfo && this._dragHintInfo.frameId === f.id
-          ? this._dragHintInfo.valid
-            ? 'valid'
-            : 'invalid'
-          : null,
-    }));
-
-    const aux = this._buildMacroAuxFrames(step);
-
-    this.canvasView.render({
-      frames: frames.concat(aux.frames),
-      nodes: nodes.concat(aux.nodes),
-      edges,
-      previewEdge,
-    });
-  }
-
-  _renderSidebar() {
-    const selectedFrame = this.selectedFrameId ? this.frames.get(this.selectedFrameId) : null;
-    const selectedFrameNodes = selectedFrame
-      ? selectedFrame.structure.toGraph().nodes.map((n) => ({ id: n.id, label: n.label }))
-      : [];
-    this.sidebar.render({
-      selectedFrame: selectedFrame ? { id: selectedFrame.id, type: selectedFrame.type } : null,
-      selectedFrameNodes,
-      selectedNodeId: this.selectedNodeId,
-    });
-  }
-
-  _renderPlayback() {
-    this.playback.render({
-      stepIndex: this.stepIndex,
-      totalSteps: this.steps.length,
-      playing: this.playing,
-      speed: this.speed,
-    });
-  }
-
 }

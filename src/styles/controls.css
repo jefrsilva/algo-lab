@@ -1,25 +1,3 @@
-.add-frame-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.add-frame-btn {
-  text-align: center;
-}
-
-.hint-text {
-  line-height: 1.45;
-  margin: 0 0 12px;
-}
-
-.btn-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
 .btn {
   padding: 8px 14px;
   border-radius: var(--radius-sm);
@@ -83,19 +61,6 @@ select {
   font-size: 0.9rem;
 }
 
-.edge-form {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px dashed var(--border);
-}
-
-.start-select {
-  margin-top: 4px;
-}
-
 /* Playback bar */
 .playback-controls {
   display: flex;
@@ -132,60 +97,6 @@ select {
 
 .speed-label input {
   accent-color: var(--accent);
-}
-
-/* Info panel */
-.pseudocode {
-  background: var(--bg-0);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: 10px 0;
-  font-family: var(--font-mono);
-  font-size: 0.9rem;
-  line-height: 1.6;
-  overflow-x: auto;
-  margin: 0;
-}
-
-.code-line {
-  padding: 2px 14px;
-  white-space: pre;
-  color: var(--text-1);
-}
-
-.code-line.active {
-  background: color-mix(in srgb, var(--exec) 18%, transparent);
-  color: var(--text-0);
-  border-left: 3px solid var(--exec);
-}
-
-.step-description {
-  margin: 14px 0 0;
-  font-size: 0.95rem;
-  color: var(--text-0);
-  line-height: 1.5;
-}
-
-.aux-structure {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.aux-chip {
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--node-aux) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--node-aux) 45%, transparent);
-  color: var(--node-aux);
-  font-family: var(--font-mono);
-  font-size: 0.88rem;
-}
-
-.visited-chip {
-  background: color-mix(in srgb, var(--node-visited) 12%, transparent);
-  border-color: color-mix(in srgb, var(--node-visited) 45%, transparent);
-  color: var(--node-visited);
 }
 
 /* Popup de criação de nó (canvas) */
@@ -376,96 +287,6 @@ select {
   border-top: 1px dashed var(--border);
 }
 
-/* Label flutuante indicando a operação prestes a ser realizada (arraste) */
-.drag-hint-label {
-  position: absolute;
-  z-index: 25;
-  pointer-events: none;
-  background: var(--sel);
-  color: var(--on-sel);
-  font-family: var(--font-mono);
-  font-size: 0.82rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  padding: 4px 9px;
-  border-radius: var(--radius-sm);
-  box-shadow: 0 6px 16px var(--shadow-color);
-  white-space: nowrap;
-}
-
-.drag-hint-label.invalid {
-  background: var(--danger);
-  color: var(--on-danger);
-}
-
-/* Tela dividida do macro — MESMO padrão do `.micro-split`: canvas à
-   esquerda, código à direita, lado a lado, sempre visível (ver
-   App.js#_buildLayout). `.macro-row` é o wrapper flex que contém
-   `.canvas-container` + `.macro-code-area`. */
-.macro-row {
-  flex: 1;
-  display: flex;
-  min-height: 0;
-  min-width: 0;
-}
-
-/* `.canvas-container` fora daqui usa `flex: 1` (basis 0%) — dentro do
-   `.macro-row` precisa da MESMA base percentual que `.macro-code-area`
-   (basis 0% vs 50% não dividiria meio a meio: o item com basis 0 cresceria
-   bem menos que o resto, sobrando quase tudo pro outro lado). */
-.macro-row .canvas-container {
-  flex: 1 1 50%;
-}
-
-.macro-code-area {
-  flex: 1 1 50%;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg-1);
-  border-left: 1px solid var(--border);
-}
-
-.macro-code-start-row {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--border);
-}
-
-.macro-code-algo-select,
-.macro-code-start-select {
-  width: auto;
-  margin: 0;
-  padding: 5px 8px;
-  font-size: 0.88rem;
-}
-
-.macro-code-start-label {
-  font-size: 0.85rem;
-  color: var(--text-1);
-  white-space: nowrap;
-}
-
-.macro-code-editor-inner {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.macro-code-error {
-  flex: 0 0 auto;
-  margin: 0;
-  padding: 6px 10px;
-  font-size: 14px;
-  font-family: var(--font-mono);
-  color: var(--danger);
-  white-space: pre-wrap;
-}
-
 /* Barra flutuante de modos (parte inferior do canvas) */
 .mode-toolbar-host {
   position: absolute;
@@ -476,7 +297,7 @@ select {
   pointer-events: none;
 }
 
-/* Título editável, centralizado no topo do canvas (macro ou micro, ver
+/* Título editável, centralizado no topo do canvas (ver
    src/ui/CanvasTitle.js) — elemento HTML fora do viewport SVG que recebe
    zoom/pan, então o tamanho aqui é sempre o mesmo na tela, não escala com
    o zoom do canvas. */
@@ -584,37 +405,6 @@ select {
 .mode-btn.active {
   background: var(--accent);
   border-color: var(--accent);
-  color: var(--on-accent);
-}
-
-/* Alternância de modo de visualização (macro / micro), na barra superior */
-.view-mode-toggle {
-  display: flex;
-  gap: 4px;
-  padding: 4px;
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-}
-
-.view-mode-btn {
-  padding: 6px 14px;
-  border-radius: var(--radius-sm);
-  border: none;
-  background: transparent;
-  color: var(--text-1);
-  cursor: pointer;
-  font-size: 0.9rem;
-  font-weight: 600;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-
-.view-mode-btn:hover {
-  color: var(--text-0);
-}
-
-.view-mode-btn.active {
-  background: var(--accent);
   color: var(--on-accent);
 }
 

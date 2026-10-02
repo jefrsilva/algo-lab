@@ -1,5 +1,5 @@
 /**
- * Título editável centralizado no topo de um canvas (macro ou micro) —
+ * Título editável centralizado no topo do canvas —
  * elemento HTML solto por cima do SVG (não dentro do `viewport` que recebe
  * pan/zoom), então o tamanho na tela fica sempre fixo, não escala junto com
  * o zoom do canvas. Clicar entra em edição inline (vira um `<input>`); Enter

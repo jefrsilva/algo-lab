@@ -16,165 +16,6 @@
   fill: var(--grid-dot);
 }
 
-/* ---- frames ---- */
-
-.frame-rect {
-  fill: color-mix(in srgb, var(--bg-2) 55%, transparent);
-  stroke: var(--border-strong);
-  stroke-width: 1.5;
-  transition: stroke 0.2s ease, fill 0.2s ease;
-}
-
-.frame-header {
-  fill: var(--node-header);
-  stroke: none;
-}
-
-.frame.selected .frame-rect {
-  stroke: var(--sel);
-  stroke-width: 2.5;
-}
-
-.frame.selected .frame-header {
-  fill: color-mix(in srgb, var(--sel) 16%, transparent);
-}
-
-.frame-label {
-  fill: var(--text-1);
-  font-family: var(--font-mono);
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  pointer-events: none;
-  user-select: none;
-}
-
-.frame.selected .frame-label {
-  fill: var(--sel);
-}
-
-/* Frames "aux" (fila/pilha/visitados do modo Executar do macro) — mesma
-   geometria de um frame comum, mas tracejado e sem interação, pra ficar
-   claro que é uma leitura derivada do passo atual, não algo editável. */
-.frame.frame-aux .frame-rect {
-  stroke-dasharray: 6 5;
-  fill: color-mix(in srgb, var(--bg-2) 35%, transparent);
-}
-
-.frame.frame-aux .frame-header {
-  fill: color-mix(in srgb, var(--node-header) 55%, transparent);
-}
-
-.frame.drop-valid .frame-rect {
-  stroke: var(--sel);
-  stroke-width: 2.5;
-  fill: color-mix(in srgb, var(--sel) 14%, transparent);
-}
-
-.frame.drop-invalid .frame-rect {
-  stroke: var(--danger);
-  stroke-width: 2.5;
-  fill: color-mix(in srgb, var(--danger) 12%, transparent);
-}
-
-.frame-close-circle {
-  fill: transparent;
-  stroke: var(--text-2);
-  stroke-width: 1.4;
-  transition: fill 0.15s ease, stroke 0.15s ease;
-}
-
-.frame-close-x {
-  fill: var(--text-2);
-  font-size: 13px;
-  font-family: var(--font-sans);
-  pointer-events: none;
-  user-select: none;
-}
-
-.frame-close:hover .frame-close-circle {
-  fill: color-mix(in srgb, var(--danger) 18%, transparent);
-  stroke: var(--danger);
-}
-
-/* ---- nós ---- */
-
-.node {
-  cursor: grab;
-  will-change: transform;
-}
-
-.node.dragging {
-  cursor: grabbing;
-}
-
-.node:not(.dragging) {
-  transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.no-enter-transition,
-.no-enter-transition * {
-  transition: none !important;
-}
-
-.node-circle {
-  fill: var(--node-fill);
-  stroke: var(--node-stroke);
-  stroke-width: 2;
-  transition: fill 0.3s ease, stroke 0.3s ease, filter 0.3s ease;
-}
-
-.node.free .node-circle {
-  fill: var(--bg-2);
-  stroke: var(--accent);
-  stroke-dasharray: 4 3;
-}
-
-.node.dragging .node-circle {
-  filter: drop-shadow(0 6px 14px var(--shadow-color));
-  stroke: var(--sel);
-}
-
-.node-label {
-  fill: var(--text-0);
-  font-family: var(--font-mono);
-  font-size: 16px;
-  font-weight: 700;
-  pointer-events: none;
-  user-select: none;
-}
-
-.node-top-label {
-  fill: var(--sel);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  pointer-events: none;
-  user-select: none;
-}
-
-.node.current .node-circle {
-  fill: var(--node-current);
-  stroke: var(--node-current);
-}
-
-.node.current .node-label {
-  fill: var(--on-exec);
-}
-
-.node.visited .node-circle {
-  fill: color-mix(in srgb, var(--node-visited) 18%, transparent);
-  stroke: var(--node-visited);
-}
-
-.node.in-aux .node-circle {
-  stroke: var(--node-aux);
-  stroke-width: 3.5;
-}
-
 /* ---- arestas ---- */
 
 .edge-line {
@@ -183,11 +24,6 @@
   transition: x1 0.5s cubic-bezier(0.22, 1, 0.36, 1), y1 0.5s cubic-bezier(0.22, 1, 0.36, 1),
     x2 0.5s cubic-bezier(0.22, 1, 0.36, 1), y2 0.5s cubic-bezier(0.22, 1, 0.36, 1),
     stroke 0.3s ease, stroke-width 0.3s ease;
-}
-
-.edge.active .edge-line {
-  stroke: var(--edge-active);
-  stroke-width: 3;
 }
 
 .arrowhead-path {
@@ -203,50 +39,6 @@
   stroke-width: 2.5;
   stroke-dasharray: 6 4;
   pointer-events: none;
-}
-
-/* ---- destaque (pulso de um único clique) ---- */
-
-@keyframes flash-node {
-  0% {
-    stroke: var(--node-stroke);
-    stroke-width: 2;
-    filter: none;
-  }
-  30% {
-    stroke: var(--exec);
-    stroke-width: 6;
-    filter: none;
-  }
-  100% {
-    stroke: var(--node-stroke);
-    stroke-width: 2;
-    filter: none;
-  }
-}
-
-.node.flash .node-circle {
-  animation: flash-node 0.8s ease-out;
-}
-
-@keyframes flash-frame {
-  0% {
-    stroke: var(--border);
-    filter: none;
-  }
-  30% {
-    stroke: var(--exec);
-    stroke-width: 4;
-    filter: none;
-  }
-  100% {
-    stroke: var(--border);
-    filter: none;
-  }
-}
-
-.frame.flash .frame-rect {
-  animation: flash-frame 0.8s ease-out;
 }
 
 /* ---- modo micro: contorno de destaque ("halo") ----
@@ -295,18 +87,6 @@
 
 .select-flash > .node-halo {
   animation: micro-select-pulse 0.6s ease-out;
-}
-
-/* ---- cursores por modo de interação ---- */
-
-.canvas-container[data-mode='highlight'] .node,
-.canvas-container[data-mode='highlight'] .frame-rect,
-.canvas-container[data-mode='highlight'] .frame-header {
-  cursor: pointer;
-}
-
-.canvas-container[data-mode='connect'] .node {
-  cursor: crosshair;
 }
 
 /* ---- modo micro: nós de estrutura (prev | data | next) ---- */

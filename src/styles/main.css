@@ -101,44 +101,11 @@ svg text {
   flex-direction: column;
 }
 
-.topbar {
-  padding: 14px 24px;
-  border-bottom: 1px solid var(--border);
-  background: linear-gradient(180deg, var(--bg-1), var(--bg-0));
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.topbar h1 {
-  margin: 0;
-  font-size: 1.25rem;
-  letter-spacing: 0.01em;
-}
-
-.subtitle {
-  margin: 2px 0 0;
-  color: var(--text-1);
-  font-size: 0.9rem;
-}
-
-/* 2 colunas (sidebar | canvas-area) — não existe mais uma 3ª coluna de
-   painel de info: o macro roda por código, com o editor sempre visível
-   dentro de `.canvas-area` (ver `.macro-row`/`.macro-code-area`), mesmo
-   espírito do modo micro (`.micro-split`). */
 .main-grid {
   flex: 1;
   display: grid;
-  grid-template-columns: 260px 1fr;
+  grid-template-columns: 1fr;
   min-height: 0;
-}
-
-.sidebar {
-  overflow-y: auto;
-  padding: 16px;
-  background: var(--bg-1);
-  border-right: 1px solid var(--border);
 }
 
 .canvas-area {
@@ -156,42 +123,6 @@ svg text {
 
 .canvas-container[hidden] {
   display: none;
-}
-
-.app-shell[data-view-mode='micro'] .sidebar,
-.app-shell[data-view-mode='micro'] .playback-bar,
-.app-shell[data-view-mode='micro'] .macro-row {
-  display: none;
-}
-
-.app-shell[data-view-mode='micro'] .main-grid {
-  grid-template-columns: 1fr;
-}
-
-.playback-bar {
-  border-top: 1px solid var(--border);
-  background: var(--bg-1);
-  padding: 10px 16px;
-}
-
-.panel-block {
-  margin-bottom: 22px;
-}
-
-.panel-block h2 {
-  font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-2);
-  margin: 0 0 10px;
-}
-
-.info-panel h3 {
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-2);
-  margin: 16px 0 8px;
 }
 
 .muted-text {

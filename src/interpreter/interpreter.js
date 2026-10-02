@@ -2,8 +2,7 @@ import { evaluate, assign, assignChain, truthy, iterableItems, loopValues, NoneV
 
 /**
  * Interpreta um PROGRAMA (lista de statements produzida por blockParser.js)
- * contra um Environment, no mesmo espírito das generator functions
- * `bfs`/`dfs` de src/algorithms/traversal.js: cada `yield` é um "passo" da
+ * contra um Environment, como uma generator function: cada `yield` é um "passo" da
  * execução (`{ line, kind, activeFrameId, callTree }`), materializável numa
  * lista pra reprodução (play/pause/step) — ver MicroProgramRunner.js, que
  * também tira um snapshot do modelo depois de cada passo.
@@ -95,11 +94,9 @@ export function* runProgram(program, functions, env) {
   /** Resolve o "in <iterável>" de um "for". Um `Name` direto continua tendo
    * o atalho de sempre (array já vivo no modelo, via `env.iterateArray` —
    * preserva o comportamento hoje usado pelo cursor de leitura do modo
-   * micro). Qualquer OUTRA expressão (ex: "atual.vizinhos") é avaliada
-   * normalmente por `evaluate` e iterada conforme o `kind` do resultado:
-   * `range` (de "range(...)", vira uma sequência de escalares) ou `reflist`
-   * (de um `getAttr` tipo "nó.vizinhos", vira uma sequência de `StructRef` —
-   * ver evaluator.js). Qualquer outro `kind` (ou expressão que não resolve)
+   * micro). Qualquer OUTRA expressão (ex: "range(n)") é avaliada
+   * normalmente por `evaluate` e iterada conforme o `kind` do resultado (ver
+   * evaluator.js#iterableItems). Qualquer outro `kind` (ou expressão que não resolve)
    * devolve `undefined`, e o "for" é ignorado — mesmo critério de "ignora a
    * linha silenciosamente" que a ferramenta já usava. */
   function resolveIterable(iterExpr) {
@@ -110,7 +107,7 @@ export function* runProgram(program, functions, env) {
       const arrayItems = env.iterateArray ? env.iterateArray(iterExpr.name) : undefined;
       if (arrayItems !== undefined) return arrayItems;
     }
-    // qualquer outro iterável (range, "nó.vizinhos", enumerate, dict,
+    // qualquer outro iterável (range, enumerate, dict,
     // "d[chave]", linha de matriz "m[i]"...) — mesma função usada pela list
     // comprehension (ver evaluator.js#iterableItems).
     return iterableItems(evaluate(iterExpr, env), env);

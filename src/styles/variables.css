@@ -32,13 +32,11 @@
   --success: #4ade80;
   --warning: #fbbf24;
   --danger: #f87171;
-  --on-danger: #200606;
 
   --sel: #8fd3ff;
   --on-sel: #04121f;
   --target: #4ade80;
   --exec: #ffb547;
-  --on-exec: #1b1200;
   --cursor: #c4a5ff;
 
   --node-fill: #1e2a44;
@@ -51,12 +49,8 @@
   --cell-selected-fill: color-mix(in srgb, var(--sel) 22%, var(--cell-fill));
   --node-linked-fill: color-mix(in srgb, var(--target) 16%, var(--node-fill));
   --cell-fill: #172036;
-  --node-current: var(--exec);
-  --node-visited: var(--target);
-  --node-aux: var(--sel);
 
   --edge-color: #98a8c8;
-  --edge-active: var(--exec);
   --grid-dot: #1c2436;
 
   --tok-keyword: #d2a8ff;
@@ -97,13 +91,11 @@
   --success: #15803d;
   --warning: #b45309;
   --danger: #dc2626;
-  --on-danger: #ffffff;
 
   --sel: #1668d4;
   --on-sel: #ffffff;
   --target: #16a34a;
   --exec: #c27400;
-  --on-exec: #1b1200;
   --cursor: #7c3aed;
 
   --node-fill: #ffffff;

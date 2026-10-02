@@ -1,0 +1,10 @@
+# Cabeçalhos HTTP do Cloudflare Pages (copiado pro dist/ pelo Vite).
+# Arquivos de /assets/ têm hash no nome (gerado pelo build), então nunca
+# mudam: o navegador pode guardá-los por 1 ano. O index.html fica com o
+# padrão do Pages (sempre revalidado), pra uma versão nova aparecer na hora.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin

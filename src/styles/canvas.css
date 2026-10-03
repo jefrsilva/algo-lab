@@ -768,11 +768,21 @@
   cursor: crosshair;
 }
 
-/* ---- modo micro: ferramenta "Ligar nós de grafo" (5/L, ou Shift + arraste num nó de grafo) ---- */
+/* ---- modo micro: ferramenta "Ligar nós" (5/L, ou Shift + arraste num nó) ---- */
 
-/* nó de grafo é onde o arraste começa: mira em cima dele, cursor normal no resto */
-.micro-container[data-mode='link'] .struct-node-graph {
+/* o nó é onde a ligação começa (e termina): mira em cima dele, cursor normal no resto */
+.micro-container[data-mode='link'] .struct-node {
   cursor: crosshair;
+}
+
+/* campo de origem da ligação: a metade do nó sob o mouse (prev/left à
+   esquerda, next/right à direita — "neighbors" num nó de grafo) ou o da
+   ligação em andamento (Tab alterna), ver MicroCanvasView#_renderLinkSource */
+.link-source-shape {
+  fill: color-mix(in srgb, var(--sel) 30%, transparent);
+  stroke: var(--sel);
+  stroke-width: 2;
+  pointer-events: none;
 }
 
 /* seta de rascunho sem um nó de grafo válido sob o mouse (soltar ali não liga nada) */

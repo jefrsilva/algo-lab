@@ -91,7 +91,7 @@ export class MicroModel {
   }
 
   /** Liga/desliga a aresta DIRECIONADA `fromId` → `toId` de um struct
-   * 'graph' (ferramenta "Ligar nós de grafo", ver App#_finishMicroGraphLink):
+   * 'graph' (ferramenta "Ligar nós", ver App#_applyMicroLink):
    * se `toId` ainda não é vizinho, entra no FIM da lista de vizinhos
    * ("nó.neighbors.append(alvo)"); se já é, TODAS as ocorrências saem (a
    * seta some de vez, mesmo com o alvo repetido por código). Nunca mexe na

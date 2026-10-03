@@ -723,6 +723,44 @@
   user-select: none;
 }
 
+/* leitura do gráfico com Shift + mouse (ver chartReadout em
+   MicroCanvasView.js): guia tracejada, ponto na curva, n sob o eixo n e f(n)
+   ao lado do ponto — na cor da curva (fill/stroke vêm do render). O contorno
+   no fundo do gráfico (paint-order) separa os textos dos traços/limites dos
+   eixos que ficam por baixo. */
+.chart-readout {
+  pointer-events: none;
+}
+
+.chart-readout-guide {
+  stroke-width: 1.2;
+  stroke-dasharray: 3 3;
+  opacity: 0.7;
+}
+
+.chart-readout-dot {
+  stroke: var(--bg-1);
+  stroke-width: 2;
+}
+
+.chart-readout-n,
+.chart-readout-value {
+  font-family: var(--font-mono);
+  font-size: 13px; /* = CHART_READOUT_FONT (MicroCanvasView.js) — um pouco maior que .chart-axis-label */
+  font-weight: 800;
+  dominant-baseline: middle;
+  paint-order: stroke;
+  stroke: var(--bg-1);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+  user-select: none;
+}
+
+.chart-readout-n {
+  fill: var(--text-0);
+  text-anchor: middle;
+}
+
 .micro-container[data-mode='chart'] .micro-canvas,
 .micro-container[data-mode='chart'] .chart-node {
   cursor: crosshair;

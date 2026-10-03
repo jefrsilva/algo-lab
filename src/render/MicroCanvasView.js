@@ -199,6 +199,7 @@ export const CHART_MIN_W = CHART_PAD.left + CHART_PAD.right + 80;
 export const CHART_MIN_H = CHART_PAD.top + CHART_PAD.bottom + 60;
 const CHART_AXIS_FONT = 12; // = .chart-axis-label (canvas.css)
 const CHART_CURVE_FONT = 11; // = .chart-curve-label (canvas.css), fonte mono
+const CHART_READOUT_FONT = 13; // = .chart-readout-n/.chart-readout-value (canvas.css)
 const MONO_CHAR_W = 0.6; // largura de um caractere mono, em fração do tamanho da fonte
 
 /** Largura estimada de um texto (sem medir o DOM, mesmo critério de `labelSize`). */
@@ -309,6 +310,11 @@ export function chartLayout(chart) {
   const yCenter = { x: 16, y: plot.y + plot.h / 2 };
   return {
     plot,
+    nMax,
+    yMax,
+    // escalas n -> x e f(n) -> y (locais), as mesmas das curvas — ver chartReadout
+    px,
+    py,
     curves,
     labels,
     // limites dos eixos: n máximo sob a ponta do eixo n, valor máximo à
@@ -321,6 +327,62 @@ export function chartLayout(chart) {
     xAxis: { center: xCenter, rect: { x: xCenter.x - xW / 2, y: xCenter.y - 10, width: xW, height: 20 } },
     // título do eixo y é girado 90° — o retângulo de hit-test é o girado
     yAxis: { center: yCenter, rect: { x: yCenter.x - 10, y: yCenter.y - yW / 2, width: 20, height: yW } },
+  };
+}
+
+/** Leitura de um gráfico sob o cursor (Shift + mouse parado sobre ele, ver
+ * App#_updateMicroChartReadout): `localPt` em coordenadas LOCAIS do gráfico
+ * é projetado no eixo n e arredondado pro inteiro mais próximo (em
+ * [0, floor(nMax)]); entre as funções marcadas, vale a de menor distância
+ * VERTICAL (na tela) entre o cursor e f(n) — ignorando as que já saíram pelo
+ * topo (f(n) > yMax) e as que ainda não começaram (n < `from`, ex. log n em
+ * n = 0). Devolve null fora da área de plotagem ou sem curva válida; senão
+ * { n, value, fnId, color, x, y }, com x/y (locais) do ponto na curva. */
+export function chartReadout(chart, localPt) {
+  const { plot, nMax, yMax, px, py } = chartLayout(chart);
+  if (localPt.x < plot.x || localPt.x > plot.x + plot.w || localPt.y < plot.y || localPt.y > plot.y + plot.h) {
+    return null;
+  }
+  const n = Math.min(Math.floor(nMax), Math.max(0, Math.round(((localPt.x - plot.x) / plot.w) * nMax)));
+  let best = null;
+  CHART_FUNCTIONS.forEach((fn) => {
+    if (!(chart.functions || []).includes(fn.id) || n < fn.from) return;
+    const value = fn.f(n);
+    if (!Number.isFinite(value) || value > yMax * (1 + 1e-9)) return;
+    const y = py(value);
+    const dist = Math.abs(y - localPt.y);
+    if (!best || dist < best.dist) best = { n, value, fnId: fn.id, color: fn.color, x: px(n), y, dist };
+  });
+  if (!best) return null;
+  const { dist, ...readout } = best;
+  return readout;
+}
+
+/** Posição dos textos da leitura (ver chartReadout) dentro do gráfico: n
+ * logo acima do eixo n, sob o ponto (abaixo dele ficam os limites e o título
+ * do eixo); f(n) ao lado do ponto (à direita e
+ * acima; à esquerda perto da borda direita, abaixo perto do topo), sempre
+ * dentro do retângulo do gráfico. */
+export function chartReadoutLabels(chart, readout) {
+  const { plot } = chartLayout(chart);
+  const nText = formatChartNumber(readout.n);
+  const vText = formatChartNumber(readout.value);
+  const nW = chartTextWidth(nText, CHART_READOUT_FONT);
+  const vW = chartTextWidth(vText, CHART_READOUT_FONT);
+  const nx = Math.min(chart.width - 4 - nW / 2, Math.max(4 + nW / 2, readout.x));
+  const right = readout.x + 8 + vW <= chart.width - 4;
+  const vx = right ? readout.x + 8 : Math.max(4 + vW, readout.x - 8);
+  const above = readout.y - 10 >= CHART_READOUT_FONT / 2 + 2;
+  let vy = above ? readout.y - 10 : Math.min(chart.height - CHART_READOUT_FONT, readout.y + 14);
+  const ny = plot.y + plot.h - 10;
+  // ponto rente ao eixo n (ex. f(0) = 0): f(n) sobe pra não cobrir o n
+  const vLeft = right ? vx : vx - vW;
+  const overlapX = vLeft < nx + nW / 2 && vLeft + vW > nx - nW / 2;
+  if (overlapX && Math.abs(vy - ny) < CHART_READOUT_FONT + 3) vy = ny - CHART_READOUT_FONT - 3;
+  return {
+    n: { text: nText, x: nx, y: ny },
+    value: { text: vText, x: vx, y: vy, anchor: right ? 'start' : 'end' },
+    guide: { x: readout.x, y1: plot.y + plot.h, y2: readout.y },
   };
 }
 
@@ -1340,6 +1402,13 @@ export class MicroCanvasView {
           label.textContent = fn.label;
           el.appendChild(label);
         });
+        // leitura do Shift + mouse (ver chartReadout): criada uma vez, escondida sem leitura
+        const readout = svgEl('g', { class: 'chart-readout', display: 'none' });
+        readout.appendChild(svgEl('line', { class: 'chart-readout-guide' }));
+        readout.appendChild(svgEl('circle', { class: 'chart-readout-dot', r: 4.5 }));
+        readout.appendChild(svgEl('text', { class: 'chart-readout-n' }));
+        readout.appendChild(svgEl('text', { class: 'chart-readout-value' }));
+        el.appendChild(readout);
         el.appendChild(svgEl('rect', { class: 'chart-outline', rx: 10, ry: 10 }));
         this.chartsLayer.appendChild(el);
         this.chartEls.set(node.id, el);
@@ -1405,6 +1474,33 @@ export class MicroCanvasView {
         text.setAttribute('y', l.y);
         text.setAttribute('text-anchor', l.anchor);
       });
+
+      const readoutEl = el.querySelector('.chart-readout');
+      readoutEl.setAttribute('display', node.readout ? 'inline' : 'none');
+      if (node.readout) {
+        const r = node.readout;
+        const pos = chartReadoutLabels(node, r);
+        const guide = readoutEl.querySelector('.chart-readout-guide');
+        guide.setAttribute('x1', pos.guide.x);
+        guide.setAttribute('x2', pos.guide.x);
+        guide.setAttribute('y1', pos.guide.y1);
+        guide.setAttribute('y2', pos.guide.y2);
+        guide.setAttribute('stroke', r.color);
+        const dot = readoutEl.querySelector('.chart-readout-dot');
+        dot.setAttribute('cx', r.x);
+        dot.setAttribute('cy', r.y);
+        dot.setAttribute('fill', r.color);
+        const nText = readoutEl.querySelector('.chart-readout-n');
+        nText.setAttribute('x', pos.n.x);
+        nText.setAttribute('y', pos.n.y);
+        nText.textContent = pos.n.text;
+        const vText = readoutEl.querySelector('.chart-readout-value');
+        vText.setAttribute('x', pos.value.x);
+        vText.setAttribute('y', pos.value.y);
+        vText.setAttribute('text-anchor', pos.value.anchor);
+        vText.setAttribute('fill', r.color);
+        vText.textContent = pos.value.text;
+      }
     });
   }
 

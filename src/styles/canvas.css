@@ -764,7 +764,8 @@
 
 
 /* janela deslizante ("new sliding window", ver MicroCanvasView#_renderWindowBrackets):
-   colchete sob as posições entre os dois cursores — na cor dos cursores de
+   colchete sob as posições entre os dois cursores (ou em cima, se a seta de
+   um deles chegar por baixo — ver _windowBracketSide) — na cor dos cursores de
    leitura, que são quem delimita a janela; mais grosso com um deles selecionado */
 .window-bracket {
   fill: none;

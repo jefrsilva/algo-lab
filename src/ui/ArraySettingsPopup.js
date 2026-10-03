@@ -2,8 +2,9 @@ import { fitPopupInContainer } from './fitPopup.js';
 
 /**
  * Popup HTML flutuante com as configurações de um array, dict OU matriz:
- * nome, tamanho (só array — dict cresce por inserção de chave, não tem
- * tamanho fixo pra editar, ver `showSize`; matriz tem DOIS tamanhos,
+ * nome, tamanho (só array comum ou deque — dict cresce por inserção de
+ * chave e set por `add`, nenhum dos dois tem tamanho pra editar, ver
+ * `showSize`; o deque com `maxlen` limita o `maxSize`; matriz tem DOIS tamanhos,
  * linhas e colunas, ver `sizeFields`) e orientação (não se aplica à
  * matriz, ver `showOrientation`), além da ação de remover. Aberto pelo
  * botão direito no ponteiro-rótulo (modo micro).

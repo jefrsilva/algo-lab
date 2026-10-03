@@ -492,3 +492,60 @@ describe('pan com a barra de espaço', () => {
     expect(app.microViewport).toMatchObject({ tx, ty });
   });
 });
+
+describe('popup de configurações da lista (botão direito no rótulo)', () => {
+  const svg = () => $('.micro-canvas');
+  const popup = () => $('.array-settings-popup');
+  const campo = (rotulo) =>
+    [...popup().querySelectorAll('.array-settings-row')].find((r) => r.querySelector('label')?.textContent === rotulo)?.querySelector('input');
+
+  /** Cria a coleção no Sandbox (Ctrl+Enter em cada linha) e devolve o array. */
+  function criarNoSandbox(...codigo) {
+    escreverCodigo(linhas(...codigo));
+    codigo.forEach((_, i) => ctrlEnterNaLinha(i));
+    return [...app.micro.arrays.values()].at(-1);
+  }
+  /** Botão direito no meio do ponteiro-rótulo do array (mundo = tela
+   * deslocada por tx/ty, sem layout no jsdom). */
+  function botaoDireitoNoRotulo(arr) {
+    const p = app.micro.pointers.get(arr.labelPointerId);
+    const { tx, ty } = app.microViewport;
+    svg().dispatchEvent(new MouseEvent('contextmenu', { clientX: p.x + 5 + tx, clientY: p.y + 5 + ty, button: 2, bubbles: true, cancelable: true }));
+  }
+  const salvar = () => botao('.array-settings-popup .btn', 'Salvar').click();
+
+  test('lista comum mostra o campo Tamanho e salvar redimensiona', () => {
+    const nums = criarNoSandbox('nums = [1, 2]');
+    botaoDireitoNoRotulo(nums);
+    expect(popup()).toBeTruthy();
+    expect(campo('Tamanho').value).toBe('2');
+    campo('Tamanho').value = '4';
+    salvar();
+    expect(nums.cells).toEqual([1, 2, 0, 0]);
+  });
+
+  test('set não mostra o campo Tamanho e salvar não mexe nas células', () => {
+    const s = criarNoSandbox('s = {3, 1, 2}');
+    expect(s.isSet).toBe(true);
+    const celulas = [...s.cells];
+    const tabela = s.hashTable;
+    botaoDireitoNoRotulo(s);
+    expect(popup()).toBeTruthy();
+    expect(campo('Tamanho')).toBeUndefined();
+    campo('Nome').value = 'conj';
+    salvar();
+    expect(s.name).toBe('conj');
+    expect(s.cells).toEqual(celulas);
+    expect(s.hashTable).toBe(tabela);
+  });
+
+  test('deque com maxlen limita o tamanho ao maxlen', () => {
+    const f = criarNoSandbox('from collections import deque', 'f = deque([1, 2], maxlen=3)');
+    expect(f).toMatchObject({ isDeque: true, maxlen: 3 });
+    botaoDireitoNoRotulo(f);
+    expect(campo('Tamanho').max).toBe('3');
+    campo('Tamanho').value = '10';
+    salvar();
+    expect(f.cells).toEqual([1, 2, 0]);
+  });
+});

@@ -2050,7 +2050,7 @@ export class MicroCanvasView {
   }
 
   /** Colchete sob as posições de cada janela deslizante do array
-   * (`node.windows`, `{lo, hi, selected, pointerIds}` — ver App#microWindows):
+   * (`node.windows`, `{lo, hi, selected, pointerIds, color}` — ver App#microWindows):
    * embaixo das células na horizontal, à direita delas na vertical — ou do
    * lado oposto (em cima / à esquerda, além da faixa de índices) quando a
    * seta de um dos cursores DA PRÓPRIA janela chega por baixo/pela direita e
@@ -2086,7 +2086,11 @@ export class MicroCanvasView {
             ? `M ${a.x + inset} ${layout.height + off} v ${D} H ${b.x + b.w - inset} v ${-D}`
             : `M ${a.x + inset} ${-off} v ${-D} H ${b.x + b.w - inset} v ${D}`;
       }
-      g.appendChild(svgEl('path', { class: `window-bracket${w.selected ? ' selected' : ''}`, d }));
+      const path = svgEl('path', { class: `window-bracket${w.selected ? ' selected' : ''}`, d });
+      // cor da janela = cor dos dois cursores (ver App#_microEffectiveColors);
+      // sem ela, o --cursor padrão do CSS
+      if (w.color) path.style.stroke = w.color;
+      g.appendChild(path);
     });
     el.appendChild(g);
   }

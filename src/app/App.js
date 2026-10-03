@@ -169,8 +169,12 @@ export class App {
     // células do array entre os dois acendem. Também fora do MicroModel, e
     // por CHAVE estável do cursor (ver `_microPointerWindowKey`), não por id:
     // vale em qualquer passo da reprodução, numa nova execução (que recria
-    // os cursores com outros ids) e no projeto salvo.
-    this.microWindows = []; // {a: chave, b: chave}
+    // os cursores com outros ids) e no projeto salvo. A cor da janela
+    // (`color`, cor CSS ou null = a padrão do tema) é a cor ÚNICA dos dois
+    // cursores e do colchete — guardada aqui, e não em `microColors` (por
+    // id), pra sobreviver às mesmas coisas que a janela (ver
+    // `_microEffectiveColors`).
+    this.microWindows = []; // {a: chave, b: chave, color: cor CSS | null}
     this.microAreaColor = AREA_COLORS[0]; // cor atual (Alt+1…Alt+0)
     this.microLabelColor = LABEL_DEFAULT_COLOR; // cor das próximas labels (Alt+1…Alt+0 no modo Texto)
     this._microEditingLabelId = null; // label em edição in place (texto some por baixo do editor)
@@ -718,7 +722,11 @@ export class App {
         hadLabel = true;
       }
       if (this._isMicroModelElement(id)) {
-        if (elementColor) this.microColors.set(id, elementColor);
+        // cursor de uma janela deslizante: a cor é da janela (os dois
+        // cursores e o colchete mudam juntos), não do id
+        const win = this._microPointerWindow(this.micro.pointers.get(id));
+        if (win) win.color = elementColor;
+        else if (elementColor) this.microColors.set(id, elementColor);
         else this.microColors.delete(id);
       }
     });
@@ -732,6 +740,22 @@ export class App {
   _isMicroModelElement(id) {
     const m = this.micro;
     return m.structs.has(id) || m.pointers.has(id) || m.arrays.has(id) || m.dicts.has(id) || m.matrices.has(id) || m.variables.has(id);
+  }
+
+  /** Cores manuais por id que o canvas desenha: `microColors`, com a cor da
+   * janela deslizante (ver `microWindows`) por cima da de cada cursor que
+   * está numa — os dois cursores da janela sempre na mesma cor do colchete
+   * (sem cor na janela, os dois na cor padrão do tema). */
+  _microEffectiveColors() {
+    if (!this.microWindows.length) return this.microColors;
+    const colors = new Map(this.microColors);
+    this.micro.pointers.forEach((p) => {
+      const win = this._microPointerWindow(p);
+      if (!win) return;
+      if (win.color) colors.set(p.id, win.color);
+      else colors.delete(p.id);
+    });
+    return colors;
   }
 
   /** A label selecionada, quando a seleção inteira é exatamente UMA label. */
@@ -1007,7 +1031,8 @@ export class App {
     });
     this.microWindows = (Array.isArray(project.windows) ? project.windows : [])
       .filter((w) => w && typeof w.a === 'string' && typeof w.b === 'string')
-      .map((w) => ({ a: w.a, b: w.b }));
+      // `color` ausente em projetos de antes da cor da janela: cor padrão
+      .map((w) => ({ a: w.a, b: w.b, color: typeof w.color === 'string' ? w.color : null }));
     this.microColors = new Map(
       Array.isArray(project.colors) ? project.colors.filter((e) => Array.isArray(e) && typeof e[1] === 'string') : [],
     );
@@ -2378,12 +2403,18 @@ export class App {
     return p.readCursorKey ? `cursor:${scope}:${p.readCursorKey}` : `pointer:${scope}:${p.label}`;
   }
 
-  /** O outro cursor da janela deslizante de `p` (no mesmo frame), ou null. */
-  _microWindowPartner(p) {
+  /** A janela deslizante (`microWindows`) de que `p` faz parte, ou null. */
+  _microPointerWindow(p) {
     if (!p) return null;
     const key = this._microPointerWindowKey(p);
-    const win = this.microWindows.find((w) => w.a === key || w.b === key);
+    return this.microWindows.find((w) => w.a === key || w.b === key) ?? null;
+  }
+
+  /** O outro cursor da janela deslizante de `p` (no mesmo frame), ou null. */
+  _microWindowPartner(p) {
+    const win = this._microPointerWindow(p);
     if (!win) return null;
+    const key = this._microPointerWindowKey(p);
     const otherKey = win.a === key ? win.b : win.a;
     for (const q of this.micro.pointers.values()) {
       if (q.id !== p.id && q.frameId === p.frameId && this._microPointerWindowKey(q) === otherKey) return q;
@@ -2411,16 +2442,32 @@ export class App {
   _quickNewSlidingWindow([p, q]) {
     const a = this._microPointerWindowKey(p);
     const b = this._microPointerWindowKey(q);
+    // cor única dos dois cursores e do colchete: a cor de um deles, se já
+    // tiver (a da janela antiga ou a manual), senão uma da paleta que
+    // nenhuma outra janela usa — janelas diferentes ficam distinguíveis
+    const own = (x) => this._microPointerWindow(x)?.color ?? this.microColors.get(x.id) ?? null;
     this.microWindows = this.microWindows.filter((w) => ![a, b].includes(w.a) && ![a, b].includes(w.b));
-    this.microWindows.push({ a, b });
+    const used = new Set(this.microWindows.map((w) => w.color));
+    const palette = ELEMENT_COLORS.filter(Boolean);
+    const color =
+      own(p) ?? own(q) ?? palette.find((c) => !used.has(c)) ?? palette[this.microWindows.length % palette.length];
+    this.microColors.delete(p.id);
+    this.microColors.delete(q.id);
+    this.microWindows.push({ a, b, color });
     this.microSelectedIds = new Set([p.id, q.id]);
     this.microSelectedId = p.id;
     this._syncCodeEditorSelection('pointer', p.id);
     this._renderMicroOnly();
   }
 
-  /** "remove sliding window": desfaz a janela de cada cursor selecionado. */
+  /** "remove sliding window": desfaz a janela de cada cursor selecionado —
+   * os dois cursores continuam com a cor que a janela tinha. */
   _quickRemoveSlidingWindow(pointers) {
+    pointers.forEach((p) => {
+      const color = this._microPointerWindow(p)?.color;
+      if (!color) return;
+      [p, this._microWindowPartner(p)].forEach((x) => x && this.microColors.set(x.id, color));
+    });
     const keys = pointers.map((p) => this._microPointerWindowKey(p));
     this.microWindows = this.microWindows.filter((w) => !keys.includes(w.a) && !keys.includes(w.b));
     this._renderMicroOnly();
@@ -3945,7 +3992,7 @@ export class App {
     // janelas deslizantes (ver `microWindows`): um colchete sob as posições
     // entre os dois cursores, SEMPRE visível (não só com o cursor
     // selecionado, ao contrário do destaque das células) — arrayId ->
-    // [{lo, hi, selected, pointerIds}]. Só cursores desenhados agora (frame em exibição,
+    // [{lo, hi, selected, pointerIds, color}]. Só cursores desenhados agora (frame em exibição,
     // não ocultos); cada par conta uma vez.
     const windowBrackets = new Map();
     const seenWindowPairs = new Set();
@@ -3962,6 +4009,7 @@ export class App {
         lo: range.indexes[0],
         hi: range.indexes[range.indexes.length - 1],
         selected: this._isMicroHighlighted(p.id) || this._isMicroHighlighted(partner.id),
+        color: this._microPointerWindow(p)?.color ?? null,
         // as setas desses dois cursores decidem de que lado do array o
         // colchete fica (ver MicroCanvasView#_windowBracketSide)
         pointerIds: [p.id, partner.id],
@@ -4458,7 +4506,7 @@ export class App {
       selectionRect: this._microSelectionPreview,
       simplifiedNodes: this.microSimplifiedNodes,
       fullNames: this.microFullNames,
-      colors: this.microColors,
+      colors: this._microEffectiveColors(),
     });
     this.callTree.render({ nodes: activeStep?.callTree, activeFrameId });
 

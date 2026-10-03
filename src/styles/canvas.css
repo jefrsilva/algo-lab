@@ -765,8 +765,10 @@
 
 /* janela deslizante ("new sliding window", ver MicroCanvasView#_renderWindowBrackets):
    colchete sob as posições entre os dois cursores (ou em cima, se a seta de
-   um deles chegar por baixo — ver _windowBracketSide) — na cor dos cursores de
-   leitura, que são quem delimita a janela; mais grosso com um deles selecionado */
+   um deles chegar por baixo — ver _windowBracketSide) — na cor dos cursores
+   que delimitam a janela: a cor da janela (stroke inline, ver
+   App#_microEffectiveColors) ou, sem ela, a cor padrão dos cursores de
+   leitura; mais grosso com um deles selecionado */
 .window-bracket {
   fill: none;
   stroke: var(--cursor);

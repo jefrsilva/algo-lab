@@ -1141,7 +1141,7 @@ export class MicroCanvasView {
     this._renderAreas(areas);
     this._renderCharts(charts);
     this._renderAreaHandles(areaHandles);
-    this._renderArrays(arrays);
+    this._renderArrays(arrays, edges);
     this._renderDicts(dicts);
     this._renderMatrices(matrices);
     this._renderStructs(structs, simplifiedNodes);
@@ -2012,7 +2012,13 @@ export class MicroCanvasView {
     });
   }
 
-  _renderArrays(arrays) {
+  _renderArrays(arrays, edges = []) {
+    // seta de cada ponteiro por id — `_renderWindowBrackets` olha por onde as
+    // setas dos cursores de uma janela chegam no array
+    const pointerEdges = new Map();
+    edges.forEach((e) => {
+      if (e.targetKind === 'arrayCell' && e.sourceKey?.startsWith('pointer:')) pointerEdges.set(e.sourceKey.slice('pointer:'.length), e);
+    });
     const ids = new Set(arrays.map((n) => n.id));
     for (const [id, el] of this.arrayEls) {
       if (!ids.has(id)) {
@@ -2039,34 +2045,73 @@ export class MicroCanvasView {
       el.querySelectorAll('.array-cell').forEach((cellEl, i) => {
         cellEl.classList.toggle('array-cell-target', !!node.targetCellIndexes?.has(i));
       });
-      this._renderWindowBrackets(el, node);
+      this._renderWindowBrackets(el, node, pointerEdges);
     });
   }
 
   /** Colchete sob as posições de cada janela deslizante do array
-   * (`node.windows`, `{lo, hi, selected}` — ver App#microWindows): embaixo
-   * das células na horizontal, à direita delas na vertical. Também fora do
+   * (`node.windows`, `{lo, hi, selected, pointerIds}` — ver App#microWindows):
+   * embaixo das células na horizontal, à direita delas na vertical — ou do
+   * lado oposto (em cima / à esquerda, além da faixa de índices) quando a
+   * seta de um dos cursores DA PRÓPRIA janela chega por baixo/pela direita e
+   * passaria por cima do colchete (ver `_windowBracketSide`). Também fora do
    * cache de `_buildArrayContent` — a janela anda a cada passo, as células
    * nem sempre mudam. Mais de uma janela no mesmo array: colchetes
-   * empilhados, um por nível. */
-  _renderWindowBrackets(el, node) {
+   * empilhados, um por nível em cada lado. */
+  _renderWindowBrackets(el, node, pointerEdges = new Map()) {
     el.querySelector('.window-brackets')?.remove();
     if (!node.windows?.length || node.isSet) return;
     const layout = arrayLayout(node);
+    const vertical = node.orientation === 'vertical';
     const g = svgEl('g', { class: 'window-brackets' });
-    node.windows.forEach((w, level) => {
+    const levels = { default: 0, flipped: 0 };
+    node.windows.forEach((w) => {
       const a = layout.cells[w.lo];
       const b = layout.cells[w.hi];
       if (!a || !b) return;
-      const off = WINDOW_BRACKET_GAP + level * WINDOW_BRACKET_STEP;
+      const side = this._windowBracketSide(node, layout, w, pointerEdges);
+      const off = WINDOW_BRACKET_GAP + levels[side] * WINDOW_BRACKET_STEP;
+      levels[side] += 1;
       const inset = 4; // colchetes de janelas vizinhas não se encostam
-      const d =
-        node.orientation === 'vertical'
-          ? `M ${layout.width + off} ${a.y + inset} h ${WINDOW_BRACKET_DEPTH} V ${b.y + b.h - inset} h ${-WINDOW_BRACKET_DEPTH}`
-          : `M ${a.x + inset} ${layout.height + off} v ${WINDOW_BRACKET_DEPTH} H ${b.x + b.w - inset} v ${-WINDOW_BRACKET_DEPTH}`;
+      const D = WINDOW_BRACKET_DEPTH;
+      let d;
+      if (vertical) {
+        d =
+          side === 'default'
+            ? `M ${layout.width + off} ${a.y + inset} h ${D} V ${b.y + b.h - inset} h ${-D}`
+            : `M ${-off} ${a.y + inset} h ${-D} V ${b.y + b.h - inset} h ${D}`;
+      } else {
+        d =
+          side === 'default'
+            ? `M ${a.x + inset} ${layout.height + off} v ${D} H ${b.x + b.w - inset} v ${-D}`
+            : `M ${a.x + inset} ${-off} v ${-D} H ${b.x + b.w - inset} v ${D}`;
+      }
       g.appendChild(svgEl('path', { class: `window-bracket${w.selected ? ' selected' : ''}`, d }));
     });
     el.appendChild(g);
+  }
+
+  /** Lado do colchete de uma janela: 'default' (embaixo / à direita) ou
+   * 'flipped' (em cima / à esquerda). Só vira quando a seta de um dos dois
+   * cursores da janela pousa no lado padrão (ver `arrayCellEdgePoint`) e
+   * nenhum pousa no lado oposto — se as duas chegam por lados opostos, o
+   * colchete sobreporia uma delas de qualquer jeito e fica onde está. Setas
+   * de outros ponteiros não contam. */
+  _windowBracketSide(node, layout, w, pointerEdges) {
+    const vertical = node.orientation === 'vertical';
+    let hitsDefault = false;
+    let hitsFlipped = false;
+    (w.pointerIds ?? []).forEach((id) => {
+      const e = pointerEdges.get(id);
+      if (!e || e.targetArrayId !== node.id || !layout.cells[e.targetIndex]) return;
+      const end = arrayCellEdgePoint(node, e.targetIndex, { x: e.x1, y: e.y1 });
+      if (vertical) {
+        if (end.x > node.x + layout.width) hitsDefault = true;
+        else if (end.x < node.x) hitsFlipped = true;
+      } else if (end.y > node.y + layout.height) hitsDefault = true;
+      else if (end.y < node.y) hitsFlipped = true;
+    });
+    return hitsDefault && !hitsFlipped ? 'flipped' : 'default';
   }
 
   /** Reconstrói o conteúdo interno (célula por célula) apenas quando algo estrutural mudou. */

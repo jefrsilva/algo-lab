@@ -3945,7 +3945,7 @@ export class App {
     // janelas deslizantes (ver `microWindows`): um colchete sob as posições
     // entre os dois cursores, SEMPRE visível (não só com o cursor
     // selecionado, ao contrário do destaque das células) — arrayId ->
-    // [{lo, hi, selected}]. Só cursores desenhados agora (frame em exibição,
+    // [{lo, hi, selected, pointerIds}]. Só cursores desenhados agora (frame em exibição,
     // não ocultos); cada par conta uma vez.
     const windowBrackets = new Map();
     const seenWindowPairs = new Set();
@@ -3962,6 +3962,9 @@ export class App {
         lo: range.indexes[0],
         hi: range.indexes[range.indexes.length - 1],
         selected: this._isMicroHighlighted(p.id) || this._isMicroHighlighted(partner.id),
+        // as setas desses dois cursores decidem de que lado do array o
+        // colchete fica (ver MicroCanvasView#_windowBracketSide)
+        pointerIds: [p.id, partner.id],
       });
     });
     const arrays = Array.from(this.micro.arrays.values())

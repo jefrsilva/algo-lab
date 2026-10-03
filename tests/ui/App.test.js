@@ -7,6 +7,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { desmontarApp, montarApp, tecla } from '../helpers/dom.js';
 import { linhas } from '../helpers/runDsl.js';
+import { chartLayout } from '../../src/render/MicroCanvasView.js';
 
 let app;
 const $ = (sel) => document.querySelector(sel);
@@ -204,6 +205,71 @@ describe('ações rápidas (Ctrl+Espaço)', () => {
     input.value = 'new pointer';
     input.dispatchEvent(new Event('input', { bubbles: true }));
     expect($('.quick-action-item.disabled')).not.toBeNull();
+  });
+});
+
+describe('gráfico Big-O: leitura com Shift + mouse', () => {
+  /** Cria um gráfico por "new chart" e o põe na origem do mundo com a curva O(n). */
+  function criarGrafico() {
+    tecla(window, ' ', { code: 'Space', ctrlKey: true });
+    const input = $('.quick-action-input');
+    input.value = 'new chart';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    tecla(input, 'Enter');
+    const chart = [...app.microCharts.values()][0];
+    Object.assign(chart, { x: 0, y: 0, functions: ['n'] });
+    return chart;
+  }
+  const svg = () => $('.micro-canvas');
+  const leitura = () => $('.chart-readout');
+  /** Mouse no ponto local (x, y) do gráfico — sem layout no jsdom, o canvas
+   * fica em (0, 0) da janela e a tela é o mundo deslocado por tx/ty. */
+  function moverLocal(x, y, opts = {}) {
+    const { tx, ty } = app.microViewport;
+    svg().dispatchEvent(new MouseEvent('pointermove', { clientX: x + tx, clientY: y + ty, bubbles: true, ...opts }));
+  }
+  /** Mouse sobre (n, f) do gráfico, com ou sem Shift. */
+  function mover(chart, n, v, opts = {}) {
+    const { px, py } = chartLayout(chart);
+    moverLocal(px(n), py(v), opts);
+  }
+
+  test('Shift + mouse sobre a plotagem mostra n, f(n) e o ponto na curva; sem Shift some', () => {
+    const chart = criarGrafico();
+    mover(chart, 5.2, 2, { shiftKey: true });
+    expect(leitura().getAttribute('display')).toBe('inline');
+    expect($('.chart-readout-n').textContent).toBe('5');
+    expect($('.chart-readout-value').textContent).toBe('5');
+    expect($('.chart-readout-dot').getAttribute('fill')).toBe('#3b82f6');
+    // estado transitório de hover: nada disso vai pro gráfico guardado
+    expect(Object.keys(chart)).not.toContain('readout');
+
+    mover(chart, 5.2, 2);
+    expect(leitura().getAttribute('display')).toBe('none');
+  });
+
+  test('apertar e soltar o Shift com o mouse parado mostra e esconde a leitura', () => {
+    const chart = criarGrafico();
+    mover(chart, 7, 7);
+    expect(leitura().getAttribute('display')).toBe('none');
+    tecla(window, 'Shift', { shiftKey: true });
+    expect(leitura().getAttribute('display')).toBe('inline');
+    expect($('.chart-readout-n').textContent).toBe('7');
+    window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Shift', bubbles: true }));
+    expect(leitura().getAttribute('display')).toBe('none');
+  });
+
+  test('não aparece com botão pressionado, fora da plotagem, e some ao sair do canvas', () => {
+    const chart = criarGrafico();
+    mover(chart, 6, 6, { shiftKey: true, buttons: 1 });
+    expect(leitura().getAttribute('display')).toBe('none');
+    const { plot } = chartLayout(chart);
+    moverLocal(plot.x - 10, plot.y + 10, { shiftKey: true });
+    expect(leitura().getAttribute('display')).toBe('none');
+    mover(chart, 6, 6, { shiftKey: true });
+    expect(leitura().getAttribute('display')).toBe('inline');
+    svg().dispatchEvent(new MouseEvent('pointerleave'));
+    expect(leitura().getAttribute('display')).toBe('none');
   });
 });
 

@@ -289,9 +289,16 @@ dblclick (App#_onMicroDblClick)        → edição in place (dado, célula, nom
                                          numa divisória entre células de array → _splitMicroArray
 contextmenu (App#_onMicroContextMenu)  → popups de configurações (label, coleção via ponteiro-rótulo, gráfico)
 wheel (App#_onMicroWheel)              → zoom
+pointermove no <svg>, sem arrasto      → App#_onMicroHoverMove: guarda a posição do mouse e, com Shift,
+   (App#_onMicroHoverMove)               mostra a leitura do gráfico sob ele (App#_updateMicroChartReadout
+                                         → chartReadout); Shift apertado/solto com o mouse parado
+                                         (_onKeyDown/_onKeyUp) mostra/esconde; some em blur, pointerleave
+                                         e no início de qualquer gesto
 ```
 
 Pan: botão do meio, ou botão direito com Espaço pressionado. Clique simples só seleciona; toda edição in place abre com duplo clique; Delete/Backspace remove.
+
+Leitura de gráfico Big-O (Shift + mouse sobre a área de plotagem, sem botão pressionado): o x do mouse vira o inteiro n mais próximo em [0, floor(nMax)] e, entre as curvas marcadas que existem em n (`from`) e não saíram pelo topo (f(n) ≤ yMax), vale a de menor distância vertical até o cursor — ponto na curva, n acima do eixo n e f(n) ao lado do ponto, na cor da curva. Com gráficos sobrepostos, lê o de cima. É estado transitório (`App#_microChartReadout`, passado ao render como `readout` do gráfico): fora do `MicroModel`, dos snapshots e do projeto; só re-renderiza quando muda gráfico, n ou curva.
 
 ### 6.4 Render
 
@@ -412,7 +419,7 @@ Dividido em duas metades:
    - portas e pinos: `structPrevPort`, `structNextPort`, `structNeighborPort`, `structDataRect`, `pointerPort`, `variableValueRect`;
    - puxadores: `arrayHandleRect`, `dictHandleRect`, `matrixHandleRect` (a aba fora da caixa, que serve de alvo de ligação pra coleção inteira e de alça de arraste) e `boxWithHandle`;
    - divisórias entre células de array: `arrayDividers` (faixa de `ARRAY_DIVIDER_HIT` px, cursor de "dividir"; duplo clique ali cria, abaixo, dois arrays anônimos com as células antes/depois do corte — `App#_splitMicroArray`);
-   - anotações: `areaHandles`, `CHART_FUNCTIONS`, `chartNMax`, `chartYMax`.
+   - anotações: `areaHandles`, `CHART_FUNCTIONS`, `chartNMax`, `chartYMax`, `chartReadout` (leitura do Shift + mouse: n arredondado e curva mais próxima na vertical, usando as escalas `px`/`py` que `chartLayout` exporta) e `chartReadoutLabels` (onde ficam os textos dessa leitura, sem sair do gráfico).
 2. **A classe `MicroCanvasView`**: `constructor(container)` cria o `<svg>`, os `<defs>` (setas, padrão do grid) e as camadas; `render({...})` recebe as listas já posicionadas; `setViewport`, `screenToWorld`, `getSize`. Os `_render<Tipo>` fazem o diff por id. Não tem lógica de interação nenhuma.
 
 ### 7.6 `src/ui/`

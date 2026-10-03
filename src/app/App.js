@@ -42,6 +42,7 @@ import {
   CHART_N_LIMITS,
   CHART_Y_LIMITS,
   chartLayout,
+  chartReadout,
 } from '../render/MicroCanvasView.js';
 
 import { evaluate, assign, assignChain, assignTuple, truthy } from '../interpreter/evaluator.js';
@@ -74,7 +75,7 @@ const MICRO_MODES = [
   { id: 'select', label: 'Selecionar / Mover', shortcut: '1 / V' },
   { id: 'text', label: 'Texto (cor: Alt+1…Alt+0)', shortcut: '2 / T' },
   { id: 'area', label: 'Área hachurada (cor: Alt+1…Alt+0, grid: G)', shortcut: '3 / R' },
-  { id: 'chart', label: 'Gráfico Big-O (botão direito: funções exibidas)', shortcut: '4 / B' },
+  { id: 'chart', label: 'Gráfico Big-O (botão direito: funções exibidas; Shift + mouse sobre ele: lê f(n))', shortcut: '4 / B' },
 ];
 
 /** Paleta das áreas hachuradas (modo "Área") — Alt+1…Alt+9 e Alt+0 (a 10ª),
@@ -198,6 +199,12 @@ export class App {
     // reprodução automaticamente" (ver `_renderMicroOnly`).
     this.manualFrameId = null;
     this._microPointer = null;
+    // leitura de gráfico com Shift + mouse (ver `_updateMicroChartReadout`):
+    // estado transitório de hover — fora do MicroModel, dos snapshots e do
+    // projeto salvo. `_microHoverScreen` é a última posição do mouse sobre o
+    // canvas (pra Shift apertado/solto com o mouse parado).
+    this._microHoverScreen = null;
+    this._microChartReadout = null; // { chartId, n, value, fnId, color, x, y } | null
     this._microDragId = null;
     this._microDragPos = null;
     this._microPortDrag = null;
@@ -212,7 +219,10 @@ export class App {
     // solta a barra de espaço "presa" se a janela perder o foco no meio do
     // pressionamento (ex: alt-tab) — sem isso o botão direito continuaria
     // movendo o canvas indefinidamente.
-    window.addEventListener('blur', () => { this._spaceDown = false; });
+    window.addEventListener('blur', () => {
+      this._spaceDown = false;
+      this._setMicroChartReadout(null);
+    });
 
     this._microBoundMove = (e) => this._onMicroPointerMoveWindow(e);
     this._microBoundUp = (e) => this._onMicroPointerUpWindow(e);
@@ -376,8 +386,18 @@ export class App {
     });
     this._syncCallTreeButton();
 
+    // um gesto (clique/arrasto) começando esconde a leitura do gráfico
+    this.microView.svg.addEventListener('pointerdown', () => this._setMicroChartReadout(null));
     this.microView.svg.addEventListener('pointerdown', (e) => this._onMicroPointerDown(e));
-    this.microView.svg.addEventListener('wheel', (e) => this._onMicroWheel(e), { passive: false });
+    this.microView.svg.addEventListener('pointermove', (e) => this._onMicroHoverMove(e));
+    this.microView.svg.addEventListener('pointerleave', () => {
+      this._microHoverScreen = null;
+      this._setMicroChartReadout(null);
+    });
+    this.microView.svg.addEventListener('wheel', (e) => {
+      this._onMicroWheel(e);
+      this._updateMicroChartReadout(e.shiftKey); // o zoom mudou o que está sob o mouse
+    }, { passive: false });
     this.microView.svg.addEventListener('dblclick', (e) => this._onMicroDblClick(e));
     this.microView.svg.addEventListener('contextmenu', (e) => this._onMicroContextMenu(e));
     this.microView.svg.addEventListener('dragstart', (e) => e.preventDefault());
@@ -478,6 +498,9 @@ export class App {
     // janela de Configurações é modal: ela mesma trata Esc/Tab, e nenhum
     // atalho do app vale por trás dela
     if (this.settingsDialog.isOpen) return;
+    // Shift com o mouse parado sobre um gráfico mostra a leitura — não
+    // consome a tecla (Shift+clique/arrasto e Shift+atalhos seguem valendo)
+    if (e.key === 'Shift') this._updateMicroChartReadout(true);
     // Tab com o foco FORA do painel de código pula direto pro editor — MUITO
     // mais cômodo que o Tab "de navegador" (que passaria por cada botão da
     // barra/menu antes de chegar lá). "Fora" é qualquer coisa: o canvas, um
@@ -797,6 +820,50 @@ export class App {
 
   _onKeyUp(e) {
     if (e.code === 'Space') this._spaceDown = false;
+    if (e.key === 'Shift') this._setMicroChartReadout(null);
+  }
+
+  // ---- modo micro: leitura de gráfico (Shift + mouse) ----
+
+  /** Mouse andando sobre o canvas SEM arrasto (os arrastos têm os próprios
+   * listeners em `window`, ver `_onMicroPointerDown`): guarda a posição e
+   * atualiza a leitura do gráfico sob ele se o Shift estiver pressionado. */
+  _onMicroHoverMove(e) {
+    this._microHoverScreen = this._microScreenPointFromEvent(e);
+    this._updateMicroChartReadout(e.shiftKey && e.buttons === 0);
+  }
+
+  /** Recalcula a leitura (ver `chartReadout`) na última posição do mouse:
+   * só com Shift, sem botão/arrasto em andamento e sobre a área de plotagem
+   * do gráfico de cima (o último desenhado) — o de baixo não é lido através
+   * do de cima. */
+  _updateMicroChartReadout(shift) {
+    let next = null;
+    if (shift && this._microHoverScreen && !this._microPointer && this.microCharts.size) {
+      const { x, y } = this._microHoverScreen;
+      const world = this.microView.screenToWorld(x, y, this.microViewport);
+      const charts = Array.from(this.microCharts.values());
+      for (let i = charts.length - 1; i >= 0; i -= 1) {
+        const c = charts[i];
+        if (world.x < c.x || world.x > c.x + c.width || world.y < c.y || world.y > c.y + c.height) continue;
+        const r = chartReadout(c, { x: world.x - c.x, y: world.y - c.y });
+        if (r) next = { chartId: c.id, ...r };
+        break;
+      }
+    }
+    this._setMicroChartReadout(next);
+  }
+
+  /** Troca a leitura exibida — re-renderiza só quando muda o que aparece
+   * (gráfico, n ou curva), não a cada pixel. Não marca o projeto como alterado. */
+  _setMicroChartReadout(next) {
+    const cur = this._microChartReadout;
+    if (cur === next) return;
+    if (cur && next && cur.chartId === next.chartId && cur.n === next.n && cur.fnId === next.fnId && cur.value === next.value) {
+      return;
+    }
+    this._microChartReadout = next;
+    this._renderMicroOnly();
   }
 
   // ---- pan / zoom ----
@@ -4217,6 +4284,7 @@ export class App {
         selected: this._isMicroHighlighted(n.id),
         dragging: dragging || !!resized,
         editingAxis: this._microEditingChartAxis?.id === n.id ? this._microEditingChartAxis.axis : null,
+        readout: this._microChartReadout?.chartId === n.id ? this._microChartReadout : null,
       };
     });
     if (this._microChartDraft) {

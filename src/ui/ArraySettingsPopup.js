@@ -6,7 +6,9 @@ import { fitPopupInContainer } from './fitPopup.js';
  * chave e set por `add`, nenhum dos dois tem tamanho pra editar, ver
  * `showSize`; o deque com `maxlen` limita o `maxSize`; matriz tem DOIS tamanhos,
  * linhas e colunas, ver `sizeFields`) e orientação (não se aplica à
- * matriz, ver `showOrientation`), além da ação de remover. Aberto pelo
+ * matriz, ver `showOrientation`; a "pilha" — vertical com os índices
+ * crescendo pra cima, o último elemento no topo — só pra lista/deque, ver
+ * `showStack`), além da ação de remover. Aberto pelo
  * botão direito no puxador da coleção (modo micro, ver
  * App#_onMicroContextMenu).
  */
@@ -20,7 +22,7 @@ export class ArraySettingsPopup {
     screenX,
     screenY,
     node,
-    { maxSize = 24, showSize = true, sizeFields = null, showOrientation = true, removeLabel = 'Remover array', onSave, onRemove, returnFocusTo },
+    { maxSize = 24, showSize = true, sizeFields = null, showOrientation = true, showStack = false, removeLabel = 'Remover array', onSave, onRemove, returnFocusTo },
   ) {
     this.close();
     this._returnFocusTo = returnFocusTo || null;
@@ -92,9 +94,15 @@ export class ArraySettingsPopup {
     vBtn.type = 'button';
     vBtn.className = 'array-orient-btn';
     vBtn.textContent = '↕ Vertical';
+    const sBtn = document.createElement('button');
+    sBtn.type = 'button';
+    sBtn.className = 'array-orient-btn';
+    sBtn.textContent = '⤒ Pilha';
+    sBtn.title = 'Vertical com os índices crescendo para cima: o último elemento (o topo da pilha) fica no alto';
     const syncOrientButtons = () => {
       hBtn.classList.toggle('active', orientation === 'horizontal');
       vBtn.classList.toggle('active', orientation === 'vertical');
+      sBtn.classList.toggle('active', orientation === 'stack');
     };
     hBtn.addEventListener('click', () => {
       orientation = 'horizontal';
@@ -104,9 +112,14 @@ export class ArraySettingsPopup {
       orientation = 'vertical';
       syncOrientButtons();
     });
+    sBtn.addEventListener('click', () => {
+      orientation = 'stack';
+      syncOrientButtons();
+    });
     syncOrientButtons();
     orientButtons.appendChild(hBtn);
     orientButtons.appendChild(vBtn);
+    if (showStack) orientButtons.appendChild(sBtn);
     orientRow.appendChild(orientLabel);
     orientRow.appendChild(orientButtons);
 

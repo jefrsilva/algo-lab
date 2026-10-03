@@ -22,6 +22,7 @@ import {
   arrayLayout,
   arrayHandleRect,
   arrayDividers,
+  isVerticalOrientation,
   dictHandleRect,
   matrixHandleRect,
   boxWithHandle,
@@ -1517,11 +1518,15 @@ export class App {
       returnFocusTo: this.microView.svg,
       maxSize: maxlen !== null ? Math.min(maxlen, MAX_ARRAY_SIZE) : MAX_ARRAY_SIZE,
       showSize,
+      // pilha (índices crescendo pra cima) só faz sentido com posição — set não tem
+      showStack: !node.isSet,
       onSave: ({ name, size, orientation }) => {
         this.micro.renameArray(node.id, name);
-        if (size !== undefined) this.micro.resizeArray(node.id, size);
+        // orientação antes do tamanho: virando pilha, as células novas já
+        // entram em cima (base parada, ver MicroModel#_keepStackBase)
         this.micro.setArrayOrientation(node.id, orientation);
         this.microRunner.updateOrientation(node.id, orientation);
+        if (size !== undefined) this.micro.resizeArray(node.id, size);
         if (this.microSelectedId === node.id) this._syncCodeEditorSelection('array', node.id);
         this._renderMicroOnly();
       },
@@ -2239,7 +2244,7 @@ export class App {
    * largura dela. */
   _findMicroArrayIndexAt(node, worldPt) {
     if (node.isSet) return null;
-    const vertical = node.orientation === 'vertical';
+    const vertical = isVerticalOrientation(node.orientation);
     const lx = worldPt.x - node.x;
     const ly = worldPt.y - node.y;
     for (const c of arrayLayout(node).cells) {
@@ -3003,7 +3008,7 @@ export class App {
       const c = layout.cells[cell.index];
       if (!c) return;
       desired =
-        arr.orientation === 'vertical'
+        isVerticalOrientation(arr.orientation)
           ? { x: arr.x + layout.width + 40, y: arr.y + c.y + c.h / 2 - PTR_H / 2 }
           : { x: arr.x + c.x + c.w / 2 - w / 2, y: arr.y + layout.height + 30 };
     } else return;

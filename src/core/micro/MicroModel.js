@@ -4,6 +4,33 @@ import { reviveRaw } from '../../interpreter/pytuple.js';
 export const MAX_ARRAY_SIZE = 24;
 export const MAX_DICT_SIZE = 24;
 
+/** Lado de uma célula de array no canvas (= `ARRAY_CELL` de
+ * MicroCanvasView.js, que importa daqui). O modelo não desenha nada, mas
+ * precisa dela pra manter parada a BASE de um array em pilha quando ele
+ * muda de tamanho (ver `_keepStackBase`). */
+export const ARRAY_CELL_H = 44;
+
+/** Altura da caixa de um array em pilha com `cellCount` células — vazia
+ * ainda ocupa uma célula (ver MicroCanvasView.js#arrayLayout). */
+export function stackHeight(cellCount) {
+  return Math.max(1, cellCount) * ARRAY_CELL_H;
+}
+
+/** Array desenhado como pilha (`orientation: 'stack'`, nunca set): cresce pra
+ * cima, com a base parada. */
+export function isStackArray(node) {
+  return node?.orientation === 'stack' && !node.isSet;
+}
+
+/** O rótulo com o nome (`pointer`, ver App#_createArrayLabelPointer) do array
+ * em pilha `arr` que está ACIMA dele — onde o rótulo nasce — anda junto com
+ * o topo da pilha (ver `_keepStackBase`), senão as células empilhadas
+ * passariam por cima dele. Levado pra outro lugar (do lado, embaixo), fica
+ * parado. */
+export function ridesStackTop(pointer, arr) {
+  return !!pointer && isStackArray(arr) && pointer.y < arr.y;
+}
+
 /**
  * Modelo do modo "micro": nós de estrutura (com campos internos, ex.
  * prev/data/next de uma lista duplamente ligada), arrays (de valores ou de
@@ -44,7 +71,7 @@ export class MicroModel {
   constructor() {
     this.structs = new Map(); // id -> {id, x, y, data, type:'list'|'tree'|'graph', next, prev, neighborsArrayId}
     this.pointers = new Map(); // id -> {id, x, y, label, target, frameId}
-    this.arrays = new Map(); // id -> {id, x, y, kind:'value'|'ref', orientation:'horizontal'|'vertical', cells}
+    this.arrays = new Map(); // id -> {id, x, y, kind:'value'|'ref', orientation:'horizontal'|'vertical'|'stack', cells}
     this.dicts = new Map(); // id -> {id, x, y, orientation:'horizontal'|'vertical', cells: {key, kind:'value'|'ref', value}[], name}
     this.variables = new Map(); // id -> {id, x, y, name, value: number|boolean|string, frameId}
     this.matrices = new Map(); // id -> {id, x, y, name, cells: (number|string|boolean)[][], labelPointerId}
@@ -173,7 +200,9 @@ export class MicroModel {
     const node = this.arrays.get(arrayId);
     if (!node) return;
     node.kind = kind === 'ref' ? 'ref' : 'value';
+    const oldLen = node.cells.length;
     node.cells = cells.slice(0, MAX_ARRAY_SIZE);
+    this._keepStackBase(node, oldLen);
     for (const p of this.pointers.values()) {
       if (p.target?.kind === 'arrayCell' && p.target.arrayId === arrayId && p.target.index >= node.cells.length) p.target = null;
     }
@@ -558,9 +587,25 @@ export class MicroModel {
     node.cells[index] = targetStructId ?? null;
   }
 
+  /** 'horizontal' | 'vertical' | 'stack' — a pilha (vertical com a posição 0
+   * embaixo e o último elemento no topo) não vale pra set, que não tem posição. */
   setArrayOrientation(arrayId, orientation) {
     const node = this.arrays.get(arrayId);
-    if (node && (orientation === 'horizontal' || orientation === 'vertical')) node.orientation = orientation;
+    if (!node) return;
+    if (orientation === 'horizontal' || orientation === 'vertical' || (orientation === 'stack' && !node.isSet)) node.orientation = orientation;
+  }
+
+  /** Pilha que mudou de tamanho (tinha `oldLen` células): `y` é o TOPO da
+   * caixa, então ele anda o quanto a altura mudou — a base fica onde estava
+   * e a célula nova aparece em cima (o `pop` tira de cima), levando junto o
+   * rótulo com o nome, se ele está acima (ver `ridesStackTop`). Os outros
+   * arrays crescem pra baixo/direita a partir do canto, como sempre. */
+  _keepStackBase(node, oldLen) {
+    if (!isStackArray(node)) return;
+    const dy = stackHeight(node.cells.length) - stackHeight(oldLen);
+    const label = this.pointers.get(node.labelPointerId);
+    if (ridesStackTop(label, node)) label.y -= dy;
+    node.y -= dy;
   }
 
   toggleArrayOrientation(arrayId) {
@@ -581,9 +626,11 @@ export class MicroModel {
     if (newSize > oldSize) {
       const fill = node.kind === 'ref' ? null : 0;
       node.cells = node.cells.concat(Array.from({ length: newSize - oldSize }, () => fill));
+      this._keepStackBase(node, oldSize);
       return;
     }
     node.cells = node.cells.slice(0, newSize);
+    this._keepStackBase(node, oldSize);
     for (const p of this.pointers.values()) {
       if (p.target?.kind === 'arrayCell' && p.target.arrayId === arrayId && p.target.index >= newSize) p.target = null;
     }
@@ -598,6 +645,7 @@ export class MicroModel {
     const node = this.arrays.get(arrayId);
     if (!node || index < 0 || index >= node.cells.length) return;
     node.cells.splice(index, 1);
+    this._keepStackBase(node, node.cells.length + 1);
     for (const p of this.pointers.values()) {
       if (p.target?.kind === 'arrayCell' && p.target.arrayId === arrayId) {
         if (p.target.index === index) p.target = null;
@@ -617,6 +665,7 @@ export class MicroModel {
     if (!node || index < 0 || index > node.cells.length || node.cells.length >= MAX_ARRAY_SIZE) return false;
     if (node.kind === 'ref' && value && !this.structs.has(value)) return false;
     node.cells.splice(index, 0, node.kind === 'ref' ? (value ?? null) : value);
+    this._keepStackBase(node, node.cells.length - 1);
     for (const p of this.pointers.values()) {
       if (p.target?.kind === 'arrayCell' && p.target.arrayId === arrayId && p.target.index >= index) {
         p.target = { ...p.target, index: p.target.index + 1 };
@@ -773,7 +822,7 @@ export class MicroModel {
         x: n.x || 0,
         y: n.y || 0,
         kind: n.kind === 'ref' ? 'ref' : 'value',
-        orientation: n.orientation === 'vertical' ? 'vertical' : 'horizontal',
+        orientation: n.orientation === 'vertical' || (n.orientation === 'stack' && !n.isSet) ? n.orientation : 'horizontal',
         // célula tupla volta a ser `PyTuple` (ver pytuple.js#reviveRaw)
         cells: Array.isArray(n.cells) ? n.cells.map(reviveRaw) : [],
         name: n.name,

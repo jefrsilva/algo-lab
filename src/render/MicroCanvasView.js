@@ -1,4 +1,5 @@
 import { svgEl } from './svgUtils.js';
+import { ARRAY_CELL_H } from '../core/micro/MicroModel.js';
 
 // ---- geometria dos nós de estrutura (caixa prev | data | next) ----
 export const STRUCT_W = 138;
@@ -60,7 +61,7 @@ export function variableWidth(node, fullNames) {
 // o array não tem mais barra de título própria — o nome aparece num ponteiro
 // dedicado que aponta pra ele (ver App#_createArrayLabelPointer), então o
 // topo do array já começa nas células/índices.
-export const ARRAY_CELL = 44;
+export const ARRAY_CELL = ARRAY_CELL_H;
 export const ARRAY_INDEX_H = 16; // horizontal: espaço acima das células para o índice
 export const ARRAY_INDEX_W = 22; // vertical: espaço à esquerda das células para o índice
 // set (array com `isSet`): folga entre as "pílulas" e a borda da caixa — nas
@@ -664,6 +665,15 @@ export function variableValueRect(node, fullNames) {
   return { x: node.x, y: node.y + VAR_HEADER_H, width: variableWidth(node, fullNames), height: VAR_H - VAR_HEADER_H };
 }
 
+/** Orientação vertical de uma coleção: 'vertical' (índice 0 em cima) ou
+ * 'stack' — a "pilha" de um array (só lista/deque, ver ArraySettingsPopup):
+ * também na vertical, mas com os índices crescendo PARA CIMA, o último
+ * elemento (o topo da pilha) no alto da caixa. Fora o `arrayLayout`, que
+ * inverte a ordem das células, quase tudo trata as duas igual. */
+export function isVerticalOrientation(orientation) {
+  return orientation === 'vertical' || orientation === 'stack';
+}
+
 /** Espessura do "puxador" de array/dict/matriz (ver `handleRectFor`). */
 const HANDLE = 11;
 
@@ -683,7 +693,7 @@ function handleRectFor(width, height, vertical) {
  * ficam pros pinos e pro colchete de janela deslizante). */
 export function arrayHandleRect(node) {
   const { width, height } = arrayLayout(node);
-  return handleRectFor(width, height, node.orientation === 'vertical');
+  return handleRectFor(width, height, isVerticalOrientation(node.orientation));
 }
 
 /** Dict: mesma regra do array. */
@@ -741,7 +751,9 @@ export function arrayLayout(node) {
   // array de referências mostra só ∅/pino, fica sempre na quadrada.
   const cellW = node.kind === 'ref' ? ARRAY_CELL : cellWidthFor(node.cells);
   if (node.isSet) return setLayout(node, cellW);
-  if (node.orientation === 'vertical') {
+  if (isVerticalOrientation(node.orientation)) {
+    // pilha: a posição 0 fica embaixo e a última (o topo) em cima
+    const stack = node.orientation === 'stack';
     // sem largura mínima artificial aqui — um array vertical só precisa da
     // faixa de índice + a própria célula, nunca mais largo que isso.
     const width = ARRAY_INDEX_W + cellW;
@@ -749,7 +761,7 @@ export function arrayLayout(node) {
     // de um frame visível — sem isso a caixa colapsaria pra altura zero.
     const height = Math.max(ARRAY_CELL, n * ARRAY_CELL);
     const cells = node.cells.map((_, i) => {
-      const y = i * ARRAY_CELL;
+      const y = (stack ? n - 1 - i : i) * ARRAY_CELL;
       return {
         index: i,
         x: ARRAY_INDEX_W,
@@ -797,10 +809,12 @@ export const ARRAY_DIVIDER_HIT = 8;
 export function arrayDividers(node) {
   if (node.isSet || node.cells.length < 2) return [];
   const half = ARRAY_DIVIDER_HIT / 2;
-  const vertical = node.orientation === 'vertical';
+  const vertical = isVerticalOrientation(node.orientation);
+  // na pilha a célula `at` fica ACIMA da anterior: a divisória é a borda de baixo dela
+  const stack = node.orientation === 'stack';
   return arrayLayout(node).cells.slice(1).map((c) =>
     vertical
-      ? { at: c.index, x: c.x, y: c.y - half, w: c.w, h: ARRAY_DIVIDER_HIT }
+      ? { at: c.index, x: c.x, y: (stack ? c.y + c.h : c.y) - half, w: c.w, h: ARRAY_DIVIDER_HIT }
       : { at: c.index, x: c.x - half, y: c.y, w: ARRAY_DIVIDER_HIT, h: c.h },
   );
 }
@@ -811,7 +825,7 @@ export function arrayDividers(node) {
  * nós fica na borda da própria célula (dentro da caixa). */
 function setLayout(node, cellW) {
   const n = node.cells.length;
-  if (node.orientation === 'vertical') {
+  if (isVerticalOrientation(node.orientation)) {
     const width = cellW + 2 * SET_PAD;
     const height = Math.max(ARRAY_CELL, n * ARRAY_CELL) + 2 * SET_PAD;
     const cells = node.cells.map((_, i) => {
@@ -899,14 +913,17 @@ function arrayCellEdgePoint(node, cellIndex, from) {
   const margin = 6;
   const cellRect = { x: node.x + cell.x, y: node.y + cell.y, w: cell.w, h: cell.h };
   const outer = outerBounds(node, layout, arrayHandleRect(node), margin);
-  const isFirst = cellIndex === 0;
-  const isLast = cellIndex === node.cells.length - 1;
+  // primeira/última célula NA TELA (de cima pra baixo / da esquerda pra
+  // direita) — na pilha a posição 0 é a de baixo
+  const stack = node.orientation === 'stack' && !node.isSet;
+  const isFirst = cellIndex === (stack ? node.cells.length - 1 : 0);
+  const isLast = cellIndex === (stack ? 0 : node.cells.length - 1);
 
   // cada candidato pousa no MEIO do lado (nunca num ponto deslizante alinhado
   // com `from`) — landing num canto da célula é tão ambíguo quanto landing
   // numa divisória interna (fica difícil dizer se é a célula ou a vizinha).
   const candidates = [];
-  if (node.orientation === 'vertical') {
+  if (isVerticalOrientation(node.orientation)) {
     const cy = cellRect.y + cellRect.h / 2;
     candidates.push({ x: outer.left, y: cy }, { x: outer.right, y: cy });
     if (isFirst) candidates.push({ x: cellRect.x + cellRect.w / 2, y: outer.top });
@@ -951,7 +968,7 @@ function arrayAvoidBulge(from, end, node) {
   const crosses = midX > rect.x && midX < rect.x + rect.w && midY > rect.y && midY < rect.y + rect.h;
   if (!crosses) return null;
   const CLEARANCE = 22;
-  if (node.orientation === 'vertical') {
+  if (isVerticalOrientation(node.orientation)) {
     const x = from.x > rect.x + rect.w / 2 ? rect.x + rect.w + CLEARANCE : rect.x - CLEARANCE;
     return { x, y: midY };
   }
@@ -2213,13 +2230,16 @@ export class MicroCanvasView {
     el.querySelector('.window-brackets')?.remove();
     if (!node.windows?.length || node.isSet) return;
     const layout = arrayLayout(node);
-    const vertical = node.orientation === 'vertical';
+    const vertical = isVerticalOrientation(node.orientation);
     const g = svgEl('g', { class: 'window-brackets' });
     const levels = { default: 0, flipped: 0 };
     node.windows.forEach((w) => {
-      const a = layout.cells[w.lo];
-      const b = layout.cells[w.hi];
+      // `a`/`b`: as pontas de cima/esquerda e de baixo/direita NA TELA — na
+      // pilha a posição `lo` fica embaixo
+      let a = layout.cells[w.lo];
+      let b = layout.cells[w.hi];
       if (!a || !b) return;
+      if (a.y > b.y) [a, b] = [b, a];
       const side = this._windowBracketSide(node, layout, w, pointerEdges);
       const off = WINDOW_BRACKET_GAP + levels[side] * WINDOW_BRACKET_STEP;
       levels[side] += 1;
@@ -2253,7 +2273,7 @@ export class MicroCanvasView {
    * colchete sobreporia uma delas de qualquer jeito e fica onde está. Setas
    * de outros ponteiros não contam. */
   _windowBracketSide(node, layout, w, pointerEdges) {
-    const vertical = node.orientation === 'vertical';
+    const vertical = isVerticalOrientation(node.orientation);
     let hitsDefault = false;
     let hitsFlipped = false;
     (w.pointerIds ?? []).forEach((id) => {
@@ -2289,7 +2309,7 @@ export class MicroCanvasView {
     appendHandleAndHalo(el, layout.width, layout.height, arrayHandleRect(node), boxR);
     const box = svgEl('rect', { class: 'array-box', width: layout.width, height: layout.height, rx: boxR, ry: boxR });
     el.appendChild(box);
-    if (node.isSet && node.orientation !== 'vertical') {
+    if (node.isSet && !isVerticalOrientation(node.orientation)) {
       const caption = svgEl('text', { class: 'array-index-label set-caption', x: SET_PAD + 2, y: ARRAY_INDEX_H - 4 });
       caption.textContent = node.cells.length === 0 ? 'set()' : 'set';
       el.appendChild(caption);
@@ -2299,7 +2319,7 @@ export class MicroCanvasView {
     // vertical (a aba fica à esquerda/em cima, ver arrayHandleRect). Fora do
     // layout: hit-test não muda.
     if (node.isDeque) {
-      const vertical = node.orientation === 'vertical';
+      const vertical = isVerticalOrientation(node.orientation);
       const caption = svgEl('text', {
         class: 'array-index-label deque-caption',
         x: vertical ? 0 : layout.width + 6,
@@ -2326,7 +2346,7 @@ export class MicroCanvasView {
         // faixa do índice: arrastar dali cria um cursor pra posição (ver
         // App#_findMicroArrayIndexAt) — só dá o cursor do mouse, o hit-test
         // é por coordenada
-        const vertical = node.orientation === 'vertical';
+        const vertical = isVerticalOrientation(node.orientation);
         el.appendChild(
           svgEl('rect', {
             class: 'array-index-hit',
@@ -2368,7 +2388,7 @@ export class MicroCanvasView {
     // (duplo clique ali divide o array, ver App#_splitMicroArray) — o
     // hit-test é por coordenada (`arrayDividers`)
     arrayDividers(node).forEach((d) => {
-      el.appendChild(svgEl('rect', { class: `array-divider-hit${node.orientation === 'vertical' ? ' vertical' : ''}`, x: d.x, y: d.y, width: d.w, height: d.h }));
+      el.appendChild(svgEl('rect', { class: `array-divider-hit${isVerticalOrientation(node.orientation) ? ' vertical' : ''}`, x: d.x, y: d.y, width: d.w, height: d.h }));
     });
   }
 

@@ -7,7 +7,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { desmontarApp, montarApp, tecla } from '../helpers/dom.js';
 import { linhas } from '../helpers/runDsl.js';
-import { chartLayout } from '../../src/render/MicroCanvasView.js';
+import { arrayHandleRect, chartLayout } from '../../src/render/MicroCanvasView.js';
 
 let app;
 const $ = (sel) => document.querySelector(sel);
@@ -340,5 +340,107 @@ describe('salvar e carregar projeto', () => {
     expect(textarea().value).toBe('nums = [1, 2]\na = Node(5)\n');
     expect(app.microCanvasTitle.text).toBe('Ida e volta');
     expect(app.micro.toJSON()).toEqual(projeto.micro);
+  });
+});
+
+describe('alinhar e distribuir a seleção', () => {
+  const svg = () => $('.micro-canvas');
+  const botaoAlinhar = (id) => $(`.align-btn[data-align="${id}"]`);
+  /** Ponteiro no ponto (x, y) do MUNDO — sem layout no jsdom, a tela é o
+   * mundo deslocado por tx/ty (ver o teste do gráfico). */
+  function evento(alvo, tipo, x, y, opts = {}) {
+    const { tx, ty } = app.microViewport;
+    alvo.dispatchEvent(new MouseEvent(tipo, { clientX: x + tx, clientY: y + ty, button: 0, bubbles: true, ...opts }));
+  }
+  function clicar(x, y, opts = {}) {
+    evento(svg(), 'pointerdown', x, y, opts);
+    evento(window, 'pointerup', x, y, opts);
+  }
+  function arrastar(x0, y0, x1, y1) {
+    evento(svg(), 'pointerdown', x0, y0);
+    evento(window, 'pointermove', x1, y1);
+    evento(window, 'pointerup', x1, y1);
+  }
+  /** Três nós soltos, em lugares e alturas diferentes. */
+  function tresNos() {
+    const a = app.micro.addStruct(0, 300, 1);
+    const b = app.micro.addStruct(400, 0, 2);
+    const c = app.micro.addStruct(200, 150, 3);
+    app._renderMicroOnly();
+    return [a, b, c];
+  }
+
+  test('os botões só aparecem com seleção suficiente: alinhar com 2+, distribuir com 3+', () => {
+    const [a, b, c] = tresNos();
+    expect($('.align-toolbar')).toBeNull();
+    clicar(a.x + 10, a.y + 10);
+    expect($('.align-toolbar')).toBeNull();
+    clicar(b.x + 10, b.y + 10, { ctrlKey: true });
+    expect(botaoAlinhar('left')).not.toBeNull();
+    expect(botaoAlinhar('distribute-x')).toBeNull();
+    clicar(c.x + 10, c.y + 10, { ctrlKey: true });
+    expect(botaoAlinhar('distribute-x')).not.toBeNull();
+    clicar(-500, -500); // clique no vazio limpa a seleção
+    expect($('.align-toolbar')).toBeNull();
+  });
+
+  test('alinhar usa o 1º elemento clicado como referência', () => {
+    const [a, b, c] = tresNos();
+    clicar(b.x + 10, b.y + 10);
+    clicar(a.x + 10, a.y + 10, { ctrlKey: true });
+    clicar(c.x + 10, c.y + 10, { ctrlKey: true });
+    botaoAlinhar('left').click();
+    expect([a.x, b.x, c.x]).toEqual([400, 400, 400]);
+    expect([a.y, b.y, c.y]).toEqual([300, 0, 150]);
+    botaoAlinhar('bottom').click();
+    expect([a.y, b.y, c.y]).toEqual([0, 0, 0]);
+  });
+
+  test('seleção em área alinha pelos extremos do grupo', () => {
+    const [a, b, c] = tresNos();
+    arrastar(-50, -50, 700, 500);
+    expect(app._microSelectionIds()).toHaveLength(3);
+    botaoAlinhar('left').click();
+    expect([a.x, b.x, c.x]).toEqual([0, 0, 0]);
+    botaoAlinhar('top').click();
+    expect([a.y, b.y, c.y]).toEqual([0, 0, 0]);
+  });
+
+  test('distribuir deixa o mesmo espaço entre vizinhos, com os extremos parados', () => {
+    const [a, b, c] = tresNos();
+    c.x = 50;
+    arrastar(-50, -50, 700, 500);
+    botaoAlinhar('distribute-x').click();
+    expect([a.x, c.x, b.x]).toEqual([0, 200, 400]);
+  });
+
+  test('coleções alinham pela caixa COM a aba de arrastar', () => {
+    const no = app.micro.addStruct(0, 0, 1);
+    const arr = app.micro.addArray(300, 200, { size: 3 });
+    app._renderMicroOnly();
+    clicar(no.x + 10, no.y + 10);
+    app._toggleMicroSelection(arr.id);
+    app._renderMicroOnly();
+    botaoAlinhar('left').click();
+    expect(arr.x + arrayHandleRect(arr).x).toBe(0);
+  });
+
+  test('pelo Ctrl+Espaço também, com o comando indisponível sem seleção', () => {
+    const [a, b] = tresNos();
+    tecla(window, ' ', { code: 'Space', ctrlKey: true });
+    let input = $('.quick-action-input');
+    input.value = 'align left';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    expect($('.quick-action-item.disabled')).not.toBeNull();
+    tecla(input, 'Escape');
+
+    clicar(a.x + 10, a.y + 10);
+    clicar(b.x + 10, b.y + 10, { ctrlKey: true });
+    tecla(window, ' ', { code: 'Space', ctrlKey: true });
+    input = $('.quick-action-input');
+    input.value = 'align right';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    tecla(input, 'Enter');
+    expect(b.x).toBe(0);
   });
 });

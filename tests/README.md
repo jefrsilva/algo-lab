@@ -21,7 +21,7 @@ O CI (`.github/workflows/testes.yml`) roda `npm test` e `npm run build` em todo 
 | `dsl/bugs-conhecidos.test.js` | diferenças conhecidas em relação ao Python, marcadas com `test.fails` | Node |
 | `interpreter/` | lexer, parser, blockParser, f-string (`format.js`), set do CPython (`pyset.js`), tuplas (`pytuple.js`) | Node |
 | `core/MicroModel.test.js` | CRUD, limpeza de referências ao apagar, `toJSON`/`loadFrom` | Node |
-| `app/` | `MicroProgramRunner` (snapshots, navegação, autoplay, posições por passo), `MicroRuntimeAdapter`, `microLayoutKey`, `settings` | Node / jsdom |
+| `app/` | `MicroProgramRunner` (snapshots, navegação, autoplay, posições por passo), `MicroRuntimeAdapter`, `microLayoutKey`, `microAlign` (alinhar/distribuir), `settings` | Node / jsdom |
 | `render/chartReadout.test.js` | leitura do gráfico Big-O com Shift + mouse (`chartReadout`/`chartReadoutLabels`): n arredondado, curva mais próxima, curvas fora do eixo | Node |
 | `ui/QuickActionPalette.test.js` | casamento abreviado dos comandos e a caixa do Ctrl+Espaço | jsdom |
 | `ui/App.test.js` | integração: o app inteiro montado no jsdom — Simulação, reprodução, Sandbox, atalhos, ações rápidas, leitura de gráfico com Shift, salvar/carregar | jsdom |

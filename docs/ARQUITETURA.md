@@ -76,6 +76,7 @@ src/
     MicroRuntimeAdapter.js  implementa a interface Environment do interpretador em cima do MicroModel
     MicroProgramRunner.js   motor da Simulação: roda o programa, tira snapshots, controla a reprodução
     microLayoutKey.js       chave estável (por nome) pra lembrar a posição dos elementos entre execuções
+    microAlign.js           alinhar/distribuir retângulos (funções puras, usadas pela AlignToolbar)
     settings.js             preferências do usuário (localStorage, um objeto só)
     theme.js                tema escuro/claro (data-theme no <html>)
   core/
@@ -95,7 +96,7 @@ src/
     MicroCanvasView.js      renderizador SVG + constantes de geometria + funções de layout e de "portas"
     svgUtils.js             svgEl(tag, attrs)
   ui/                       widgets de interface independentes, instanciados e ligados pelo App
-    CodeEditor.js  CallTree.js  PlaybackControls.js  ConsoleWindow.js  ModeToolbar.js
+    CodeEditor.js  CallTree.js  PlaybackControls.js  ConsoleWindow.js  ModeToolbar.js  AlignToolbar.js
     QuickActionPalette.js  AppMenu.js  SettingsDialog.js  Dialog.js  CanvasTitle.js
     NodePopup.js  ArraySettingsPopup.js  LabelSettingsPopup.js  ChartSettingsPopup.js
     InlineValueEditor.js  fitPopup.js
@@ -298,13 +299,15 @@ pointermove no <svg>, sem arrasto      → App#_onMicroHoverMove: guarda a posi�
 
 Pan: botão do meio, ou botão direito com Espaço pressionado. Clique simples só seleciona; toda edição in place abre com duplo clique; Delete/Backspace remove.
 
+Alinhar e distribuir: com 2+ elementos selecionados aparece, logo acima da barra de modos, a `AlignToolbar` (alinhar à esquerda/centro/direita/topo/meio/fundo; com 3+, também distribuir na horizontal/vertical — os mesmos 8 comandos estão no Ctrl+Espaço como `align …`/`distribute …`). `App#_runMicroAlignAction` monta o retângulo desenhado de cada elemento (`_microElementRect`: coleções com a aba, nó simplificado só o círculo), calcula os deslocamentos com `microAlign.js` e aplica por `_microSetNodePos`, o mesmo caminho de soltar um arraste (na reprodução, vale só pro passo atual). A referência do alinhamento é o primeiro elemento selecionado — a ordem de inserção de `microSelectedIds` é a ordem de clique/Ctrl+clique —, que não se move; numa seleção que começou por retângulo (`_selectMicroRect` marca o Set em `_microAnchorlessSelection`, e `_toggleMicroSelection` repassa a marca), vale o extremo do grupo. Distribuir deixa o mesmo espaço livre entre vizinhos, com o primeiro e o último (pelo centro) parados.
+
 Leitura de gráfico Big-O (Shift + mouse sobre a área de plotagem, sem botão pressionado): o x do mouse vira o inteiro n mais próximo em [0, floor(nMax)] e, entre as curvas marcadas que existem em n (`from`) e não saíram pelo topo (f(n) ≤ yMax), vale a de menor distância vertical até o cursor — ponto na curva, n acima do eixo n e f(n) ao lado do ponto, na cor da curva. Com gráficos sobrepostos, lê o de cima. É estado transitório (`App#_microChartReadout`, passado ao render como `readout` do gráfico): fora do `MicroModel`, dos snapshots e do projeto; só re-renderiza quando muda gráfico, n ou curva.
 
 ### 6.4 Render
 
 `App#_renderMicroOnly()` é **o** render. Ele é chamado depois de praticamente qualquer mudança e:
 
-1. renderiza a `ModeToolbar`;
+1. renderiza a `ModeToolbar` e a `AlignToolbar` (com o número de elementos selecionados que dá pra mover);
 2. calcula o frame ativo, os destaques (seleção, `touched` do passo, alvos "linkados" dos ponteiros destacados, janelas deslizantes) e o que está fora de escopo (fica esmaecido);
 3. monta arrays de objetos simples de render, um por tipo de elemento, já com posição (incluindo arraste em andamento), flags (`selected`, `dragging`, `cursor`, `linked*`…) e âncoras de setas;
 4. monta a lista de `edges` (setas) com origem e alvo;
@@ -355,7 +358,8 @@ Preferências de tela (não do projeto) ficam num único objeto do localStorage 
 | Elementos por id | `_microNodeMaps`, `_microFindById`, `_microRemoveById`, `_deleteMicroSelection`, `_microSetNodePos`, `_microNodePos`, `_microFindIdsInRect`, `_microLayoutKeyForLiveNode`. |
 | Hit testing | `_microPickable`, `_findMicro{Struct,Pointer,Variable,Array,ArrayCell,Dict,DictCell,Matrix,MatrixCell,Label,Area,Chart}At`, `_findMicroPortAt`, `_resolveMicroDropTarget`. |
 | Áreas e gráficos | `_snapMicroArea`, `_microAreaRectFromDrag`, `_microAreaResizedRect`, `_createMicroArea`, `_createMicroChart`. |
-| Seleção múltipla e janelas | `_toggleMicroSelection`, `_quickNewSlidingWindow`, `_microWindowPartner`, `_microWindowRange`. |
+| Seleção múltipla e janelas | `_toggleMicroSelection`, `_selectMicroRect`, `_quickNewSlidingWindow`, `_microWindowPartner`, `_microWindowRange`. |
+| Alinhar e distribuir | `_runMicroAlignAction`, `_microElementRect`, `_microAlignableIds`, `_microSelectionAnchor` (ver `microAlign.js`). |
 | Quick actions | `_openQuickActions` (lista de comandos) e `_quickNew*` (um por comando), `_editMicroNameInPlace`, `_quickDiscard`. |
 | Cursores por gesto | `_findMicroCursorCellAt`, `_createMicroIndexCursor`, `_startMicroIndexCursorDrag`. |
 | Setas | `_pointerAnchor`, `_structFieldAnchor`, `_computeStructPairOffsets` (de que lado da caixa sai o pino). |
@@ -377,6 +381,8 @@ Preferências de tela (não do projeto) ficam num único objeto do localStorage 
 **`MicroProgramRunner.js`**: motor da Simulação. API: `run(source, env)`, `stop()`, `goToStep(i)`, `togglePlay()`, `setSpeed(speed)`, `hasSteps`, `steps`, `stepIndex`, `error`, `updatePosition(id, x, y)` (chamado pelo App ao arrastar), `updateOrientation`, `exportStepLayout`/`importStepLayout`/`clearStepLayout`. Internos: `_snapshot`, `_restore`, `_capturePositions`, `_assignKeys`, `_positionAt`.
 
 **`microLayoutKey.js`**: `microLayoutKey(kind, {name, frameId, cursorKey, dictName, key})` devolve a chave estável ou `null`. Structs anônimos e arrays/dicts/matrizes criados dentro de chamadas ficam sem chave de propósito, porque vários nasceriam na mesma posição; o comentário do arquivo explica.
+
+**`microAlign.js`**: `alignRects(rects, mode, anchorId)` e `distributeRects(rects, axis)` — puras, sobre `{id, x, y, w, h}`, devolvem `Map<id, {dx, dy}>` só com quem se move. `ALIGN_MODES` lista os modos (`left`, `center`, `right`, `top`, `middle`, `bottom`).
 
 **`settings.js`**: `SETTINGS_DEFAULTS`, `VALIDATORS`, `getSetting`, `setSetting` e migração das chaves antigas do localStorage (`readLegacy`).
 
@@ -433,6 +439,7 @@ Cada widget é uma classe independente, sem classe base. Recebe um container e c
 | `PlaybackControls.js` | Barra de passo, play/pause e velocidade. | `this.microPlayback` |
 | `ConsoleWindow.js` | Console de `print`, encaixado sob o canvas ou flutuante (arrastável e redimensionável). Persiste o modo e a geometria nas configurações. | `this.microConsole` |
 | `ModeToolbar.js` | Barra de modos do canvas (ícones em `ICONS`, lista de modos vinda de `MICRO_MODES`). Sem estado. | `this.microModeToolbar` |
+| `AlignToolbar.js` | Botões de alinhar (2+ selecionados) e distribuir (3+), acima da barra de modos; some sem seleção suficiente (`ALIGN_BUTTONS[].min`). Sem estado: recebe `count` e chama `actions.run(id)`. | `this.microAlignToolbar` |
 | `QuickActionPalette.js` | Caixa Ctrl+Espaço: casamento abreviado (`scoreName`), sugestão em cinza, ↑/↓/Tab/Enter/Esc. Os comandos vêm de quem abre. | `this.microQuickActions` |
 | `AppMenu.js` | Menu hambúrguer (`items`, `onSelect(id)`). | `this.appMenu` |
 | `SettingsDialog.js` | Janela modal de configurações. A estrutura fica em `SECTIONS` (tipos `choice`, `toggle`, `stepper`…). Não aplica nada, só chama `onChange(key, value)`. | `this.settingsDialog` |

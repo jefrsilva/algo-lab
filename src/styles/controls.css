@@ -408,6 +408,39 @@ select {
   color: var(--on-accent);
 }
 
+/* Alinhar/distribuir (src/ui/AlignToolbar.js): logo acima da barra de
+   modos, centralizada nela, só com seleção múltipla — fica fora do fluxo
+   pra barra de modos não mudar de lugar quando ela aparece/some. */
+.align-toolbar-host {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+}
+
+.align-toolbar {
+  align-items: center;
+  padding: 4px;
+  gap: 2px;
+}
+
+.align-toolbar .mode-btn {
+  width: 34px;
+  height: 34px;
+}
+
+.align-toolbar .mode-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.align-toolbar-sep {
+  width: 1px;
+  height: 22px;
+  margin: 0 4px;
+  background: var(--border);
+}
+
 /* Botões flutuantes de canto do canvas micro — menu (canto superior
    esquerdo) e centralizar vista (canto superior direito). Substituem a
    antiga barra de título do app (ver App.js#_buildLayout). */

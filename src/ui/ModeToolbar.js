@@ -16,6 +16,13 @@ const ICONS = {
     <path d="M7 17c3-.2 5-.5 7-1.8"/>
     <path d="M7 16.5c4-2 7-6 9-12.5" stroke-width="1.5"/>
   </svg>`,
+  // dois nós de grafo com uma aresta direcionada entre eles
+  link: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="6" cy="17" r="3"/>
+    <circle cx="18" cy="7" r="3"/>
+    <path d="M8.4 15.1 15 9.6"/>
+    <path d="M11.4 9.4 15 9.6l-.6 3.6"/>
+  </svg>`,
 };
 
 /**

@@ -71,6 +71,80 @@ describe('structs e ponteiros', () => {
   });
 });
 
+describe('vizinhos de nó de grafo (toggleStructNeighbor)', () => {
+  /** Nó de grafo com a lista de vizinhos, como GraphNode(v) cria. */
+  function noGrafo(data) {
+    const s = m.addStruct(0, 0, data, 'graph');
+    const arr = m.addArray(0, 100, { kind: 'ref', size: 0, name: `__graph_neighbors_${s.id}` });
+    m.setStructNeighborsArray(s.id, arr.id);
+    return s;
+  }
+  const vizinhos = (s) => m.arrays.get(s.neighborsArrayId).cells;
+
+  test('liga A→B no fim da lista e, de novo, desliga — sem tocar em B→A', () => {
+    const a = noGrafo(1);
+    const b = noGrafo(2);
+    const c = noGrafo(3);
+    expect(m.toggleStructNeighbor(a.id, c.id)).toBe('added');
+    expect(m.toggleStructNeighbor(a.id, b.id)).toBe('added');
+    expect(vizinhos(a)).toEqual([c.id, b.id]);
+    expect(vizinhos(b)).toEqual([]);
+    expect(m.toggleStructNeighbor(b.id, a.id)).toBe('added');
+    expect(m.toggleStructNeighbor(a.id, b.id)).toBe('removed');
+    expect(vizinhos(a)).toEqual([c.id]);
+    expect(vizinhos(b)).toEqual([a.id]);
+  });
+
+  test('desligar tira todas as ocorrências e desloca os cursores da lista', () => {
+    const a = noGrafo(1);
+    const b = noGrafo(2);
+    const c = noGrafo(3);
+    const arrId = a.neighborsArrayId;
+    [b.id, c.id, b.id].forEach((id, i) => m.insertArrayCell(arrId, i, id));
+    const p = m.addPointer(0, 0, 'p');
+    m.setPointerTarget(p.id, { kind: 'arrayCell', arrayId: arrId, index: 1 });
+    expect(m.toggleStructNeighbor(a.id, b.id)).toBe('removed');
+    expect(vizinhos(a)).toEqual([c.id]);
+    expect(p.target).toEqual({ kind: 'arrayCell', arrayId: arrId, index: 0 });
+  });
+
+  test('autolaço, origem que não é de grafo e alvo inexistente não fazem nada', () => {
+    const a = noGrafo(1);
+    const lista = m.addStruct(0, 0, 9);
+    expect(m.toggleStructNeighbor(a.id, a.id)).toBeNull();
+    expect(m.toggleStructNeighbor(lista.id, a.id)).toBeNull();
+    expect(m.toggleStructNeighbor(a.id, 'struct-inexistente')).toBeNull();
+    expect(vizinhos(a)).toEqual([]);
+    expect(lista).toMatchObject({ next: null, prev: null, neighborsArrayId: null });
+  });
+
+  test('nó de grafo sem lista de vizinhos (projeto antigo) ganha uma no primeiro link', () => {
+    const a = m.addStruct(0, 0, 1, 'graph');
+    const b = noGrafo(2);
+    const antes = m.arrays.size;
+    expect(m.toggleStructNeighbor(a.id, b.id, { x: 40, y: 200 })).toBe('added');
+    expect(m.arrays.size).toBe(antes + 1);
+    expect(m.arrays.get(a.neighborsArrayId)).toMatchObject({
+      kind: 'ref',
+      x: 40,
+      y: 200,
+      name: `__graph_neighbors_${a.id}`,
+      cells: [b.id],
+    });
+  });
+
+  test('a lista de vizinhos respeita MAX_ARRAY_SIZE', () => {
+    const a = noGrafo(0);
+    const outros = Array.from({ length: MAX_ARRAY_SIZE + 1 }, (_, i) => noGrafo(i + 1));
+    outros.slice(0, MAX_ARRAY_SIZE).forEach((o) => m.toggleStructNeighbor(a.id, o.id));
+    expect(vizinhos(a)).toHaveLength(MAX_ARRAY_SIZE);
+    expect(m.toggleStructNeighbor(a.id, outros[MAX_ARRAY_SIZE].id)).toBeNull();
+    expect(vizinhos(a)).toHaveLength(MAX_ARRAY_SIZE);
+    // desligar continua valendo com a lista cheia
+    expect(m.toggleStructNeighbor(a.id, outros[0].id)).toBe('removed');
+  });
+});
+
 describe('arrays', () => {
   test('tamanho é limitado a MAX_ARRAY_SIZE e 0 é válido', () => {
     expect(m.addArray(0, 0, { size: 100 }).cells).toHaveLength(MAX_ARRAY_SIZE);

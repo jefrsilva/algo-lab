@@ -768,6 +768,19 @@
   cursor: crosshair;
 }
 
+/* ---- modo micro: ferramenta "Ligar nós de grafo" (5/L, ou Shift + arraste num nó de grafo) ---- */
+
+/* nó de grafo é onde o arraste começa: mira em cima dele, cursor normal no resto */
+.micro-container[data-mode='link'] .struct-node-graph {
+  cursor: crosshair;
+}
+
+/* seta de rascunho sem um nó de grafo válido sob o mouse (soltar ali não liga nada) */
+.preview-edge-line.invalid {
+  stroke: var(--text-2);
+  opacity: 0.7;
+}
+
 /* ---- modo micro: seleção em área (modo Selecionar, arraste em espaço vazio) ---- */
 
 .selection-rect {

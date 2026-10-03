@@ -182,7 +182,7 @@ São seis `Map`s indexados por id. Nenhum elemento sabe se desenhar.
 
 | Map | Forma (campos principais) | Observações |
 |---|---|---|
-| `structs` | `{id, x, y, data, type:'list'\|'tree'\|'graph', next, prev, neighborsArrayId}` | `type` só muda os **nomes** dos campos expostos (`next/prev` ↔ `left/right`). Fisicamente sempre são `next`/`prev`. Um nó `graph` guarda os vizinhos num array `kind:'ref'` à parte (`neighborsArrayId`). |
+| `structs` | `{id, x, y, data, type:'list'\|'tree'\|'graph', next, prev, neighborsArrayId}` | `type` só muda os **nomes** dos campos expostos (`next/prev` ↔ `left/right`). Fisicamente sempre são `next`/`prev`. Um nó `graph` guarda os vizinhos num array `kind:'ref'` à parte (`neighborsArrayId`); `toggleStructNeighbor` liga/desliga uma aresta direcionada (ferramenta "Ligar nós de grafo"). |
 | `pointers` | `{id, x, y, label, target, frameId}` | `target`: `null` ou `{kind:'struct', id}` \| `{kind:'arrayCell', arrayId, index}` \| `{kind:'array', id}` \| `{kind:'dictCell', dictId, key}` \| `{kind:'dict', id}` \| `{kind:'matrixCell', matrixId, row, col}` \| `{kind:'matrix', id}`. |
 | `arrays` | `{id, x, y, kind:'value'\|'ref', orientation, cells, name, frameId, labelPointerId?, isSet?, hashTable?, isDeque?, maxlen?}` | Listas, sets e deques são arrays (sets e deques são marcados com uma flag). Até `MAX_ARRAY_SIZE` (24) células. |
 | `dicts` | `{id, x, y, orientation, cells: {key, kind:'value'\|'ref'\|'arrayref', value}[], name, frameId, labelPointerId?}` | O `kind` é **por célula** (um dict pode misturar valores e nós). |
@@ -282,12 +282,14 @@ Todo o tratamento de entrada fica no `App`. O hit testing é feito **contra o mo
 ```
 pointerdown (App#_onMicroPointerDown)
    decide o tipo do gesto e grava this._microPointer = { hit: 'pan' | 'text-canvas' | 'area-create'
-     | 'chart-create' | 'area-resize' | 'port' | 'node' | 'areaselect' | ... , downScreen, worldPtDown, ... }
+     | 'chart-create' | 'graph-link' | 'area-resize' | 'port' | 'node' | 'areaselect' | ... , downScreen,
+     worldPtDown, ... }
    e registra pointermove/pointerup na window
 pointermove (App#_onMicroPointerMoveWindow) → atualiza rascunhos (_microDragPos, _microAreaDraft,
-   _microChartDraft, _microPortDrag, _microSelectionPreview) → render
+   _microChartDraft, _microPortDrag, _microGraphLinkDraft, _microSelectionPreview) → render
 pointerup (App#_onMicroPointerUpWindow) → confirma: move o elemento (e grava microLayout/stepLayout),
-   liga o ponteiro (App#_resolveMicroDropTarget → MicroModel#setPointerTarget/setField), cria a
+   liga o ponteiro (App#_resolveMicroDropTarget → MicroModel#setPointerTarget/setField), liga/desliga
+   um vizinho de nó de grafo (App#_toggleMicroGraphNeighbor → MicroModel#toggleStructNeighbor), cria a
    área/gráfico/label, seleciona…
 dblclick (App#_onMicroDblClick)        → edição in place (dado, célula, nome, texto, eixo);
                                          numa divisória entre células de array → _splitMicroArray
@@ -302,6 +304,8 @@ pointermove no <svg>, sem arrasto      → App#_onMicroHoverMove: guarda a posi�
 ```
 
 Pan: botão do meio, ou botão esquerdo com Espaço pressionado (o cursor vira a mão de pan enquanto o Espaço está pressionado — classes `space-pan`/`panning` no container, ver `App#_setSpaceDown`). Clique simples só seleciona; toda edição in place abre com duplo clique; Delete/Backspace remove.
+
+Ligar nós de grafo (ferramenta 5/L, ou Shift + arraste começando num nó de grafo no modo Selecionar): arrastar de um nó de grafo A até outro nó de grafo B põe B no fim de `A.neighbors`; repetir o gesto tira B (todas as ocorrências) — só a aresta A→B muda, nunca B→A. Soltar fora de um nó de grafo ou no próprio A não faz nada; clique sem arraste só seleciona o nó. `App#_startMicroGraphLink` abre o gesto (`hit: 'graph-link'`), `_findMicroGraphLinkTarget` acha o alvo, a seta de rascunho é o mesmo `previewEdge` dos arrastes de pino (apagada sem alvo válido) e `_toggleMicroGraphNeighbor` chama `MicroModel#toggleStructNeighbor`, que cria a lista de vizinhos de um nó sem ela (projeto antigo) e respeita `MAX_ARRAY_SIZE` (avisa no console). É o gesto que faltava pra religar "neighbors" à mão: `_findMicroPortAt` continua pulando os nós `graph`. Como os arrastes de pino, vale também durante a reprodução da Simulação (a mudança fica no passo em exibição). O Shift + arraste só vira ligação quando começa num nó de grafo; em célula de lista/matriz continua criando cursor de leitura.
 
 Alinhar e distribuir: com 2+ elementos selecionados aparece, logo acima da barra de modos, a `AlignToolbar` (alinhar à esquerda/centro/direita/topo/meio/fundo; com 3+, também distribuir na horizontal/vertical — os mesmos 8 comandos estão no Ctrl+Espaço como `align …`/`distribute …`). `App#_runMicroAlignAction` monta o retângulo desenhado de cada elemento (`_microElementRect`: coleções com a aba, nó simplificado só o círculo), calcula os deslocamentos com `microAlign.js` e aplica por `_microSetNodePos`, o mesmo caminho de soltar um arraste (na reprodução, vale só pro passo atual). A referência do alinhamento é o primeiro elemento selecionado — a ordem de inserção de `microSelectedIds` é a ordem de clique/Ctrl+clique —, que não se move; numa seleção que começou por retângulo (`_selectMicroRect` marca o Set em `_microAnchorlessSelection`, e `_toggleMicroSelection` repassa a marca), vale o extremo do grupo. Distribuir deixa o mesmo espaço livre entre vizinhos, com o primeiro e o último (pelo centro) parados.
 
@@ -353,7 +357,7 @@ Preferências de tela (não do projeto) ficam num único objeto do localStorage 
 | Constantes de topo | `MICRO_MODES` (barra de ferramentas), paletas (`AREA_COLORS`, `TEXT_COLORS`, `ELEMENT_COLORS`), padrões de gráfico e label. |
 | `constructor` | Todo o estado de topo: `micro`, viewport, modo, seleção (`microSelectedId` + `microSelectedIds`), anotações (`microLabels/Areas/Charts`), `microColors`, `microWindows`, `microLayout`, destaques de execução, `manualFrameId`, estado de gestos (`_microPointer`, `_microDrag*`…). |
 | `_buildLayout` | Cria o DOM (canvas, painel de código, árvore de chamadas, divisórias) e instancia **todos** os widgets, ligando os callbacks. Também cria o `MicroRuntimeAdapter` e o `MicroProgramRunner`. |
-| `_onKeyDown` / `_onKeyUp` | Todos os atalhos globais (Tab → código, Ctrl+,/. passos, Ctrl+H, Ctrl+Espaço, Ctrl+A, Delete, Alt+dígito cor, Enter, Alt+C, 1-4/V/T/R/B modos, G, N, C). A ordem dos `if` importa: alguns valem mesmo digitando, outros não (`isTyping`). |
+| `_onKeyDown` / `_onKeyUp` | Todos os atalhos globais (Tab → código, Ctrl+,/. passos, Ctrl+H, Ctrl+Espaço, Ctrl+A, Delete, Alt+dígito cor, Enter, Alt+C, 1-5/V/T/R/B/L modos, G, N, C). A ordem dos `if` importa: alguns valem mesmo digitando, outros não (`isTyping`). |
 | Configurações | `_settingsValues`, `_applySetting`, `_resetSettings`. |
 | Cores | `_paletteIndexFromKey`, `_applyMicroPaletteColor`. |
 | Viewport | `_resetMicroViewport`, `_fitMicroViewport`, `_onMicroWheel`, `_microWorldToScreen`… |
@@ -368,6 +372,7 @@ Preferências de tela (não do projeto) ficam num único objeto do localStorage 
 | Alinhar e distribuir | `_runMicroAlignAction`, `_microElementRect`, `_microAlignableIds`, `_microSelectionAnchor` (ver `microAlign.js`). |
 | Organizar árvore | `_runMicroTreeLayout`, `_microSelectedTreeRoot` (ver `microTreeLayout.js`). |
 | Quick actions | `_openQuickActions` (lista de comandos) e `_quickNew*` (um por comando), `_editMicroNameInPlace`, `_quickDiscard`. |
+| Ligar nós de grafo | `_findMicroGraphNodeAt`, `_findMicroGraphLinkTarget`, `_startMicroGraphLink`, `_toggleMicroGraphNeighbor` (ferramenta 5/L e Shift + arraste num nó de grafo, ver 6.3). |
 | Cursores por gesto | `_findMicroCursorCellAt`, `_createMicroIndexCursor`, `_startMicroIndexCursorDrag`. |
 | Setas | `_pointerAnchor`, `_structFieldAnchor`, `_computeStructPairOffsets` (de que lado da caixa sai o pino). |
 | Gestos | `_onMicroPointerDown`, `_onMicroPointerMoveWindow`, `_onMicroPointerUpWindow`, `_onMicroContextMenu`, `_onMicroDblClick`, renomeações in place. |
@@ -402,7 +407,7 @@ Preferências de tela (não do projeto) ficam num único objeto do localStorage 
 CRUD dos seis `Map`s, com consistência de referências:
 
 - **Criação:** `addStruct`, `addPointer`, `addArray`, `addDict`, `addMatrix`, `addVariable`.
-- **Ligações:** `setField(structId, 'next'|'prev', targetId)`, `setPointerTarget(pointerId, target)`, `setArrayCellRef`, `setDictCellRef`, `setDictCellArrayRef`, `setStructNeighborsArray`, `link{Array,Dict,Matrix}LabelPointer`.
+- **Ligações:** `setField(structId, 'next'|'prev', targetId)`, `setPointerTarget(pointerId, target)`, `setArrayCellRef`, `setDictCellRef`, `setDictCellArrayRef`, `setStructNeighborsArray`, `toggleStructNeighbor(fromId, toId, newArrayPos)` (liga/desliga a aresta direcionada de um nó `graph`: entra no fim da lista ou sai dela; devolve `'added'`/`'removed'`/`null`), `link{Array,Dict,Matrix}LabelPointer`.
 - **Valores:** `setData`, `setArrayCellValue`, `setDictCellValue`, `setMatrixCellValue`, `setVariableValue`, `setArrayContents`, `setSetContents`.
 - **Forma:** `resizeArray`, `insertArrayCell`, `removeArrayCell`, `growArray`/`shrinkArray`, `resizeMatrix`, `set/toggle{Array,Dict}Orientation`.
 - **Nomes:** `rename{Array,Dict,Matrix,Variable}`, `renamePointer` (renomear uma coleção renomeia também o ponteiro-rótulo).
@@ -558,11 +563,11 @@ Mais simples, porque não passa pelo interpretador nem pelos snapshots. Use o **
 
 ### 8.7 Nova ferramenta (modo da barra inferior)
 
-1. **`App.js` → `MICRO_MODES`**: `{ id: 'x', label: 'Descrição', shortcut: '5 / K' }`.
+1. **`App.js` → `MICRO_MODES`**: `{ id: 'x', label: 'Descrição', shortcut: '6 / K' }`.
 2. **`ModeToolbar.js` → `ICONS`**: um SVG 24×24 com `stroke="currentColor"` com a mesma chave `x`.
-3. **Atalho**: no final de `App#_onKeyDown` (`else if (key === '5' || key === 'k') this._setMicroMode('x')`). Confira se a tecla já está em uso.
+3. **Atalho**: no final de `App#_onKeyDown` (`else if (key === '6' || key === 'k') this._setMicroMode('x')`). Confira se a tecla já está em uso (1–5/V/T/R/B/L já são modos).
 4. **Gesto**:
-   - `_onMicroPointerDown`: um ramo `if (this.microMode === 'x') { this._microPointer = { ..., hit: 'x-create', worldPtDown: worldPt }; ... }` no começo, junto aos de `text`/`area`/`chart`;
+   - `_onMicroPointerDown`: um ramo `if (this.microMode === 'x') { this._microPointer = { ..., hit: 'x-create', worldPtDown: worldPt }; ... }` no começo, junto aos de `text`/`area`/`chart`/`link` (uma ferramenta que age SOBRE um elemento, em vez de criar um, faz o hit test ali mesmo — gabarito: `link`, que só começa o gesto num nó de grafo);
    - `_onMicroPointerMoveWindow`: atualizar um rascunho (`this._microXDraft`);
    - `_onMicroPointerUpWindow`: confirmar (criar o elemento) e limpar o rascunho;
    - `_setMicroMode`: zerar o rascunho ao trocar de modo;

@@ -5,6 +5,7 @@ import {
   MicroCanvasView,
   STRUCT_W,
   STRUCT_H,
+  STRUCT_CIRCLE_R,
   PTR_W,
   PTR_H,
   VAR_W,
@@ -50,12 +51,14 @@ import { parseExpression } from '../interpreter/parser.js';
 import { MicroRuntimeAdapter } from './MicroRuntimeAdapter.js';
 import { microLayoutKey } from './microLayoutKey.js';
 import { MicroProgramRunner } from './MicroProgramRunner.js';
+import { alignRects, distributeRects } from './microAlign.js';
 
 import { PlaybackControls } from '../ui/PlaybackControls.js';
 import { NodePopup } from '../ui/NodePopup.js';
 import { ArraySettingsPopup } from '../ui/ArraySettingsPopup.js';
 import { InlineValueEditor } from '../ui/InlineValueEditor.js';
 import { ModeToolbar } from '../ui/ModeToolbar.js';
+import { AlignToolbar } from '../ui/AlignToolbar.js';
 import { CodeEditor } from '../ui/CodeEditor.js';
 import { CallTree } from '../ui/CallTree.js';
 import { CanvasTitle } from '../ui/CanvasTitle.js';
@@ -210,6 +213,10 @@ export class App {
     this._microPortDrag = null;
     this._microGroupDragPositions = null; // Map<id,{x,y}> durante um arraste de grupo (seleção múltipla)
     this._microSelectionPreview = null; // {x0,y0,x1,y1} durante um arraste de seleção em área
+    // o Set `microSelectedIds` de uma seleção que COMEÇOU por retângulo (sem
+    // ordem de clique) — alinhar usa os extremos do grupo em vez do primeiro
+    // selecionado, ver `_microSelectionAnchor`
+    this._microAnchorlessSelection = null;
     this._spaceDown = false; // barra de espaço — botão direito passa a mover o canvas enquanto pressionada
 
     this._boundKeyDown = (e) => this._onKeyDown(e);
@@ -417,7 +424,15 @@ export class App {
     const microModeToolbarHost = document.createElement('div');
     microModeToolbarHost.className = 'mode-toolbar-host';
     microContainer.appendChild(microModeToolbarHost);
-    this.microModeToolbar = new ModeToolbar(microModeToolbarHost, { setMode: (m) => this._setMicroMode(m) }, MICRO_MODES);
+    const modeToolbarEl = document.createElement('div');
+    microModeToolbarHost.appendChild(modeToolbarEl);
+    this.microModeToolbar = new ModeToolbar(modeToolbarEl, { setMode: (m) => this._setMicroMode(m) }, MICRO_MODES);
+    // logo acima dela, só com seleção múltipla: alinhar/distribuir (ver
+    // AlignToolbar.js e `_runMicroAlignAction`)
+    const alignToolbarEl = document.createElement('div');
+    alignToolbarEl.className = 'align-toolbar-host';
+    microModeToolbarHost.appendChild(alignToolbarEl);
+    this.microAlignToolbar = new AlignToolbar(alignToolbarEl, { run: (action) => this._runMicroAlignAction(action) });
 
     // canto superior direito: centralizar vista (agora reenquadra TODO o
     // conteúdo do canvas, em vez de só recentralizar na origem — ver
@@ -2453,12 +2468,91 @@ export class App {
     const ids = partner ? [id, partner.id] : [id];
     if (set.has(id)) ids.forEach((x) => set.delete(x));
     else ids.forEach((x) => set.add(x));
+    // seleção que começou por retângulo continua sem âncora (ver
+    // `_microSelectionAnchor`)
+    if (this._microAnchorlessSelection === this.microSelectedIds && set.size > 1) this._microAnchorlessSelection = set;
     this.microSelectedIds = set;
     this.microSelectedId = set.size === 1 ? [...set][0] : null;
     const only = this.microSelectedId;
     const byKind = { pointer: this.micro.pointers, variable: this.micro.variables, array: this.micro.arrays, dict: this.micro.dicts, matrix: this.micro.matrices };
     const kind = only == null ? null : Object.keys(byKind).find((k) => byKind[k].has(only)) ?? null;
     this._syncCodeEditorSelection(kind, only);
+  }
+
+  /** Seleção em área (arraste no vazio): `ids` são os elementos dentro do
+   * retângulo. Com Ctrl soma à seleção atual em vez de substituí-la. Se a
+   * seleção COMEÇA por aqui (sem Ctrl, ou com Ctrl mas nada selecionado
+   * antes), não tem um "primeiro clicado" — a ordem de `ids` é só a dos
+   * tipos — e fica marcada como sem âncora (ver `_microSelectionAnchor`). */
+  _selectMicroRect(ids, ctrl = false) {
+    const before = ctrl ? this._microSelectionIds() : [];
+    const all = [...before, ...ids];
+    this.microSelectedIds = new Set(all);
+    this.microSelectedId = this.microSelectedIds.size === 1 ? all[0] : null;
+    this._microAnchorlessSelection = before.length ? null : this.microSelectedIds;
+  }
+
+  // ---- alinhar e distribuir a seleção (AlignToolbar, Ctrl+Espaço) ----
+
+  /** Retângulo (mundo) desenhado de um elemento, pra alinhar: coleções com a
+   * aba (ver boxWithHandle), nó simplificado só o círculo, o resto a caixa. */
+  _microElementRect(id) {
+    const n = this._microFindById(id);
+    if (!n) return null;
+    if (this.micro.structs.has(id)) {
+      if (!this.microSimplifiedNodes) return { x: n.x, y: n.y, w: STRUCT_W, h: STRUCT_H };
+      const cx = n.x + STRUCT_W / 2;
+      const cy = n.y + STRUCT_H / 2;
+      return { x: cx - STRUCT_CIRCLE_R, y: cy - STRUCT_CIRCLE_R, w: 2 * STRUCT_CIRCLE_R, h: 2 * STRUCT_CIRCLE_R };
+    }
+    if (this.micro.pointers.has(id)) return { x: n.x, y: n.y, w: pointerWidth(n, this.microFullNames), h: PTR_H };
+    if (this.micro.variables.has(id)) return { x: n.x, y: n.y, w: variableWidth(n, this.microFullNames), h: VAR_H };
+    if (this.micro.arrays.has(id)) return this._microBoundsWithHandle(n, arrayLayout(n), arrayHandleRect(n));
+    if (this.micro.dicts.has(id)) return this._microBoundsWithHandle(n, dictLayout(n), dictHandleRect(n));
+    if (this.micro.matrices.has(id)) return this._microBoundsWithHandle(n, matrixLayout(n), matrixHandleRect(n));
+    if (this.microLabels.has(id)) {
+      const { width, height } = labelSize(n.text, n.fontSize);
+      return { x: n.x, y: n.y, w: width, h: height };
+    }
+    return { x: n.x, y: n.y, w: n.width, h: n.height }; // área, gráfico
+  }
+
+  /** Ids da seleção que dá pra alinhar/mover agora — mesmo filtro do
+   * arraste em grupo (ver `_onMicroPointerDown`), mais os ponteiros/cursores
+   * escondidos, que não estão desenhados. */
+  _microAlignableIds() {
+    return this._microSelectionIds().filter((id) => {
+      const n = this._microFindById(id);
+      return n && this._microPickable(n) && !n.hidden && !n.readCursorHidden;
+    });
+  }
+
+  /** Referência do alinhamento: o primeiro elemento selecionado (ordem de
+   * clique/Ctrl+clique), ou null — os extremos do grupo — numa seleção que
+   * começou por retângulo (ver `_selectMicroRect`). */
+  _microSelectionAnchor() {
+    if (this._microAnchorlessSelection && this._microAnchorlessSelection === this.microSelectedIds) return null;
+    return this._microSelectionIds()[0] ?? null;
+  }
+
+  /** Botão da AlignToolbar / comando do Ctrl+Espaço: `action` é um modo de
+   * ALIGN_MODES ('left', 'center', …) ou 'distribute-x'/'distribute-y'.
+   * Cada elemento vai pra posição nova por `_microSetNodePos`, o mesmo
+   * caminho de soltar um arraste — na reprodução da Simulação vale só pro
+   * passo atual, igual mover com o mouse. */
+  _runMicroAlignAction(action) {
+    const ids = this._microAlignableIds();
+    const rects = ids.map((id) => ({ id, ...this._microElementRect(id) }));
+    const moves = action.startsWith('distribute-')
+      ? distributeRects(rects, action.slice('distribute-'.length))
+      : rects.length >= 2
+        ? alignRects(rects, action, this._microSelectionAnchor())
+        : new Map();
+    moves.forEach(({ dx, dy }, id) => {
+      const n = this._microFindById(id);
+      this._microSetNodePos(id, n.x + dx, n.y + dy);
+    });
+    this._renderMicroOnly();
   }
 
   /** Chave ESTÁVEL de um ponteiro pras janelas deslizantes (`microWindows`):
@@ -2590,6 +2684,28 @@ export class App {
         run: () => this._quickRemoveSlidingWindow(inWindow),
       },
     ];
+    // alinhar/distribuir: só posição (não mexe no modelo), vale também na
+    // Simulação — mesmos botões da AlignToolbar
+    const alignable = this._microAlignableIds().length;
+    const alignCommands = [
+      ['align left', 'left', 'iguala a borda esquerda à do 1º selecionado'],
+      ['align center', 'center', 'iguala o centro horizontal ao do 1º selecionado'],
+      ['align right', 'right', 'iguala a borda direita à do 1º selecionado'],
+      ['align top', 'top', 'iguala a borda de cima à do 1º selecionado'],
+      ['align middle', 'middle', 'iguala o centro vertical ao do 1º selecionado'],
+      ['align bottom', 'bottom', 'iguala a borda de baixo à do 1º selecionado'],
+      ['distribute horizontally', 'distribute-x', 'mesmo espaço entre os elementos, da esquerda à direita'],
+      ['distribute vertically', 'distribute-y', 'mesmo espaço entre os elementos, de cima a baixo'],
+    ].map(([name, action, description]) => {
+      const min = action.startsWith('distribute-') ? 3 : 2;
+      return {
+        name,
+        aliases: [],
+        description,
+        disabled: alignable >= min ? null : `selecione ${min} ou mais elementos`,
+        run: () => this._runMicroAlignAction(action),
+      };
+    });
     const commands = [
       model('new pointer', ['new ptr'], 'ponteiro solto — pede o nome', () => this._quickNewPointer()),
       model('new variable', ['new var'], 'variável — pede o nome', () => this._quickNewVariable()),
@@ -2610,6 +2726,7 @@ export class App {
         run: () => this._quickNewChart(),
       },
       ...windowCommands,
+      ...alignCommands,
     ];
     this.microQuickActions.open(commands, {
       showAll,
@@ -3561,9 +3678,7 @@ export class App {
     } else if (hit === 'areaselect') {
       if (moved && this._microSelectionPreview) {
         // com Ctrl, a área SOMA à seleção atual em vez de substituí-la
-        const ids = [...(ctrl ? this._microSelectionIds() : []), ...this._microFindIdsInRect(this._microSelectionPreview)];
-        this.microSelectedIds = new Set(ids);
-        this.microSelectedId = this.microSelectedIds.size === 1 ? ids[0] : null;
+        this._selectMicroRect(this._microFindIdsInRect(this._microSelectionPreview), ctrl);
       } else if (ctrl) {
         // Ctrl+clique no vazio: não perde a seleção que está sendo montada
       } else {
@@ -3926,6 +4041,7 @@ export class App {
       mode: this.microMode,
       swatches: { area: this.microAreaColor, text: labelCssColor(this.microLabelColor) },
     });
+    this.microAlignToolbar.render({ count: this._microAlignableIds().length });
 
     // Aba ativa (ver painel de árvore de chamadas): qual frame mostrar os
     // ponteiros/variáveis locais — segue o passo atual da reprodução

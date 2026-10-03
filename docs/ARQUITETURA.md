@@ -359,8 +359,8 @@ Preferências de tela (não do projeto) ficam num único objeto do localStorage 
 
 - Construtor: `new MicroRuntimeAdapter(micro, {createPosition, onChange, onArrayCreated, onDictCreated, onMatrixCreated})`. Não sabe nada de canvas; pede a posição pra quem o criou e avisa mudanças por `onChange`.
 - Estado: `touched` (toques desde a última leitura), `frameStack` (pilha de frames, sempre com `'global'` na base), `output` (linhas de `print`), semente de hash de set.
-- Resolução de nomes por frame: `_findInFrame`, `_findPointer`, `_findVariable`, `_findArray`, `_findDict`, `_findMatrix`. O frame atual tem prioridade e o global serve de fallback.
-- `assignName(name, value)`: o grande despacho por `value.kind`, que decide se o nome vira variável, ponteiro, nova lista/set/deque/dict/matriz ou se reaponta um ponteiro existente.
+- Resolução de nomes por frame: `_findInFrame`, `_findPointer`, `_findVariable`, `_findArray`, `_resolveArrayByName`, `_findDict`, `_findMatrix`. Na leitura, o frame atual inteiro tem prioridade (um nome local, de qualquer tipo, esconde a lista global de mesmo nome) e o global serve de fallback. Na escrita (`assignName`), só o frame atual conta: dentro de uma função, atribuir sempre cria ou atualiza um nome local, igual Python (a DSL não tem `global`). Dicts e matrizes ainda não têm frame.
+- `assignName(name, value)`: o grande despacho por `value.kind`, que decide se o nome vira variável, ponteiro, nova lista/set/deque/dict/matriz ou se reaponta um ponteiro existente. Uma lista (nova ou outra lista viva) sempre substitui o que o nome era. Se o nome já é uma lista que mais ninguém enxerga (`_isArrayShared`), ela é reescrita no lugar (`MicroModel#replaceArray`: mesma caixa, cor e cursores, como em `x = x + [2]`). Se outro nome, célula de dict ou `neighbors` ainda aponta pra ela, a antiga fica sem nome e o rótulo passa pra lista nova. As listas novas saem de `_listSpec` (lista, lista de nós, set e deque num formato só).
 - Cursores de leitura: `getIndex` → `_showReadCursor`; `getMatrixCell` → `_showMatrixCursor`; `adoptReadCursor`; `_refreshDependentCursors`/`_recomputeCursor`.
 - Listas: `arrayAppend`, `arrayInsert`, `arrayPop`, `assignIndex`, `_fitArrayKind` (uma lista vazia adota o tipo, valor ou nó, do primeiro item).
 - Sets: `setAdd`/`setRemove`/`setPop`/`_writeSet`, sempre substituindo `hashTable` por um objeto novo (os snapshots compartilham o antigo).
@@ -456,9 +456,9 @@ Cada widget é uma classe independente, sem classe base. Recebe um container e c
 >
 > As receitas listam **todos** os pontos de contato conhecidos. Antes de começar, use `grep` pra achar um recurso parecido que já existe (ex.: `matrix` pra um elemento novo, `'sorted'` pra um built-in novo) e siga o mesmo caminho por todas as camadas.
 
-### 8.1 Novo built-in da linguagem (função global, ex.: `abs(x)`)
+### 8.1 Novo built-in da linguagem (função global, ex.: `round(x)`)
 
-1. **`evaluator.js`**, `evaluate` → `case 'Call'` → bloco `if (node.callee.type === 'Name')`: adicione `if (fname === 'abs' && node.args.length === 1) { ... }` perto dos outros (`len`, `sum`, `min/max`, `sorted`…). Avalie os argumentos com `evaluate(arg, env)`, devolva um valor tipado (`Scalar(...)`) ou `undefined` (com `env.warn?.(...)` pra um erro legível).
+1. **`evaluator.js`**, `evaluate` → `case 'Call'` → bloco `if (node.callee.type === 'Name')`: adicione `if (fname === 'round' && node.args.length === 1) { ... }` perto dos outros (`len`, `sum`, `min/max`, `sorted`, `abs`, `int`…). Avalie os argumentos com `evaluate(arg, env)`, devolva um valor tipado (`Scalar(...)`) ou `undefined` (com `env.warn?.(...)` pra um erro legível).
 2. Se precisar ler ou escrever o modelo, crie um método novo na **interface `Environment`**: documente no comentário do topo de `evaluator.js` e implemente em **`MicroRuntimeAdapter`**. Lembre de chamar `this._touch(kind, id)` em tudo que for lido ou escrito, pro destaque funcionar.
 3. Pra o nome aparecer realçado no editor, inclua-o em `KEYWORDS` em **`CodeEditor.js`**, se fizer sentido.
 4. Atualize a lista de built-ins no comentário do topo de `evaluator.js` e a descrição da DSL no `CLAUDE.md`.

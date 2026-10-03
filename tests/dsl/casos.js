@@ -369,4 +369,153 @@ print(busca(nums, 7), busca(nums, 4), busca(nums, 1))
 3 -1 0
 `,
   },
+  {
+    nome: 'lista reatribuída a partir dela mesma, "+=" no lugar e merge sort clássico',
+    codigo: `
+x = [0]
+y = x
+x = x + [2]
+x.append(5)
+print(x, y)
+a = [1]
+b = a
+b += [2]
+print(a, b)
+
+def merge(a, b):
+    res = []
+    i = 0
+    j = 0
+    while i < len(a) and j < len(b):
+        if a[i] <= b[j]:
+            res.append(a[i])
+            i += 1
+        else:
+            res.append(b[j])
+            j += 1
+    res = res + a[i:] + b[j:]
+    return res
+
+def merge_sort(nums):
+    if len(nums) <= 1:
+        return nums
+    meio = len(nums) // 2
+    return merge(merge_sort(nums[:meio]), merge_sort(nums[meio:]))
+
+nums = [38, 27, 43, 3, 9, 82, 10]
+nums = merge_sort(nums)
+print(nums)
+`,
+    saida: `
+[0, 2, 5] [0]
+[1, 2] [1, 2]
+[3, 9, 10, 27, 38, 43, 82]
+`,
+  },
+  {
+    nome: "dict literal com listas (lista de adjacência) e print de dict com lista",
+    codigo: `
+grafo = {"a": ["b", "c"], "b": ["d"], "c": [], "d": []}
+print(grafo)
+grafo["c"].append("d")
+print(len(grafo["a"]), grafo["c"])
+k = {}
+k[0] = [7, 8]
+print(k, f"{k}", str(k))
+visitados = []
+pilha = ["a"]
+while pilha:
+    u = pilha.pop()
+    if u not in visitados:
+        visitados.append(u)
+        for v in grafo[u]:
+            pilha.append(v)
+print(visitados)
+`,
+    saida: `
+{'a': ['b', 'c'], 'b': ['d'], 'c': [], 'd': []}
+2 ['d']
+{0: [7, 8]} {0: [7, 8]} {0: [7, 8]}
+['a', 'c', 'd', 'b']
+`,
+  },
+  {
+    nome: "inserção em BST devolvendo a raiz pro nome igual ao do parâmetro",
+    codigo: `
+def inserir(raiz, v):
+    if raiz is None:
+        return TreeNode(v)
+    if v < raiz.data:
+        raiz.left = inserir(raiz.left, v)
+    else:
+        raiz.right = inserir(raiz.right, v)
+    return raiz
+
+def em_ordem(raiz, saida):
+    if raiz is not None:
+        em_ordem(raiz.left, saida)
+        saida.append(raiz.data)
+        em_ordem(raiz.right, saida)
+
+raiz = None
+for v in [50, 30, 70, 20, 40, 60]:
+    raiz = inserir(raiz, v)
+valores = []
+em_ordem(raiz, valores)
+print(raiz.data, raiz.left.data, raiz.right.left.data)
+print(valores)
+`,
+    saida: `
+50 30 60
+[20, 30, 40, 50, 60, 70]
+`,
+  },
+  {
+    nome: "fatia e índice do resultado de uma chamada, abs() e int()",
+    codigo: `
+nums = [4, 1, 5, 2]
+print(sorted(nums)[::-1], sorted(nums)[0], sorted(nums)[-1])
+print(list("abcde")[1:4], [10, 20, 30][-2:])
+m = [[1, 2, 3], [4, 5, 6]]
+print(m[1][1:])
+print(abs(-3), abs(2.5), int("7") + 1, int(3.9), int(-2.7), int(True))
+print(int(" -12 "), int("1_000"), int("ff", 16), int("101", 2))
+soma = 0
+for ch in "2024":
+    soma += int(ch)
+print(soma, abs(nums[1] - nums[2]))
+`,
+    saida: `
+[5, 4, 2, 1] 1 5
+['b', 'c', 'd'] [20, 30]
+[5, 6]
+3 2.5 8 3 -2 1
+-12 1000 255 5
+8 4
+`,
+  },
+  {
+    nome: "expressão condicional (a if cond else b), inclusive em recursão",
+    codigo: `
+x = 1 if True else 2
+print(x)
+
+def fat(n):
+    return 1 if n <= 1 else n * fat(n - 1)
+
+print(fat(5))
+nums = [4, 9, 2]
+i = 0
+y = nums[i] if i < len(nums) else -1
+print(y, "par" if y % 2 == 0 else "ímpar")
+z = "a" if x > 5 else "b" if x > 0 else "c"
+print(z, [v if v > 3 else 0 for v in nums], [v for v in nums if v > 3])
+`,
+    saida: `
+1
+120
+4 par
+b [4, 9, 0] [4, 9]
+`,
+  },
 ];

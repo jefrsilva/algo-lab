@@ -1,10 +1,10 @@
 import { tokenize, TokenType, LexError } from './lexer.js';
-import { Assign, TupleAssign, ChainAssign, ExprStmt, Name, NumberLit, StrLit, FString, NoneLit, BoolLit, ArrayLit, ListComp, DictLit, SetLit, TupleLit, Attribute, Index, Slice, Call, Import, BinOp, UnaryOp, Compare } from './ast.js';
+import { Assign, TupleAssign, ChainAssign, ExprStmt, Name, NumberLit, StrLit, FString, NoneLit, BoolLit, ArrayLit, ListComp, DictLit, SetLit, TupleLit, Attribute, Index, Slice, Call, Import, BinOp, UnaryOp, Compare, IfExp } from './ast.js';
 
 /**
  * Parser recursive-descent com precedência estilo Python (menor pra maior):
- * or → and → not → comparações (== != < <= > >= is [not] in [not]) → + - →
- * * / % → unário (-) → potência (** , associativo à direita) → pós-fixo
+ * expressão condicional (a if cond else b) → or → and → not → comparações
+ * (== != < <= > >= is [not] in [not]) → + - → * / % → unário (-) → potência (** , associativo à direita) → pós-fixo
  * (.campo, [expr], [expr:expr:expr], (args)) → primário (número, None,
  * True, False, identificador, [lista], (expr), (tupla,)).
  *
@@ -72,7 +72,9 @@ class Parser {
     let cond = null;
     if (this.atWord('if')) {
       this.advance();
-      cond = this.parseExpr();
+      // sem expressão condicional aqui, igual a gramática do Python ("[x for
+      // x in xs if a if b else c]" é erro lá também)
+      cond = this.parseOr();
     }
     this.expect(TokenType.RBRACKET, 'Esperado "]" no fim da list comprehension');
     return ListComp(element, varNames, iterExpr, cond);
@@ -178,7 +180,8 @@ class Parser {
    * sintático desenrolado aqui mesmo, na hora do parse: "nome += expr" vira
    * exatamente a mesma AST de "nome = nome + expr" (reaproveitando o próprio
    * `target` já parseado como o lado esquerdo do `BinOp`), então o avaliador
-   * (evaluator.js) não precisa saber que atribuição composta existe. */
+   * (evaluator.js) não precisa saber que atribuição composta existe — exceto
+   * "+=" numa lista, que estende a lista no lugar (`inplace`, ver ast.js#BinOp). */
   parseAssignRhs(target) {
     const compoundOps = {
       [TokenType.PLUS_ASSIGN]: '+',
@@ -194,15 +197,28 @@ class Parser {
     const op = compoundOps[this.peek().type];
     if (op) {
       this.advance();
-      return BinOp(op, target, this.parseExpr());
+      // "lista += [...]" estende a mesma lista no Python (não é igual a
+      // "lista = lista + [...]", que cria outra) — ver ast.js#BinOp
+      return BinOp(op, target, this.parseExpr(), op === '+');
     }
     throw new ParseError('Esperado "=" (ou "+=", "-=", "*=", "/=", "//=") depois do alvo da atribuição', this.peek().start);
   }
 
   // ---- expressões, por precedência ----
 
+  /** "a if cond else b" — a menor precedência de todas, associativa à
+   * direita ("a if x else b if y else c" é "a if x else (b if y else c)").
+   * "if"/"else" chegam do lexer como IDENT comum (ver `atWord`). */
   parseExpr() {
-    return this.parseOr();
+    const body = this.parseOr();
+    if (!this.atWord('if')) return body;
+    this.advance();
+    const test = this.parseOr();
+    if (!this.atWord('else')) {
+      throw new ParseError('Esperado "else" na expressão condicional ("a if condição else b")', this.peek().start);
+    }
+    this.advance();
+    return IfExp(test, body, this.parseExpr());
   }
 
   parseOr() {

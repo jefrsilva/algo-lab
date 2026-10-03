@@ -20,10 +20,18 @@ describe('parseStatement', () => {
   });
 
   test('atribuição composta vira Assign com BinOp', () => {
-    expect(stmt('nums[i] += 1')).toEqual({
+    expect(stmt('nums[i] -= 1')).toEqual({
       type: 'Assign',
       target: { type: 'Index', object: nome('nums'), index: nome('i') },
-      value: { type: 'BinOp', op: '+', left: { type: 'Index', object: nome('nums'), index: nome('i') }, right: num(1) },
+      value: { type: 'BinOp', op: '-', left: { type: 'Index', object: nome('nums'), index: nome('i') }, right: num(1) },
+    });
+  });
+
+  test('"+=" marca o BinOp como inplace (lista é estendida no lugar)', () => {
+    expect(stmt('xs += [1]')).toEqual({
+      type: 'Assign',
+      target: nome('xs'),
+      value: { type: 'BinOp', op: '+', left: nome('xs'), right: { type: 'ArrayLiteral', elements: [num(1)] }, inplace: true },
     });
   });
 
@@ -93,6 +101,33 @@ describe('parseExpression', () => {
     expect(expr('{1, 2}').type).toBe('SetLiteral');
     expect(expr('(1, 2)').type).toBe('TupleLiteral');
     expect(expr('[x * 2 for x in xs if x > 0]').type).toBe('ListComp');
+  });
+
+  test('expressão condicional: menor precedência, associativa à direita', () => {
+    expect(expr('a if x > 0 else b')).toEqual({
+      type: 'IfExp',
+      test: { type: 'BinOp', op: '>', left: nome('x'), right: num(0) },
+      body: nome('a'),
+      orelse: nome('b'),
+    });
+    expect(expr('a or b if c else d')).toMatchObject({ type: 'IfExp', body: { type: 'BinOp', op: 'or' } });
+    expect(expr('1 if p else 2 if q else 3')).toEqual({
+      type: 'IfExp',
+      test: nome('p'),
+      body: num(1),
+      orelse: { type: 'IfExp', test: nome('q'), body: num(2), orelse: num(3) },
+    });
+  });
+
+  test('expressão condicional dentro e em volta de list comprehension', () => {
+    expect(expr('[v if v > 0 else 0 for v in xs]')).toMatchObject({ type: 'ListComp', element: { type: 'IfExp' }, cond: null });
+    expect(expr('[v for v in xs if v > 0]')).toMatchObject({ type: 'ListComp', element: nome('v'), cond: { type: 'BinOp' } });
+    // o filtro da comprehension não aceita expressão condicional (igual Python)
+    expect(parseExpression('[v for v in xs if a if b else c]')).toMatchObject({ ok: false });
+  });
+
+  test('expressão condicional sem else é erro', () => {
+    expect(parseExpression('a if b')).toMatchObject({ ok: false, error: { message: expect.stringContaining('Esperado "else"') } });
   });
 
   test('conteúdo sobrando depois da expressão é erro', () => {

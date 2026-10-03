@@ -8,42 +8,36 @@ import { describe, expect, test } from 'vitest';
 import { linhas, saida } from '../helpers/runDsl.js';
 
 describe('bugs conhecidos da DSL', () => {
-  test.fails('"x = x + [2]" reatribui a lista com o resultado da soma', () => {
-    expect(saida(linhas('x = [0]', 'x = x + [2]', 'print(x)'))).toBe('[0, 2]');
+  // Um nome só troca de tipo quando recebe uma lista (ver
+  // MicroRuntimeAdapter#assignName); nos demais casos a atribuição é
+  // ignorada e o nome continua com o valor antigo.
+  test.fails('dict reatribuído com outro literal', () => {
+    expect(saida(linhas('d = {"a": 1}', 'd = {"b": 2}', 'print(d)'))).toBe("{'b': 2}");
   });
 
-  test.fails('dict literal com listas como valores', () => {
-    expect(saida(linhas('g = {"a": [1, 2]}', 'print(g)'))).toBe("{'a': [1, 2]}");
+  test.fails('variável que passa a guardar um nó', () => {
+    expect(saida(linhas('x = 5', 'x = Node(1)', 'print(x.data)'))).toBe('1');
   });
 
-  test.fails('print de dict com lista mostra o conteúdo da lista', () => {
-    expect(saida(linhas('k = {}', 'k[0] = [7, 8]', 'print(k)'))).toBe('{0: [7, 8]}');
+  test.fails('ponteiro que passa a guardar um número', () => {
+    expect(saida(linhas('p = Node(1)', 'p = 5', 'print(p)'))).toBe('5');
   });
 
-  test.fails('ponteiro devolvido por função pra variável global de mesmo nome do parâmetro', () => {
+  test.fails('lista que passa a guardar um número', () => {
+    expect(saida(linhas('x = [1]', 'x = 5', 'print(x)'))).toBe('5');
+  });
+
+  // dicts não têm frame (ver MicroModel.js): "memo = {}" dentro da função
+  // escreve no dict global de mesmo nome em vez de criar um local
+  test.fails('dict criado dentro de função é local', () => {
     const codigo = linhas(
-      'def inserir(raiz, v):',
-      '    if raiz is None:',
-      '        return TreeNode(v)',
-      '    raiz.left = inserir(raiz.left, v)',
-      '    return raiz',
-      'raiz = None',
-      'raiz = inserir(raiz, 5)',
-      'raiz = inserir(raiz, 3)',
-      'print(raiz.data, raiz.left.data)',
+      'def f():',
+      '    memo = {}',
+      '    memo[1] = 2',
+      '    return memo[1]',
+      'memo = {}',
+      'print(f(), memo)',
     );
-    expect(saida(codigo)).toBe('5 3');
-  });
-
-  test.fails('fatia direto do resultado de uma chamada', () => {
-    expect(saida(linhas('nums = [1, 5]', 'print(sorted(nums)[::-1])'))).toBe('[5, 1]');
-  });
-
-  test.fails('abs() e int() embutidos', () => {
-    expect(saida(linhas('print(abs(-3), int("7") + 1)'))).toBe('3 8');
-  });
-
-  test.fails('expressão condicional (a if cond else b)', () => {
-    expect(saida(linhas('x = 1 if True else 2', 'print(x)'))).toBe('1');
+    expect(saida(codigo)).toBe('2 {}');
   });
 });

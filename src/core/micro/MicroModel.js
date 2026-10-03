@@ -149,6 +149,23 @@ export class MicroModel {
     }
   }
 
+  /** Troca o conteúdo E o tipo (lista/set/deque) de um array — ele passa a
+   * guardar uma lista nova inteira: criação pelo código e "x = x + [2]" sem
+   * mais ninguém apontando pra lista antiga (ver
+   * MicroRuntimeAdapter#assignName). Objetos novos, como `setArrayContents`
+   * (que também cuida dos cursores que ficaram fora do intervalo). */
+  replaceArray(arrayId, { kind, cells, isSet = false, hashTable = null, isDeque = false, maxlen = null }) {
+    const node = this.arrays.get(arrayId);
+    if (!node) return;
+    this.setArrayContents(arrayId, kind, cells);
+    delete node.isSet;
+    delete node.hashTable;
+    delete node.isDeque;
+    delete node.maxlen;
+    if (isSet) Object.assign(node, { isSet: true, hashTable });
+    if (isDeque) Object.assign(node, { isDeque: true, maxlen });
+  }
+
   renameArray(arrayId, name) {
     const node = this.arrays.get(arrayId);
     if (!node) return;
@@ -162,6 +179,11 @@ export class MicroModel {
     const array = this.arrays.get(arrayId);
     const pointer = this.pointers.get(pointerId);
     if (!array || !pointer) return;
+    // rótulo passando de um array pra outro ("x = x + [2]" com a lista antiga
+    // ainda apontada por outro nome, ver MicroRuntimeAdapter#assignName): o
+    // antigo fica sem rótulo
+    const previous = pointer.isArrayLabel ? this.arrays.get(pointer.labelArrayId) : null;
+    if (previous && previous !== array && previous.labelPointerId === pointerId) previous.labelPointerId = null;
     array.labelPointerId = pointerId;
     pointer.isArrayLabel = true;
     pointer.labelArrayId = arrayId;

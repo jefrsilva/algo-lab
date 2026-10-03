@@ -297,6 +297,14 @@ describe('atalhos e configurações', () => {
     expect(app.microMode).toBe('select');
   });
 
+  test('a barra de ferramentas mostra um ícone SVG em cada botão, Selecionar ativo de início', () => {
+    const selecionar = $('.mode-btn[aria-label="Selecionar / Mover"]');
+    expect(selecionar).not.toBeNull();
+    expect(selecionar.classList.contains('active')).toBe(true);
+    expect(selecionar.querySelector('svg')).not.toBeNull();
+    expect($$('.mode-toolbar .mode-btn').every((b) => b.querySelector('svg'))).toBe(true);
+  });
+
   test('atalhos de letra não disparam enquanto se digita no editor', () => {
     textarea().focus();
     tecla(textarea(), 'n');

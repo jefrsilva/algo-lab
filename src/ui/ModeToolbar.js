@@ -1,9 +1,7 @@
 const ICONS = {
+  // seta de ponteiro do mouse (a mão fica pro pan com a barra de espaço)
   select: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M8 13.2V6.5a1.5 1.5 0 0 1 3 0V12"/>
-    <path d="M11 12V5a1.5 1.5 0 0 1 3 0v7"/>
-    <path d="M14 12.4V6.2a1.5 1.5 0 0 1 3 0V14"/>
-    <path d="M8 13.2c-1.4-1-3-.4-3 .9 0 2.1 1.9 7 4.6 8.5.5.3 1 .4 1.6.4h3.1c2.3 0 4.7-2.5 4.7-5.4V11a1.5 1.5 0 0 0-3 0"/>
+    <path d="M5.9 2.5v17.3l4.2-4.1 2.7 6 2.6-1.1-2.7-6h5.6z"/>
   </svg>`,
   text: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
     <path d="M4 6h16M12 6v13"/>

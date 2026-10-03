@@ -68,6 +68,7 @@ tests/                      testes automatizados (Vitest) — ver tests/README.m
   interpreter/  core/  app/  ui/   testes por camada (ui/App.test.js monta o app inteiro no jsdom)
   helpers/                  runDsl (roda um programa sem DOM) e montarApp/tecla (DOM)
 .github/workflows/testes.yml  CI: npm test + npm run build em push/PR
+.github/pull_request_template.md  modelo de descrição de PR (em pt-BR)
 .claude/skills/              skills do Claude Code pras tarefas comuns (receitas da seção 8 + verificação)
 src/
   main.js                   ponto de entrada: importa as fontes, aplica o tema, faz `new App(root)`
@@ -612,6 +613,7 @@ Inclua em `_saveProject`, leia com validação defensiva em `_applyLoadedProject
 ## 9. Convenções e armadilhas
 
 - **Idioma:** comentários, mensagens e UI em pt-BR. Os comentários explicam o **porquê**, e o código existente é bem comentado; leia antes de mudar.
+- **Commits, PRs e comentários no GitHub também em pt-BR, sempre:** mensagem de commit (título e corpo), título e descrição de pull request, comentários de PR e de revisão, respostas, issues e comentários em issues. Ficam como estão só as partes fixas que máquinas leem (identificadores, comandos, caminhos e trailers como `Co-Authored-By:`).
 - **`App.js` é grande de propósito.** Não tente ler o arquivo inteiro; use `grep` pelo método ou pela seção. Mantenha código novo na seção temática correspondente.
 - **Toda mutação vem seguida de render.** Mudou estado no `App`? Chame `this._renderMicroOnly()`. O adapter já chama `onChange` a cada toque.
 - **Nunca mute objetos compartilhados com snapshots.** `hashTable` de set, células de dict e linhas de matriz devem ser **substituídas**, não alteradas in place, senão o "passado" da reprodução muda junto.

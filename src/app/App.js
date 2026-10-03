@@ -78,7 +78,7 @@ const MICRO_MODES = [
   { id: 'select', label: 'Selecionar / Mover', shortcut: '1 / V' },
   { id: 'text', label: 'Texto (cor: Alt+1…Alt+0)', shortcut: '2 / T' },
   { id: 'area', label: 'Área hachurada (cor: Alt+1…Alt+0, grid: G)', shortcut: '3 / R' },
-  { id: 'chart', label: 'Gráfico Big-O (botão direito: funções exibidas; Shift + mouse sobre ele: lê f(n))', shortcut: '4 / B' },
+  { id: 'chart', label: 'Gráfico Big-O (botão direito: funções exibidas; mouse sobre ele: lê f(n))', shortcut: '4 / B' },
   { id: 'link', label: 'Ligar nós de grafo (arraste de um nó a outro; de novo desliga — também Shift + arrastar)', shortcut: '5 / L' },
 ];
 
@@ -203,10 +203,10 @@ export class App {
     // reprodução automaticamente" (ver `_renderMicroOnly`).
     this.manualFrameId = null;
     this._microPointer = null;
-    // leitura de gráfico com Shift + mouse (ver `_updateMicroChartReadout`):
+    // leitura de gráfico com o mouse sobre ele (ver `_updateMicroChartReadout`):
     // estado transitório de hover — fora do MicroModel, dos snapshots e do
     // projeto salvo. `_microHoverScreen` é a última posição do mouse sobre o
-    // canvas (pra Shift apertado/solto com o mouse parado).
+    // canvas (pra reler depois de um zoom com o mouse parado).
     this._microHoverScreen = null;
     this._microChartReadout = null; // { chartId, n, value, fnId, color, x, y } | null
     this._microDragId = null;
@@ -408,7 +408,7 @@ export class App {
     });
     this.microView.svg.addEventListener('wheel', (e) => {
       this._onMicroWheel(e);
-      this._updateMicroChartReadout(e.shiftKey); // o zoom mudou o que está sob o mouse
+      this._updateMicroChartReadout(e.buttons === 0); // o zoom mudou o que está sob o mouse
     }, { passive: false });
     this.microView.svg.addEventListener('dblclick', (e) => this._onMicroDblClick(e));
     this.microView.svg.addEventListener('contextmenu', (e) => this._onMicroContextMenu(e));
@@ -518,9 +518,6 @@ export class App {
     // janela de Configurações é modal: ela mesma trata Esc/Tab, e nenhum
     // atalho do app vale por trás dela
     if (this.settingsDialog.isOpen) return;
-    // Shift com o mouse parado sobre um gráfico mostra a leitura — não
-    // consome a tecla (Shift+clique/arrasto e Shift+atalhos seguem valendo)
-    if (e.key === 'Shift') this._updateMicroChartReadout(true);
     // Tab com o foco FORA do painel de código pula direto pro editor — MUITO
     // mais cômodo que o Tab "de navegador" (que passaria por cada botão da
     // barra/menu antes de chegar lá). "Fora" é qualquer coisa: o canvas, um
@@ -841,7 +838,6 @@ export class App {
 
   _onKeyUp(e) {
     if (e.code === 'Space') this._setSpaceDown(false);
-    if (e.key === 'Shift') this._setMicroChartReadout(null);
   }
 
   /** Barra de espaço pressionada/solta: a classe `space-pan` no container
@@ -851,23 +847,24 @@ export class App {
     this.microContainer?.classList.toggle('space-pan', down);
   }
 
-  // ---- modo micro: leitura de gráfico (Shift + mouse) ----
+  // ---- modo micro: leitura de gráfico (mouse sobre ele) ----
 
-  /** Mouse andando sobre o canvas SEM arrasto (os arrastos têm os próprios
-   * listeners em `window`, ver `_onMicroPointerDown`): guarda a posição e
-   * atualiza a leitura do gráfico sob ele se o Shift estiver pressionado. */
+  /** Mouse andando sobre o canvas (os arrastos têm os próprios listeners em
+   * `window`, ver `_onMicroPointerDown`): guarda a posição e atualiza a
+   * leitura do gráfico sob ele — só sem botão pressionado. */
   _onMicroHoverMove(e) {
     this._microHoverScreen = this._microScreenPointFromEvent(e);
-    this._updateMicroChartReadout(e.shiftKey && e.buttons === 0);
+    this._updateMicroChartReadout(e.buttons === 0);
   }
 
   /** Recalcula a leitura (ver `chartReadout`) na última posição do mouse:
-   * só com Shift, sem botão/arrasto em andamento e sobre a área de plotagem
-   * do gráfico de cima (o último desenhado) — o de baixo não é lido através
-   * do de cima. */
-  _updateMicroChartReadout(shift) {
+   * basta o hover (sem tecla), mas só sem botão pressionado (`idle`) nem
+   * gesto em andamento (`_microPointer` — clique, arrasto, redimensionamento)
+   * e sobre a área de plotagem do gráfico de cima (o último desenhado) — o de
+   * baixo não é lido através do de cima. */
+  _updateMicroChartReadout(idle) {
     let next = null;
-    if (shift && this._microHoverScreen && !this._microPointer && this.microCharts.size) {
+    if (idle && this._microHoverScreen && !this._microPointer && this.microCharts.size) {
       const { x, y } = this._microHoverScreen;
       const world = this.microView.screenToWorld(x, y, this.microViewport);
       const charts = Array.from(this.microCharts.values());

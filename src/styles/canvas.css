@@ -723,9 +723,11 @@
   user-select: none;
 }
 
-/* leitura do gráfico com Shift + mouse (ver chartReadout em
-   MicroCanvasView.js): guia tracejada, ponto na curva, n sob o eixo n e f(n)
-   ao lado do ponto — na cor da curva (fill/stroke vêm do render). O contorno
+/* leitura do gráfico com o mouse sobre ele (ver chartReadout em
+   MicroCanvasView.js): guia tracejada e ponto na curva, na cor da curva
+   (fill/stroke vêm do render); n sob o eixo n e f(n) ao lado do ponto, na
+   cor de texto do tema (--text-0: quase branco no escuro, escuro no claro —
+   branco literal sumiria no fundo claro) pra destacar o valor. O contorno
    no fundo do gráfico (paint-order) separa os textos dos traços/limites dos
    eixos que ficam por baixo. */
 .chart-readout {
@@ -748,6 +750,7 @@
   font-family: var(--font-mono);
   font-size: 13px; /* = CHART_READOUT_FONT (MicroCanvasView.js) — um pouco maior que .chart-axis-label */
   font-weight: 800;
+  fill: var(--text-0);
   dominant-baseline: middle;
   paint-order: stroke;
   stroke: var(--bg-1);
@@ -757,7 +760,6 @@
 }
 
 .chart-readout-n {
-  fill: var(--text-0);
   text-anchor: middle;
 }
 

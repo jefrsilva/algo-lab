@@ -294,11 +294,11 @@ dblclick (App#_onMicroDblClick)        → edição in place (dado, célula, nom
 contextmenu (App#_onMicroContextMenu)  → popups de configurações (label, coleção pelo puxador — App#_findMicroHandleUnder,
                                          já selecionando a coleção —, gráfico); ponteiro, variável ou struct por cima bloqueiam
 wheel (App#_onMicroWheel)              → zoom
-pointermove no <svg>, sem arrasto      → App#_onMicroHoverMove: guarda a posição do mouse e, com Shift,
-   (App#_onMicroHoverMove)               mostra a leitura do gráfico sob ele (App#_updateMicroChartReadout
-                                         → chartReadout); Shift apertado/solto com o mouse parado
-                                         (_onKeyDown/_onKeyUp) mostra/esconde; some em blur, pointerleave
-                                         e no início de qualquer gesto
+pointermove no <svg>, sem arrasto      → App#_onMicroHoverMove: guarda a posição do mouse e, sem botão
+   (App#_onMicroHoverMove)               pressionado, mostra a leitura do gráfico sob ele (sem tecla —
+                                         App#_updateMicroChartReadout → chartReadout); o wheel relê no
+                                         mesmo ponto depois do zoom; some em blur, pointerleave e no
+                                         início de qualquer gesto (volta no próximo hover)
 ```
 
 Pan: botão do meio, ou botão esquerdo com Espaço pressionado (o cursor vira a mão de pan enquanto o Espaço está pressionado — classes `space-pan`/`panning` no container, ver `App#_setSpaceDown`). Clique simples só seleciona; toda edição in place abre com duplo clique; Delete/Backspace remove.
@@ -307,7 +307,7 @@ Ligar nós de grafo (ferramenta 5/L, ou Shift + arraste começando num nó de gr
 
 Alinhar e distribuir: com 2+ elementos selecionados aparece, logo acima da barra de modos, a `AlignToolbar` (alinhar à esquerda/centro/direita/topo/meio/fundo; com 3+, também distribuir na horizontal/vertical — os mesmos 8 comandos estão no Ctrl+Espaço como `align …`/`distribute …`). `App#_runMicroAlignAction` monta o retângulo desenhado de cada elemento (`_microElementRect`: coleções com a aba, nó simplificado só o círculo), calcula os deslocamentos com `microAlign.js` e aplica por `_microSetNodePos`, o mesmo caminho de soltar um arraste (na reprodução, vale só pro passo atual). A referência do alinhamento é o primeiro elemento selecionado — a ordem de inserção de `microSelectedIds` é a ordem de clique/Ctrl+clique —, que não se move; numa seleção que começou por retângulo (`_selectMicroRect` marca o Set em `_microAnchorlessSelection`, e `_toggleMicroSelection` repassa a marca), vale o extremo do grupo. Distribuir deixa o mesmo espaço livre entre vizinhos, com o primeiro e o último (pelo centro) parados.
 
-Leitura de gráfico Big-O (Shift + mouse sobre a área de plotagem, sem botão pressionado): o x do mouse vira o inteiro n mais próximo em [0, floor(nMax)] e, entre as curvas marcadas que existem em n (`from`) e não saíram pelo topo (f(n) ≤ yMax), vale a de menor distância vertical até o cursor — ponto na curva, n acima do eixo n e f(n) ao lado do ponto, na cor da curva. Com gráficos sobrepostos, lê o de cima. É estado transitório (`App#_microChartReadout`, passado ao render como `readout` do gráfico): fora do `MicroModel`, dos snapshots e do projeto; só re-renderiza quando muda gráfico, n ou curva.
+Leitura de gráfico Big-O (mouse sobre a área de plotagem, sem tecla e sem botão pressionado): o x do mouse vira o inteiro n mais próximo em [0, floor(nMax)] e, entre as curvas marcadas que existem em n (`from`) e não saíram pelo topo (f(n) ≤ yMax), vale a de menor distância vertical até o cursor — ponto e guia na cor da curva, n acima do eixo n e f(n) ao lado do ponto, os dois textos na cor de texto do tema (`--text-0` em `canvas.css`: quase branco no escuro, escuro no claro — o render não põe `fill` neles). Com gráficos sobrepostos, lê o de cima. É estado transitório (`App#_microChartReadout`, passado ao render como `readout` do gráfico): fora do `MicroModel`, dos snapshots e do projeto; só re-renderiza quando muda gráfico, n ou curva.
 
 ### 6.4 Render
 
@@ -432,7 +432,7 @@ Dividido em duas metades:
    - portas e pinos: `structPrevPort`, `structNextPort`, `structNeighborPort`, `structDataRect`, `pointerPort`, `variableValueRect`;
    - puxadores: `arrayHandleRect`, `dictHandleRect`, `matrixHandleRect` (a aba fora da caixa, que serve de alvo de ligação pra coleção inteira, de alça de arraste e, no botão direito, abre o popup de configurações) e `boxWithHandle`;
    - divisórias entre células de array: `arrayDividers` (faixa de `ARRAY_DIVIDER_HIT` px, cursor de "dividir"; duplo clique ali cria, abaixo, dois arrays anônimos com as células antes/depois do corte — `App#_splitMicroArray`);
-   - anotações: `areaHandles`, `CHART_FUNCTIONS`, `chartNMax`, `chartYMax`, `chartReadout` (leitura do Shift + mouse: n arredondado e curva mais próxima na vertical, usando as escalas `px`/`py` que `chartLayout` exporta) e `chartReadoutLabels` (onde ficam os textos dessa leitura, sem sair do gráfico).
+   - anotações: `areaHandles`, `CHART_FUNCTIONS`, `chartNMax`, `chartYMax`, `chartReadout` (leitura do mouse sobre o gráfico: n arredondado e curva mais próxima na vertical, usando as escalas `px`/`py` que `chartLayout` exporta) e `chartReadoutLabels` (onde ficam os textos dessa leitura, sem sair do gráfico).
 2. **A classe `MicroCanvasView`**: `constructor(container)` cria o `<svg>`, os `<defs>` (setas, padrão do grid) e as camadas; `render({...})` recebe as listas já posicionadas; `setViewport`, `screenToWorld`, `getSize`. Os `_render<Tipo>` fazem o diff por id. Não tem lógica de interação nenhuma.
 
 ### 7.6 `src/ui/`

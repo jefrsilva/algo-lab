@@ -6,6 +6,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 "Visualizador de Estruturas de Dados & Algoritmos" — a browser-based, vanilla-JS (no framework) tool for visualizing pointer/memory-model programs written in a small Python-like DSL. No backend; everything runs client-side. Code comments and UI strings are in Portuguese (pt-BR); match that when editing existing files.
 
+## Language of commits, PRs and comments (always pt-BR)
+
+Everything written for this repository is in **Brazilian Portuguese (pt-BR)**, always — even when the request or the surrounding conversation is in English:
+
+- **commit messages** (title and body; e.g. `Corrige cor do colchete da sliding window`), merge-commit messages and branch descriptions;
+- **pull requests** — title, description and any template sections;
+- **comments on GitHub** — PR comments, review comments and replies, issue comments and new issues;
+- **code comments**, UI strings, error/warning messages, test names, docs and project skills.
+
+Only fixed machine-readable parts stay as they are: identifiers in code, commands, file paths, and required trailers/footers (e.g. `Co-Authored-By:`, the Claude Code attribution line). This file (`CLAUDE.md`) stays in English, as it is today.
+
 ## Commands
 
 ```bash
@@ -74,4 +85,5 @@ Small, single-purpose classes instantiated and wired together by `App.js` (no sh
 
 - `App.js` is intentionally monolithic and large; read the specific method/section you need (grep for it) rather than the whole file — many sections have explanatory Portuguese comments describing *why*, not just what.
 - The DSL's `interpreter.js`/`evaluator.js` talk to the model only through the `Environment` interface — changes there usually need a matching change in `MicroRuntimeAdapter`.
+- Commit messages, PR titles/descriptions and GitHub comments are written in pt-BR (see "Language of commits, PRs and comments" above).
 - Run `npm test` before committing and add tests for what you change (where each kind of test goes: [tests/README.md](tests/README.md)). The suite can't see rendering — visual changes still need `npm run dev` (or the Playwright smoke test) and a look at the canvas.

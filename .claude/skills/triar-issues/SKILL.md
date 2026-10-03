@@ -68,7 +68,7 @@ Para cada issue que sobrou, em ordem de prioridade, abra uma tarefa com `mcp__cc
   3. arquivos/métodos de partida e armadilhas (passo 3);
   4. a skill do projeto a seguir, se houver;
   5. para bug: como reproduzir, o comportamento esperado e o pedido de **primeiro escrever um teste que falha** no arquivo de `tests/` indicado (ou tirar o `test.fails` de `bugs-conhecidos.test.js`), depois corrigir;
-  6. definição de pronto: `npm test` e o build passando e a verificação da skill `verificar-mudanca` (inclusive screenshot quando mexer na interface); docs atualizadas com `sincronizar-docs` se o comportamento documentado mudar; commit, push e um PR com `Resolve #N` na descrição. O CI (`.github/workflows/testes.yml`) roda `npm test` e o build em todo PR.
+  6. definição de pronto: `npm test` e o build passando e a verificação da skill `verificar-mudanca` (inclusive screenshot quando mexer na interface); docs atualizadas com `sincronizar-docs` se o comportamento documentado mudar; commit, push e um PR com `Resolve #N` na descrição — mensagem de commit, título e descrição do PR e comentários no GitHub em pt-BR. O CI (`.github/workflows/testes.yml`) roda `npm test` e o build em todo PR.
 
 Uma tarefa por issue. Não junte issues num prompt só, a não ser que mexam no mesmo trecho de código e uma dependa da outra; nesse caso, diga isso no prompt.
 

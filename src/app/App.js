@@ -52,6 +52,7 @@ import { MicroRuntimeAdapter } from './MicroRuntimeAdapter.js';
 import { microLayoutKey } from './microLayoutKey.js';
 import { MicroProgramRunner } from './MicroProgramRunner.js';
 import { alignRects, distributeRects } from './microAlign.js';
+import { TREE_GAPS, treeLayout } from './microTreeLayout.js';
 
 import { PlaybackControls } from '../ui/PlaybackControls.js';
 import { NodePopup } from '../ui/NodePopup.js';
@@ -59,6 +60,7 @@ import { ArraySettingsPopup } from '../ui/ArraySettingsPopup.js';
 import { InlineValueEditor } from '../ui/InlineValueEditor.js';
 import { ModeToolbar } from '../ui/ModeToolbar.js';
 import { AlignToolbar } from '../ui/AlignToolbar.js';
+import { TreeLayoutToolbar } from '../ui/TreeLayoutToolbar.js';
 import { CodeEditor } from '../ui/CodeEditor.js';
 import { CallTree } from '../ui/CallTree.js';
 import { CanvasTitle } from '../ui/CanvasTitle.js';
@@ -427,12 +429,19 @@ export class App {
     const modeToolbarEl = document.createElement('div');
     microModeToolbarHost.appendChild(modeToolbarEl);
     this.microModeToolbar = new ModeToolbar(modeToolbarEl, { setMode: (m) => this._setMicroMode(m) }, MICRO_MODES);
-    // logo acima dela, só com seleção múltipla: alinhar/distribuir (ver
-    // AlignToolbar.js e `_runMicroAlignAction`)
+    // logo acima dela, lado a lado no mesmo host: alinhar/distribuir, só com
+    // seleção múltipla (ver AlignToolbar.js e `_runMicroAlignAction`), e
+    // organizar como árvore, só com um TreeNode selecionado (ver
+    // TreeLayoutToolbar.js e `_runMicroTreeLayout`)
+    const selectionToolbarsHost = document.createElement('div');
+    selectionToolbarsHost.className = 'align-toolbar-host';
+    microModeToolbarHost.appendChild(selectionToolbarsHost);
     const alignToolbarEl = document.createElement('div');
-    alignToolbarEl.className = 'align-toolbar-host';
-    microModeToolbarHost.appendChild(alignToolbarEl);
+    selectionToolbarsHost.appendChild(alignToolbarEl);
     this.microAlignToolbar = new AlignToolbar(alignToolbarEl, { run: (action) => this._runMicroAlignAction(action) });
+    const treeToolbarEl = document.createElement('div');
+    selectionToolbarsHost.appendChild(treeToolbarEl);
+    this.microTreeToolbar = new TreeLayoutToolbar(treeToolbarEl, { run: (orientation) => this._runMicroTreeLayout(orientation) });
 
     // canto superior direito: centralizar vista (agora reenquadra TODO o
     // conteúdo do canvas, em vez de só recentralizar na origem — ver
@@ -2563,6 +2572,47 @@ export class App {
     this._renderMicroOnly();
   }
 
+  // ---- organizar uma árvore por níveis (TreeLayoutToolbar, Ctrl+Espaço) ----
+
+  /** O TreeNode a organizar: o único elemento selecionado (e móvel, mesmo
+   * filtro de `_microAlignableIds`), se for um struct 'tree'; senão null. */
+  _microSelectedTreeRoot() {
+    const ids = this._microAlignableIds();
+    if (ids.length !== 1) return null;
+    const node = this.micro.structs.get(ids[0]);
+    return node?.type === 'tree' ? node : null;
+  }
+
+  /** Botão "Árvore ↕"/"Árvore ↔" / comando "layout tree …" do Ctrl+Espaço:
+   * arranja por níveis a subárvore que começa no TreeNode selecionado
+   * (structs não guardam o pai, então não dá pra subir até a raiz), com o
+   * selecionado parado no lugar. `orientation`: 'vertical' (níveis um abaixo
+   * do outro) ou 'horizontal' (lado a lado). Só segue left/right (campos
+   * físicos prev/next, ver MicroRuntimeAdapter#_structFieldForAttr) que
+   * apontam pra outro TreeNode. A caixa de cada nó é a desenhada (ver
+   * `_microElementRect`: o círculo no modo simplificado), e como ela tem o
+   * mesmo deslocamento em relação a (x, y) em todo struct, o deslocamento
+   * da caixa vale direto pra posição do nó. Cada nó vai pro lugar por
+   * `_microSetNodePos`, como soltar um arraste — na reprodução da Simulação
+   * vale só pro passo atual. Ponteiros e variáveis não se movem. */
+  _runMicroTreeLayout(orientation) {
+    const root = this._microSelectedTreeRoot();
+    if (!root) return;
+    const { w, h } = this._microElementRect(root.id);
+    const childrenOf = (id) => {
+      const node = this.micro.structs.get(id);
+      const tree = (childId) => (childId && this.micro.structs.get(childId)?.type === 'tree' ? childId : null);
+      return node ? [tree(node.prev), tree(node.next)] : [null, null];
+    };
+    const gaps = TREE_GAPS[orientation][this.microSimplifiedNodes ? 'simplified' : 'detailed'];
+    const offsets = treeLayout(root.id, childrenOf, { orientation, w, h, ...gaps });
+    const { x, y } = root;
+    offsets.forEach(({ dx, dy }, id) => {
+      if (id !== root.id) this._microSetNodePos(id, x + dx, y + dy);
+    });
+    this._renderMicroOnly();
+  }
+
   /** Chave ESTÁVEL de um ponteiro pras janelas deslizantes (`microWindows`):
    * o cursor de leitura pela expressão ("nums[l]", ver
    * MicroRuntimeAdapter#_showReadCursor), um ponteiro comum pelo nome — mais
@@ -2714,6 +2764,19 @@ export class App {
         run: () => this._runMicroAlignAction(action),
       };
     });
+    // organizar como árvore: também só posição — mesmos botões da
+    // TreeLayoutToolbar
+    const treeBlocked = this._microSelectedTreeRoot() ? null : 'selecione um só nó de árvore (TreeNode)';
+    const treeCommands = [
+      ['layout tree vertical', 'vertical', 'árvore por níveis, um abaixo do outro, a partir do nó selecionado'],
+      ['layout tree horizontal', 'horizontal', 'árvore por níveis, um ao lado do outro, a partir do nó selecionado'],
+    ].map(([name, orientation, description]) => ({
+      name,
+      aliases: [],
+      description,
+      disabled: treeBlocked,
+      run: () => this._runMicroTreeLayout(orientation),
+    }));
     const commands = [
       model('new pointer', ['new ptr'], 'ponteiro solto — pede o nome', () => this._quickNewPointer()),
       model('new variable', ['new var'], 'variável — pede o nome', () => this._quickNewVariable()),
@@ -2735,6 +2798,7 @@ export class App {
       },
       ...windowCommands,
       ...alignCommands,
+      ...treeCommands,
     ];
     this.microQuickActions.open(commands, {
       showAll,
@@ -4050,6 +4114,7 @@ export class App {
       swatches: { area: this.microAreaColor, text: labelCssColor(this.microLabelColor) },
     });
     this.microAlignToolbar.render({ count: this._microAlignableIds().length });
+    this.microTreeToolbar.render({ enabled: !!this._microSelectedTreeRoot() });
 
     // Aba ativa (ver painel de árvore de chamadas): qual frame mostrar os
     // ponteiros/variáveis locais — segue o passo atual da reprodução

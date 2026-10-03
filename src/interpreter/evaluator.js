@@ -159,6 +159,12 @@
  *                                                         (rotate/reverse/
  *                                                         clear); false se
  *                                                         não coube
+ *   stableRef(value) -> TypedValue (opcional)          — referência a coleção
+ *                                                         por id (sobrevive a
+ *                                                         troca de frame/nome)
+ *   holdValues(values) -> void (opcional)              — valores ainda por
+ *                                                         atribuir (ver
+ *                                                         `assignTuple`)
  *   assignDictKey(name, key, value) -> void (opcional) — "d[chave] = valor";
  *                                                         sem ele, cai no
  *                                                         fallback de mutar
@@ -2086,6 +2092,22 @@ export function assignChain(targetNodes, value, env) {
     const fresh = ['array', 'set', 'matrix'].includes(current.kind) || (current.kind === 'dict' && !current.sourceName);
     if (k === 0 && fresh && target.type === 'Name') current = evaluate(target, env) ?? current;
   });
+}
+
+/** "a, b = b, a" — `values` já avaliados (TODOS antes de qualquer
+ * atribuição), atribuídos a cada alvo em ordem. Uma lista/dict/matriz
+ * referenciada pelo NOME ("b" do lado direito) é trocada por uma referência
+ * estável (`env.stableRef`, por id) e segurada (`env.holdValues`) até o fim:
+ * senão "a = b" (o primeiro) apagaria a lista antiga de "a" que o segundo
+ * alvo ainda vai receber. Item `undefined` é pulado (não resolveu). */
+export function assignTuple(targetNodes, values, env) {
+  const stable = values.map((v) => (v !== undefined && env.stableRef ? env.stableRef(v) : v));
+  env.holdValues?.(stable.filter((v) => v !== undefined));
+  try {
+    targetNodes.forEach((t, i) => assign(t, stable[i], env));
+  } finally {
+    env.holdValues?.([]);
+  }
 }
 
 /**

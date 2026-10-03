@@ -92,10 +92,10 @@ export class MicroModel {
 
   // `frameId` identifica a "aba" (chamada de função) dona do ponteiro/variável
   // — 'global' pro escopo de topo, ou o id de um frame de chamada recursiva
-  // (ver MicroRuntimeAdapter#pushFrame). Structs/arrays são o "heap"
-  // compartilhado, sempre visível em qualquer aba (ver plano de recursão) —
-  // o `frameId` de um array diz só a qual frame pertence o NOME dele (ver
-  // MicroRuntimeAdapter#_findArray), não onde ele aparece.
+  // (ver MicroRuntimeAdapter#pushFrame). Structs/arrays/dicts/matrizes são o
+  // "heap" compartilhado, sempre visível em qualquer aba (ver plano de
+  // recursão) — o `frameId` de uma coleção diz só a qual frame pertence o
+  // NOME dela (ver MicroRuntimeAdapter#_bindingIn), não onde ela aparece.
   addPointer(x, y, label = 'ptr', frameId = 'global') {
     const node = { id: nextId('ptr'), x, y, label, target: null, frameId };
     this.pointers.set(node.id, node);
@@ -190,8 +190,10 @@ export class MicroModel {
     this.setPointerTarget(pointerId, { kind: 'array', id: arrayId });
   }
 
-  addDict(x, y, { orientation = 'horizontal', name = 'dict', cells = [] } = {}) {
-    const node = { id: nextId('dict'), x, y, orientation, cells: cells.slice(0, MAX_DICT_SIZE), name };
+  /** `frameId`: igual o de array, só diz a qual frame pertence o NOME do
+   * dict (ele é "heap", aparece em qualquer aba). */
+  addDict(x, y, { orientation = 'horizontal', name = 'dict', cells = [], frameId = 'global' } = {}) {
+    const node = { id: nextId('dict'), x, y, orientation, cells: cells.slice(0, MAX_DICT_SIZE), name, frameId };
     this.dicts.set(node.id, node);
     return node;
   }
@@ -209,6 +211,9 @@ export class MicroModel {
     const dict = this.dicts.get(dictId);
     const pointer = this.pointers.get(pointerId);
     if (!dict || !pointer) return;
+    // rótulo passando de um dict pra outro (ver `linkArrayLabelPointer`)
+    const previous = pointer.isDictLabel ? this.dicts.get(pointer.labelDictId) : null;
+    if (previous && previous !== dict && previous.labelPointerId === pointerId) previous.labelPointerId = null;
     dict.labelPointerId = pointerId;
     pointer.isDictLabel = true;
     pointer.labelDictId = dictId;
@@ -265,6 +270,17 @@ export class MicroModel {
     }
   }
 
+  /** Tira todas as células ("d = {...}" de novo, reaproveitando a mesma caixa
+   * — ver MicroRuntimeAdapter#assignName). Cursores de célula ficam sem alvo. */
+  clearDict(dictId) {
+    const node = this.dicts.get(dictId);
+    if (!node) return;
+    node.cells = [];
+    for (const p of this.pointers.values()) {
+      if (p.target?.kind === 'dictCell' && p.target.dictId === dictId) p.target = null;
+    }
+  }
+
   setDictOrientation(dictId, orientation) {
     const node = this.dicts.get(dictId);
     if (node && (orientation === 'horizontal' || orientation === 'vertical')) node.orientation = orientation;
@@ -287,8 +303,8 @@ export class MicroModel {
 
   /** `cells` é copiado (linha a linha); todas as linhas devem ter o mesmo
    * tamanho (quem cria — MicroRuntimeAdapter — já garante isso). */
-  addMatrix(x, y, { name = 'm', cells = [[0]] } = {}) {
-    const node = { id: nextId('matrix'), x, y, name, cells: cells.map((row) => [...row]) };
+  addMatrix(x, y, { name = 'm', cells = [[0]], frameId = 'global' } = {}) {
+    const node = { id: nextId('matrix'), x, y, name, cells: cells.map((row) => [...row]), frameId };
     this.matrices.set(node.id, node);
     return node;
   }
@@ -305,6 +321,9 @@ export class MicroModel {
     const matrix = this.matrices.get(matrixId);
     const pointer = this.pointers.get(pointerId);
     if (!matrix || !pointer) return;
+    // rótulo passando de uma matriz pra outra (ver `linkArrayLabelPointer`)
+    const previous = pointer.isMatrixLabel ? this.matrices.get(pointer.labelMatrixId) : null;
+    if (previous && previous !== matrix && previous.labelPointerId === pointerId) previous.labelPointerId = null;
     matrix.labelPointerId = pointerId;
     pointer.isMatrixLabel = true;
     pointer.labelMatrixId = matrixId;
@@ -315,6 +334,20 @@ export class MicroModel {
     const node = this.matrices.get(matrixId);
     if (!node || row < 0 || row >= node.cells.length || col < 0 || col >= node.cells[row].length) return;
     node.cells[row][col] = value;
+  }
+
+  /** Troca todas as linhas ("m = [[...]]" de novo, reaproveitando a mesma
+   * caixa — ver MicroRuntimeAdapter#assignName). Cursores de célula que
+   * ficaram fora da grade nova ficam sem alvo. */
+  setMatrixContents(matrixId, rows) {
+    const node = this.matrices.get(matrixId);
+    if (!node || !rows.length) return;
+    node.cells = rows.map((row) => [...row]);
+    for (const p of this.pointers.values()) {
+      if (p.target?.kind === 'matrixCell' && p.target.matrixId === matrixId && (p.target.row >= rows.length || p.target.col >= rows[0].length)) {
+        p.target = null;
+      }
+    }
   }
 
   /** Redimensiona mantendo o conteúdo que ainda cabe; células novas nascem

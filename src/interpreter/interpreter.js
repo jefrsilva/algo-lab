@@ -1,4 +1,4 @@
-import { evaluate, assign, assignChain, truthy, iterableItems, loopValues, NoneValue } from './evaluator.js';
+import { evaluate, assign, assignChain, assignTuple, truthy, iterableItems, loopValues, NoneValue } from './evaluator.js';
 
 /**
  * Interpreta um PROGRAMA (lista de statements produzida por blockParser.js)
@@ -137,9 +137,9 @@ export function* runProgram(program, functions, env) {
       return { signal: ABORT, value: undefined };
     }
     callDepth += 1;
-    // lista passada como argumento é identificada pelo NOME no frame de quem
-    // chama — que o frame novo não enxerga (arrays têm escopo de frame, ver
-    // MicroRuntimeAdapter#_findArray). Troca por uma referência estável (id)
+    // lista/dict/matriz passada como argumento é identificada pelo NOME no
+    // frame de quem chama — que o frame novo não enxerga (nomes têm escopo de
+    // frame, ver MicroRuntimeAdapter#_bindingIn). Troca por uma referência estável (id)
     // ANTES de empilhar o frame novo; mesma coisa com o retorno, abaixo.
     if (env.stableRef) argValues = argValues.map((v) => env.stableRef(v));
     // (um argumento nomeado pode deixar buraco antes dele — ver tryUserCall)
@@ -368,7 +368,7 @@ export function* runProgram(program, functions, env) {
         }
         values.splice(0, 1, ...items);
       }
-      stmt.targets.forEach((t, i) => assign(t, values[i], env));
+      assignTuple(stmt.targets, values, env);
       return yield* tick({ line: stmt.line, kind: 'assign' });
     }
 

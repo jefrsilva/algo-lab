@@ -124,6 +124,19 @@ describe('Simulação', () => {
     expect(y.target).toEqual({ kind: 'array', id: antiga.id });
   });
 
+  test('dict reatribuído com alias leva o rótulo; dict local tem rótulo no frame da chamada', () => {
+    rodarNaSimulacao(linhas('d = {"a": 1}', 'e = d', 'd = {"b": 2}', 'def f():', '    t = {}', '    return t', 'r = f()'));
+    botao('.playback-btn', '⏭').click();
+    const dicts = [...app.micro.dicts.values()];
+    const d = dicts.find((x) => x.name === 'd');
+    expect(app.micro.pointers.get(d.labelPointerId)).toMatchObject({ label: 'd', target: { kind: 'dict', id: d.id } });
+    const antigo = dicts.find((x) => x.cells[0]?.key === 'a');
+    expect(antigo.labelPointerId).toBeFalsy();
+    const t = dicts.find((x) => x.name === 't');
+    expect(t.frameId).not.toBe('global');
+    expect(app.micro.pointers.get(t.labelPointerId).frameId).toBe(t.frameId);
+  });
+
   test('voltar pro Sandbox encerra a reprodução', () => {
     rodarNaSimulacao('x = 1');
     botao('.code-editor-mode-btn', 'Sandbox').click();

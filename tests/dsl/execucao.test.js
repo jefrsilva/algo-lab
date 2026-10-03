@@ -188,6 +188,54 @@ describe('escopo e reatribuição de nomes', () => {
     expect(valores(micro.arrays)).toHaveLength(1);
   });
 
+  test('nome troca de tipo: a ligação antiga sai do modelo', () => {
+    const { micro } = runDsl(linhas('x = 5', 'x = Node(1)', 'p = Node(2)', 'p = 3', 'l = [1]', 'l = None'));
+    expect(valores(micro.variables).map((v) => [v.name, v.value])).toEqual([['p', 3]]);
+    expect(valores(micro.pointers).map((p) => [p.label, p.target?.kind ?? null]).sort()).toEqual([
+      ['l', null],
+      ['x', 'struct'],
+    ]);
+    expect(micro.arrays.size).toBe(0);
+  });
+
+  test('"d = {...}" de novo reaproveita a caixa do dict e solta as listas das células', () => {
+    const { micro, runner } = runDsl(linhas('d = {"k": [1]}', 'd = {"z": 2}'));
+    runner.goToStep(0);
+    const id = valores(micro.dicts)[0].id;
+    runner.goToStep(1);
+    expect(valores(micro.dicts)).toEqual([expect.objectContaining({ id, name: 'd', cells: [{ key: 'z', kind: 'value', value: 2 }] })]);
+    expect(micro.arrays.size).toBe(0);
+  });
+
+  test('lista sem nome que ninguém mais alcança some', () => {
+    const { micro } = runDsl(linhas('x = [0]', 'y = x', 'x = x + [2]', 'y = None'));
+    expect(valores(micro.arrays).map((a) => a.name)).toEqual(['x']);
+  });
+
+  test('"a, b = b, a" com listas troca as duas', () => {
+    const { micro, output } = runDsl(linhas('a = [1]', 'b = [2]', 'a, b = b, a', 'print(a, b)'));
+    expect(output).toEqual(['[2] [1]']);
+    expect(micro.arrays.size).toBe(2);
+  });
+
+  test('dict criado numa chamada pertence ao frame dela e some no fim (com as listas)', () => {
+    const codigo = linhas('def f():', '    memo = {}', '    memo[1] = [5]', '    return 0', 'memo = {"g": 1}', 'f()');
+    const { micro, steps, runner } = runDsl(codigo);
+    const dentro = steps.findIndex((s) => s.activeFrameId !== 'global' && s.line === 2);
+    runner.goToStep(dentro);
+    const local = valores(micro.dicts).find((d) => d.frameId === steps[dentro].activeFrameId);
+    expect(local.name).toBe('memo');
+    expect(micro.arrays.get(local.cells[0].value).frameId).toBe(local.frameId);
+    runner.goToStep(steps.length - 1);
+    expect(valores(micro.dicts).map((d) => [d.name, d.frameId])).toEqual([['memo', 'global']]);
+    expect(micro.arrays.size).toBe(0);
+  });
+
+  test('dict devolvido por função continua vivo pelo nome de quem recebeu', () => {
+    const { output } = runDsl(linhas('def f():', '    t = {"a": [1]}', '    return t', 'r = f()', 'r["a"].append(2)', 'print(r)'));
+    expect(output).toEqual(["{'a': [1, 2]}"]);
+  });
+
   test('lista pode trocar de tipo (lista → set) mantendo a caixa', () => {
     const { micro, output } = runDsl(linhas('s = [3, 1, 3]', 's = set(s)', 'print(s)'));
     expect(output).toEqual(['{1, 3}']);

@@ -518,4 +518,82 @@ print(z, [v if v > 3 else 0 for v in nums], [v for v in nums if v > 3])
 b [4, 9, 0] [4, 9]
 `,
   },
+  {
+    nome: "nome trocando de tipo (número, nó, lista, dict, matriz), dict reatribuído e troca de listas",
+    codigo: `
+a = [1, 2]
+b = [3]
+a, b = b, a
+a.append(9)
+print(a, b)
+d = {"a": 1}
+e = d
+d = {"b": 2}
+print(d, e)
+x = 5
+x = Node(1)
+print(x.data)
+x = [1, 2]
+print(x)
+x = {1: 2}
+print(x)
+x = [[1, 2], [3, 4]]
+print(x)
+x = None
+p = Node(7)
+p = "sete"
+print(x, p)
+m1 = [[1]]
+m2 = m1
+m1 = [[2, 3]]
+print(m1, m2)
+`,
+    saida: `
+[3, 9] [1, 2]
+{'b': 2} {'a': 1}
+1
+[1, 2]
+{1: 2}
+[[1, 2], [3, 4]]
+None sete
+[[2, 3]] [[1]]
+`,
+  },
+  {
+    nome: "dict e matriz locais em função (contagem, memo passado por parâmetro)",
+    codigo: `
+def conta(palavras):
+    freq = {}
+    for w in palavras:
+        freq[w] = freq.get(w, 0) + 1
+    return freq
+
+freq = {"z": 0}
+r = conta(["a", "b", "a"])
+print(r, freq)
+
+def fib(n, memo):
+    if n in memo:
+        return memo[n]
+    v = n if n < 2 else fib(n - 1, memo) + fib(n - 2, memo)
+    memo[n] = v
+    return v
+
+memo = {}
+print(fib(10, memo), len(memo))
+
+def maior_lado(n):
+    m = [[0] * n for _ in range(n)]
+    m[n - 1][n - 1] = n
+    return m[n - 1][n - 1]
+
+m = [[5]]
+print(maior_lado(3), m)
+`,
+    saida: `
+{'a': 2, 'b': 1} {'z': 0}
+55 11
+3 [[5]]
+`,
+  },
 ];

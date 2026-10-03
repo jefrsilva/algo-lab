@@ -44,7 +44,7 @@ import {
   chartLayout,
 } from '../render/MicroCanvasView.js';
 
-import { evaluate, assign, assignChain, truthy } from '../interpreter/evaluator.js';
+import { evaluate, assign, assignChain, assignTuple, truthy } from '../interpreter/evaluator.js';
 import { parseExpression } from '../interpreter/parser.js';
 import { MicroRuntimeAdapter } from './MicroRuntimeAdapter.js';
 import { microLayoutKey } from './microLayoutKey.js';
@@ -1109,14 +1109,14 @@ export class App {
   /** Irmã de `_createArrayLabelPointer` — mesma ideia pro dict (ver
    * MicroModel#linkDictLabelPointer). */
   _createDictLabelPointer(dictNode) {
-    const key = microLayoutKey('dict-label', { name: dictNode.name });
+    const key = microLayoutKey('dict-label', { name: dictNode.name, frameId: dictNode.frameId });
     let pos = key ? this.microLayout.get(key) : null;
     if (!pos) {
       const base = { x: dictNode.x, y: dictNode.y - PTR_H - 14 };
       pos = this._findFreeMicroPosition(base, pointerWidth({ label: dictNode.name }, this.microFullNames), PTR_H);
       if (key) this.microLayout.set(key, pos);
     }
-    const pointer = this.micro.addPointer(pos.x, pos.y, dictNode.name);
+    const pointer = this.micro.addPointer(pos.x, pos.y, dictNode.name, dictNode.frameId ?? 'global');
     this.micro.linkDictLabelPointer(dictNode.id, pointer.id);
     return pointer;
   }
@@ -1124,14 +1124,14 @@ export class App {
   /** Irmã de `_createArrayLabelPointer` — mesma ideia pra matriz (ver
    * MicroModel#linkMatrixLabelPointer). */
   _createMatrixLabelPointer(matrixNode) {
-    const key = microLayoutKey('matrix-label', { name: matrixNode.name });
+    const key = microLayoutKey('matrix-label', { name: matrixNode.name, frameId: matrixNode.frameId });
     let pos = key ? this.microLayout.get(key) : null;
     if (!pos) {
       const base = { x: matrixNode.x, y: matrixNode.y - PTR_H - 14 };
       pos = this._findFreeMicroPosition(base, pointerWidth({ label: matrixNode.name }, this.microFullNames), PTR_H);
       if (key) this.microLayout.set(key, pos);
     }
-    const pointer = this.micro.addPointer(pos.x, pos.y, matrixNode.name);
+    const pointer = this.micro.addPointer(pos.x, pos.y, matrixNode.name, matrixNode.frameId ?? 'global');
     this.micro.linkMatrixLabelPointer(matrixNode.id, pointer.id);
     return pointer;
   }
@@ -1249,7 +1249,7 @@ export class App {
       // verdade sem variável temporária (ver interpreter.js#execStmt, mesmo
       // motivo).
       const values = ast.values.map((v) => evaluate(v, this.microRuntime));
-      ast.targets.forEach((t, i) => assign(t, values[i], this.microRuntime));
+      assignTuple(ast.targets, values, this.microRuntime);
     } else if (ast.type === 'ChainAssign') {
       assignChain(ast.targets, evaluate(ast.value, this.microRuntime), this.microRuntime);
     } else {
@@ -1655,11 +1655,11 @@ export class App {
       }
       if (pointer.isDictLabel) {
         const dict = this.micro.dicts.get(pointer.labelDictId);
-        return dict ? microLayoutKey('dict-label', { name: dict.name }) : null;
+        return dict ? microLayoutKey('dict-label', { name: dict.name, frameId: dict.frameId }) : null;
       }
       if (pointer.isMatrixLabel) {
         const matrix = this.micro.matrices.get(pointer.labelMatrixId);
-        return matrix ? microLayoutKey('matrix-label', { name: matrix.name }) : null;
+        return matrix ? microLayoutKey('matrix-label', { name: matrix.name, frameId: matrix.frameId }) : null;
       }
       if (pointer.readCursorKey) return microLayoutKey('cursor', { cursorKey: pointer.readCursorKey });
       return microLayoutKey('pointer', { name: pointer.label, frameId: pointer.frameId });
@@ -1667,9 +1667,9 @@ export class App {
     const array = this.micro.arrays.get(id);
     if (array) return microLayoutKey('array', { name: array.name, frameId: array.frameId });
     const dict = this.micro.dicts.get(id);
-    if (dict) return microLayoutKey('dict', { name: dict.name });
+    if (dict) return microLayoutKey('dict', { name: dict.name, frameId: dict.frameId });
     const matrix = this.micro.matrices.get(id);
-    if (matrix) return microLayoutKey('matrix', { name: matrix.name });
+    if (matrix) return microLayoutKey('matrix', { name: matrix.name, frameId: matrix.frameId });
     const variable = this.micro.variables.get(id);
     if (variable) return microLayoutKey('variable', { name: variable.name, frameId: variable.frameId });
     return null;

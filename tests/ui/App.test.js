@@ -7,7 +7,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { desmontarApp, montarApp, tecla } from '../helpers/dom.js';
 import { linhas } from '../helpers/runDsl.js';
-import { arrayHandleRect, chartLayout } from '../../src/render/MicroCanvasView.js';
+import { arrayHandleRect, arrayLayout, chartLayout } from '../../src/render/MicroCanvasView.js';
 
 let app;
 const $ = (sel) => document.querySelector(sel);
@@ -442,6 +442,157 @@ describe('alinhar e distribuir a seleção', () => {
     input.dispatchEvent(new Event('input', { bubbles: true }));
     tecla(input, 'Enter');
     expect(b.x).toBe(0);
+  });
+});
+
+describe('ferramenta Ligar nós de grafo', () => {
+  const svg = () => $('.micro-canvas');
+  /** Ponteiro no ponto (x, y) do MUNDO (ver "alinhar e distribuir"). */
+  function evento(alvo, tipo, x, y, opts = {}) {
+    const { tx, ty } = app.microViewport;
+    alvo.dispatchEvent(new MouseEvent(tipo, { clientX: x + tx, clientY: y + ty, button: 0, bubbles: true, ...opts }));
+  }
+  /** Arraste do meio de `de` até o meio de `para` (nós ou pontos soltos). */
+  function arrastar(de, para, opts = {}) {
+    const meio = (n) => ({ x: n.x + 20, y: n.y + 20 });
+    const a = meio(de);
+    const b = meio(para);
+    evento(svg(), 'pointerdown', a.x, a.y, opts);
+    evento(window, 'pointermove', (a.x + b.x) / 2, (a.y + b.y) / 2, opts);
+    evento(window, 'pointermove', b.x, b.y, opts);
+    evento(window, 'pointerup', b.x, b.y, opts);
+  }
+  /** Dois nós de grafo, como GraphNode(v) — com a lista de vizinhos longe. */
+  function doisNos() {
+    const criar = (x, data) => {
+      const s = app.micro.addStruct(x, 0, data, 'graph');
+      const arr = app.micro.addArray(x, 400, { kind: 'ref', size: 0, name: `__graph_neighbors_${s.id}` });
+      app.micro.setStructNeighborsArray(s.id, arr.id);
+      return s;
+    };
+    const a = criar(0, 1);
+    const b = criar(300, 2);
+    app._renderMicroOnly();
+    return [a, b];
+  }
+  const vizinhos = (s) => app.micro.arrays.get(s.neighborsArrayId).cells;
+
+  test('5/L escolhe a ferramenta, e o botão aparece na barra', () => {
+    tecla(document.body, '5');
+    expect(app.microMode).toBe('link');
+    expect($('.micro-container').dataset.mode).toBe('link');
+    tecla(document.body, 'v');
+    tecla(document.body, 'l');
+    expect(app.microMode).toBe('link');
+    expect($$('.mode-btn')).toHaveLength(5);
+    expect($('.mode-btn.active').title).toMatch(/\(5 \/ L\)$/);
+  });
+
+  test('arrastar de A até B liga A→B; repetir desliga', () => {
+    const [a, b] = doisNos();
+    tecla(document.body, 'l');
+    arrastar(a, b);
+    expect(vizinhos(a)).toEqual([b.id]);
+    expect(vizinhos(b)).toEqual([]);
+    expect(app._microGraphLinkDraft).toBeNull();
+    expect({ x: a.x, y: a.y }).toEqual({ x: 0, y: 0 }); // o nó não se move
+    arrastar(a, b);
+    expect(vizinhos(a)).toEqual([]);
+  });
+
+  test('a seta de rascunho acompanha o arraste e some ao trocar de ferramenta', () => {
+    const [a, b] = doisNos();
+    tecla(document.body, 'l');
+    evento(svg(), 'pointerdown', a.x + 20, a.y + 20);
+    evento(window, 'pointermove', b.x + 20, b.y + 20);
+    const linha = $('.preview-edge-line');
+    expect(linha.getAttribute('display')).toBeNull();
+    expect(linha.getAttribute('x2')).toBe(String(b.x + 20));
+    expect(linha.classList.contains('invalid')).toBe(false);
+    evento(window, 'pointermove', 150, 300);
+    expect(linha.classList.contains('invalid')).toBe(true);
+    tecla(document.body, 'v');
+    expect(linha.getAttribute('display')).toBe('none');
+    evento(window, 'pointerup', b.x + 20, b.y + 20);
+    expect(vizinhos(a)).toEqual([]);
+  });
+
+  test('Shift + arrasto no modo Selecionar faz o mesmo, sem mover o nó', () => {
+    const [a, b] = doisNos();
+    expect(app.microMode).toBe('select');
+    arrastar(a, b, { shiftKey: true });
+    expect(vizinhos(a)).toEqual([b.id]);
+    expect({ x: a.x, y: a.y }).toEqual({ x: 0, y: 0 });
+    arrastar(a, b, { shiftKey: true });
+    expect(vizinhos(a)).toEqual([]);
+    // sem Shift, continua sendo arrastar o nó
+    arrastar(a, { x: 100, y: 200 });
+    expect({ x: a.x, y: a.y }).toEqual({ x: 100, y: 200 });
+    expect(vizinhos(a)).toEqual([]);
+  });
+
+  test('soltar no vazio ou no próprio nó não muda nada', () => {
+    const [a] = doisNos();
+    tecla(document.body, 'l');
+    arrastar(a, { x: 150, y: 250 });
+    arrastar(a, { x: a.x + 15, y: a.y + 10 });
+    expect(vizinhos(a)).toEqual([]);
+    expect({ x: a.x, y: a.y }).toEqual({ x: 0, y: 0 });
+  });
+
+  test('funciona no modo simplificado (Ctrl+A) também', () => {
+    const [a, b] = doisNos();
+    tecla(document.body, 'a', { ctrlKey: true });
+    expect(app.microSimplifiedNodes).toBe(true);
+    tecla(document.body, 'l');
+    arrastar(b, a);
+    expect(vizinhos(b)).toEqual([a.id]);
+    expect(vizinhos(a)).toEqual([]);
+  });
+
+  test('nó de grafo sem lista de vizinhos ganha uma no primeiro link', () => {
+    const [, b] = doisNos();
+    const velho = app.micro.addStruct(0, 150, 7, 'graph');
+    app._renderMicroOnly();
+    tecla(document.body, 'l');
+    arrastar(velho, b);
+    expect(velho.neighborsArrayId).not.toBeNull();
+    expect(vizinhos(velho)).toEqual([b.id]);
+  });
+
+  test('a ligação feita pela ferramenta sobrevive a salvar e carregar', async () => {
+    const [a, b] = doisNos();
+    tecla(document.body, 'l');
+    arrastar(a, b);
+    let blob = null;
+    vi.spyOn(URL, 'createObjectURL').mockImplementation((bl) => {
+      blob = bl;
+      return 'blob:teste';
+    });
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    app._saveProject();
+    const projeto = JSON.parse(await blob.text());
+
+    desmontarApp(app);
+    app = await montarApp();
+    await app._applyLoadedProject(projeto);
+    const a2 = app.micro.structs.get(a.id);
+    expect(app.micro.arrays.get(a2.neighborsArrayId).cells).toEqual([b.id]);
+    expect(app.micro.arrays.get(app.micro.structs.get(b.id).neighborsArrayId).cells).toEqual([]);
+  });
+
+  test('Shift + arrasto numa célula de lista continua criando o cursor de leitura', () => {
+    escreverCodigo('nums = [1, 2, 3]');
+    ctrlEnterNaLinha(0);
+    const arr = [...app.micro.arrays.values()].find((n) => n.name === 'nums');
+    const c = arrayLayout(arr).cells[1];
+    const x = arr.x + c.x + c.w / 2;
+    const y = arr.y + c.y + c.h / 2;
+    evento(svg(), 'pointerdown', x, y, { shiftKey: true });
+    evento(window, 'pointermove', x + 30, y + 80, { shiftKey: true });
+    evento(window, 'pointerup', x + 30, y + 80, { shiftKey: true });
+    const cursor = [...app.micro.pointers.values()].find((p) => p.target?.kind === 'arrayCell');
+    expect(cursor?.target).toMatchObject({ arrayId: arr.id, index: 1 });
   });
 });
 

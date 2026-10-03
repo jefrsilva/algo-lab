@@ -79,6 +79,7 @@ const MICRO_MODES = [
   { id: 'text', label: 'Texto (cor: Alt+1…Alt+0)', shortcut: '2 / T' },
   { id: 'area', label: 'Área hachurada (cor: Alt+1…Alt+0, grid: G)', shortcut: '3 / R' },
   { id: 'chart', label: 'Gráfico Big-O (botão direito: funções exibidas; Shift + mouse sobre ele: lê f(n))', shortcut: '4 / B' },
+  { id: 'link', label: 'Ligar nós de grafo (arraste de um nó a outro; de novo desliga — também Shift + arrastar)', shortcut: '5 / L' },
 ];
 
 /** Paleta das áreas hachuradas (modo "Área") — Alt+1…Alt+9 e Alt+0 (a 10ª),
@@ -141,7 +142,7 @@ export class App {
     // o app abre com canvas e código vazios
     this.micro = new MicroModel();
     this.microViewport = { tx: 0, ty: 0, scale: 1 };
-    this.microMode = 'select'; // 'select' | 'text' | 'area' — modos da barra inferior (ver MICRO_MODES)
+    this.microMode = 'select'; // 'select' | 'text' | 'area' | 'chart' | 'link' — modos da barra inferior (ver MICRO_MODES)
     // preferências de tela (ver settings.js / _applySetting) — salvas no
     // navegador, editáveis pela janela de Configurações e pelos atalhos
     this.codePanelHidden = getSetting('codePanelHidden'); // Ctrl+H, ver _toggleCodePanel
@@ -211,6 +212,10 @@ export class App {
     this._microDragId = null;
     this._microDragPos = null;
     this._microPortDrag = null;
+    // arraste da ferramenta "Ligar nós de grafo" (ou Shift + arraste num nó
+    // de grafo) em andamento — { fromId, toPt, targetId|null }, ver
+    // `_startMicroGraphLink`
+    this._microGraphLinkDraft = null;
     this._microGroupDragPositions = null; // Map<id,{x,y}> durante um arraste de grupo (seleção múltipla)
     this._microSelectionPreview = null; // {x0,y0,x1,y1} durante um arraste de seleção em área
     // o Set `microSelectedIds` de uma seleção que COMEÇOU por retângulo (sem
@@ -630,6 +635,7 @@ export class App {
     else if (key === '2' || key === 't') this._setMicroMode('text');
     else if (key === '3' || key === 'r') this._setMicroMode('area');
     else if (key === '4' || key === 'b') this._setMicroMode('chart');
+    else if (key === '5' || key === 'l') this._setMicroMode('link');
     else if (key === 'g') this._toggleMicroAreaSnap();
     else if (key === 'n') this._toggleMicroFullNames();
     else if (key === 'c') this._applySetting('consoleHidden', !this.microConsole.userHidden);
@@ -2055,6 +2061,7 @@ export class App {
     this._microAreaDraft = null;
     this._microChartDraft = null;
     this._microAreaResize = null;
+    this._microGraphLinkDraft = null;
     this._renderMicroOnly();
   }
 
@@ -3275,10 +3282,11 @@ export class App {
     for (const node of this.micro.structs.values()) {
       if (!this._microPickable(node)) continue;
       // struct 'graph' não tem pino prev/next arrastável — "neighbors" é uma
-      // LISTA (ver MicroModel#setStructNeighborsArray), religar por arraste
-      // exigiria escolher EM QUAL posição da lista entraria o novo vizinho,
-      // gesto que não existe hoje (só "nome.append(...)" via código); sem
-      // esse `continue`, um arraste nessa área acabaria escrevendo direto em
+      // LISTA (ver MicroModel#setStructNeighborsArray), e o gesto de religar
+      // é outro: a ferramenta "Ligar nós de grafo" (5/L, ou Shift + arraste
+      // no nó), que põe o alvo no FIM da lista ou o tira dela (ver
+      // `_startMicroGraphLink`/MicroModel#toggleStructNeighbor). Sem esse
+      // `continue`, um arraste nessa área acabaria escrevendo direto em
       // `model.next` (campo que graph nunca usa/desenha) através do caminho
       // genérico de baixo, um estado fantasma que nada mais leria de volta.
       if (node.type === 'graph') continue;
@@ -3398,6 +3406,56 @@ export class App {
     return structNode ? { kind: 'struct', id: structNode.id } : null;
   }
 
+  // ---- modo micro: ferramenta "Ligar nós de grafo" ----
+
+  /** Nó de grafo (struct 'graph') visível sob o ponto — `exceptId` fica de
+   * fora (o nó de origem de um arraste, ver `_findMicroGraphLinkTarget`). */
+  _findMicroGraphNodeAt(worldPt, exceptId = null) {
+    for (const node of this.micro.structs.values()) {
+      if (node.type !== 'graph' || node.id === exceptId || !this._microPickable(node)) continue;
+      if (worldPt.x >= node.x && worldPt.x <= node.x + STRUCT_W && worldPt.y >= node.y && worldPt.y <= node.y + STRUCT_H) return node;
+    }
+    return null;
+  }
+
+  /** Alvo de soltura de um arraste de ligação que saiu do nó `fromId`:
+   * outro nó de grafo sob o ponto. Soltar no próprio nó (autolaço) ou fora
+   * de um nó de grafo não liga nada. */
+  _findMicroGraphLinkTarget(fromId, worldPt) {
+    const from = this.micro.structs.get(fromId);
+    if (!from) return null;
+    const insideFrom =
+      worldPt.x >= from.x && worldPt.x <= from.x + STRUCT_W && worldPt.y >= from.y && worldPt.y <= from.y + STRUCT_H;
+    return insideFrom ? null : this._findMicroGraphNodeAt(worldPt, fromId);
+  }
+
+  /** Começa o arraste de ligação a partir do nó de grafo `node` — pela
+   * ferramenta "Ligar nós de grafo" (5/L) ou pelo Shift + arraste no modo
+   * Selecionar. A seta de rascunho (`_microGraphLinkDraft`) segue o mouse;
+   * ao soltar sobre outro nó de grafo, `_toggleMicroGraphNeighbor` liga ou
+   * desliga a aresta. Como os arrastes de pino (`_microPortDrag`), vale
+   * também durante a reprodução da Simulação — a mudança fica no passo em
+   * exibição até a reprodução trocar de passo. */
+  _startMicroGraphLink(node, screenPt, worldPt) {
+    this._microPointer = { downScreen: screenPt, lastScreen: screenPt, moved: false, hit: 'graph-link', id: node.id, worldPtDown: worldPt };
+    window.addEventListener('pointermove', this._microBoundMove);
+    window.addEventListener('pointerup', this._microBoundUp);
+  }
+
+  /** Liga/desliga a aresta direcionada `fromId` → `toId` (ver
+   * MicroModel#toggleStructNeighbor): entra no fim de "neighbors" ou sai
+   * dele. Um nó de grafo sem lista de vizinhos (projeto antigo) ganha uma
+   * num lugar livre, como "GraphNode(v)" faria. */
+  _toggleMicroGraphNeighbor(fromId, toId) {
+    const from = this.micro.structs.get(fromId);
+    if (!from) return;
+    const hasList = from.neighborsArrayId && this.micro.arrays.has(from.neighborsArrayId);
+    const result = this.micro.toggleStructNeighbor(fromId, toId, hasList ? null : this._microCreatePosition('array', 0));
+    if (result == null && (this.micro.arrays.get(from.neighborsArrayId)?.cells.length ?? 0) >= MAX_ARRAY_SIZE) {
+      this.microRuntime.warn(`"neighbors" de um nó de grafo tem no máximo ${MAX_ARRAY_SIZE} vizinhos.`);
+    }
+  }
+
   // ---- modo micro: gestos (pointer) ----
 
   _onMicroPointerDown(e) {
@@ -3456,6 +3514,15 @@ export class App {
       this._microPointer = { downScreen: screenPt, lastScreen: screenPt, moved: false, hit: 'chart-create', worldPtDown: worldPt };
       window.addEventListener('pointermove', this._microBoundMove);
       window.addEventListener('pointerup', this._microBoundUp);
+      return;
+    }
+
+    // modo "Ligar nós de grafo": só um arraste que COMEÇA num nó de grafo
+    // faz algo (liga/desliga a aresta até o nó onde soltar, ver
+    // `_startMicroGraphLink`) — fora deles o clique não faz nada.
+    if (this.microMode === 'link') {
+      const graphNode = this._findMicroGraphNodeAt(worldPt);
+      if (graphNode) this._startMicroGraphLink(graphNode, screenPt, worldPt);
       return;
     }
 
@@ -3543,6 +3610,16 @@ export class App {
       hit = 'area';
       id = areaNode.id;
       grabOffset = { x: worldPt.x - areaNode.x, y: worldPt.y - areaNode.y };
+    }
+
+    // Shift + arraste num nó de grafo (modo Selecionar): atalho da
+    // ferramenta "Ligar nós de grafo". Só vale começando num nó de GRAFO —
+    // Shift numa célula de lista/matriz continua criando cursor de leitura
+    // (ver `_findMicroCursorCellAt` abaixo) e em qualquer outro lugar segue
+    // como sempre.
+    if (hit === 'struct' && structNode.type === 'graph' && e.shiftKey && !e.ctrlKey && !e.metaKey) {
+      this._startMicroGraphLink(structNode, screenPt, worldPt);
+      return;
     }
 
     if (hit === 'canvas') {
@@ -3655,6 +3732,13 @@ export class App {
         y: this._snapMicroArea(worldPt.y - offset.y, free),
       };
       this._renderMicroOnly();
+    } else if (this._microPointer.hit === 'graph-link') {
+      this._microGraphLinkDraft = {
+        fromId: this._microPointer.id,
+        toPt: worldPt,
+        targetId: this._findMicroGraphLinkTarget(this._microPointer.id, worldPt)?.id ?? null,
+      };
+      this._renderMicroOnly();
     } else if (this._microPointer.hit === 'port') {
       const fromPt = this._microPortWorldPos(this._microPointer.port);
       const resolved = this._resolveMicroDropTarget(this._microPointer.port, worldPt);
@@ -3719,6 +3803,16 @@ export class App {
       const area = this._microResizableById(id);
       if (moved && area && this._microAreaResize?.id === id) Object.assign(area, this._microAreaResize.rect);
       this._microAreaResize = null;
+    } else if (hit === 'graph-link') {
+      if (moved) {
+        if (this._microGraphLinkDraft?.targetId) this._toggleMicroGraphNeighbor(id, this._microGraphLinkDraft.targetId);
+      } else {
+        // clique sem arraste: só seleciona o nó, como no modo Selecionar
+        this.microSelectedIds = new Set();
+        this.microSelectedId = id;
+        this._syncCodeEditorSelection('struct', id);
+      }
+      this._microGraphLinkDraft = null;
     } else if (ctrl && !moved && id != null) {
       this._toggleMicroSelection(id);
     } else if (shift && cursorCell && !moved) {
@@ -3823,6 +3917,7 @@ export class App {
     this._microDragId = null;
     this._microDragPos = null;
     this._microPortDrag = null;
+    this._microGraphLinkDraft = null;
     this._microGroupDragPositions = null;
     this.microContainer.classList.remove('panning');
     window.removeEventListener('pointermove', this._microBoundMove);
@@ -4679,6 +4774,17 @@ export class App {
         y2: this._microPortDrag.toPt.y,
         valid: this._microPortDrag.valid,
       };
+    } else if (this._microGraphLinkDraft) {
+      // seta de rascunho da ferramenta "Ligar nós de grafo": sai da borda
+      // do nó (círculo no modo simplificado, célula "nbrs" no detalhado) na
+      // direção do mouse; tracejado apagado enquanto não há nó de grafo
+      // válido sob o mouse (ver `_findMicroGraphLinkTarget`)
+      const draft = this._microGraphLinkDraft;
+      const from = this.micro.structs.get(draft.fromId);
+      if (from) {
+        const start = structNextPort({ ...from, nextAnchor: draft.toPt }, this.microSimplifiedNodes);
+        previewEdge = { x1: start.x, y1: start.y, x2: draft.toPt.x, y2: draft.toPt.y, valid: !!draft.targetId };
+      }
     }
 
     this.microView.render({

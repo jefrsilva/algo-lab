@@ -5,13 +5,13 @@ description: Adiciona um novo modo/ferramenta à barra inferior do canvas (como 
 
 # Nova ferramenta (modo da barra inferior)
 
-Fonte da verdade: receita **8.7** de `docs/ARQUITETURA.md` (e 8.10 para o atalho). Gabarito: o modo `chart` ou `area` — `grep -n "'chart'" src/app/App.js`.
+Fonte da verdade: receita **8.7** de `docs/ARQUITETURA.md` (e 8.10 para o atalho). Gabarito: o modo `chart` ou `area` — `grep -n "'chart'" src/app/App.js`; para uma ferramenta que age sobre um elemento existente (em vez de criar um), o modo `link` (`grep -n "graph-link" src/app/App.js`).
 
 ## Passos
 
-1. `src/app/App.js` → `MICRO_MODES`: `{ id: 'x', label: 'Descrição', shortcut: '5 / K' }`.
+1. `src/app/App.js` → `MICRO_MODES`: `{ id: 'x', label: 'Descrição', shortcut: '6 / K' }`.
 2. `src/ui/ModeToolbar.js` → `ICONS`: SVG 24×24 com `stroke="currentColor"`, chave `x`.
-3. Atalho no final de `App#_onKeyDown` (`else if (key === '5' || key === 'k') this._setMicroMode('x')`). **Antes**, confira que a tecla está livre: `grep -n "key === '" src/app/App.js`.
+3. Atalho no final de `App#_onKeyDown` (`else if (key === '6' || key === 'k') this._setMicroMode('x')`). **Antes**, confira que a tecla está livre (1–5/V/T/R/B/L já são modos): `grep -n "key === '" src/app/App.js`.
 4. Gesto:
    - `_onMicroPointerDown`: ramo `if (this.microMode === 'x') { this._microPointer = { ..., hit: 'x-create', worldPtDown: worldPt }; ... }` no começo, junto aos de `text`/`area`/`chart`;
    - `_onMicroPointerMoveWindow`: atualizar o rascunho (`this._microXDraft`);

@@ -90,6 +90,36 @@ export class MicroModel {
     if (node) node.neighborsArrayId = arrayId;
   }
 
+  /** Liga/desliga a aresta DIRECIONADA `fromId` → `toId` de um struct
+   * 'graph' (ferramenta "Ligar nós de grafo", ver App#_finishMicroGraphLink):
+   * se `toId` ainda não é vizinho, entra no FIM da lista de vizinhos
+   * ("nó.neighbors.append(alvo)"); se já é, TODAS as ocorrências saem (a
+   * seta some de vez, mesmo com o alvo repetido por código). Nunca mexe na
+   * lista de `toId` (B→A continua como estava). Um 'graph' sem lista (ex.:
+   * projeto salvo antes dela existir) ganha uma agora, em `newArrayPos` (ou
+   * logo abaixo do nó), igual a "GraphNode(v)" cria (ver
+   * MicroRuntimeAdapter#createStruct). Devolve 'added', 'removed' ou null
+   * (nada mudou: autolaço, origem que não é 'graph', alvo inexistente ou
+   * lista já com MAX_ARRAY_SIZE vizinhos). */
+  toggleStructNeighbor(fromId, toId, newArrayPos = null) {
+    const from = this.structs.get(fromId);
+    if (!from || from.type !== 'graph' || fromId === toId || !this.structs.has(toId)) return null;
+    let arr = from.neighborsArrayId ? this.arrays.get(from.neighborsArrayId) : null;
+    if (arr?.cells.includes(toId)) {
+      for (let i = arr.cells.length - 1; i >= 0; i -= 1) {
+        if (arr.cells[i] === toId) this.removeArrayCell(arr.id, i);
+      }
+      return 'removed';
+    }
+    if (arr && arr.cells.length >= MAX_ARRAY_SIZE) return null;
+    if (!arr) {
+      const pos = newArrayPos ?? { x: from.x, y: from.y + 100 };
+      arr = this.addArray(pos.x, pos.y, { kind: 'ref', size: 0, name: `__graph_neighbors_${from.id}` });
+      this.setStructNeighborsArray(from.id, arr.id);
+    }
+    return this.insertArrayCell(arr.id, arr.cells.length, toId) ? 'added' : null;
+  }
+
   // `frameId` identifica a "aba" (chamada de função) dona do ponteiro/variável
   // — 'global' pro escopo de topo, ou o id de um frame de chamada recursiva
   // (ver MicroRuntimeAdapter#pushFrame). Structs/arrays/dicts/matrizes são o

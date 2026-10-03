@@ -1205,10 +1205,10 @@ export class App {
 
   /** Todo array nasce com um ponteiro dedicado, rotulado com o nome do array
    * e "apontando" pra ele (`{kind:'array', id}`) — é isso que mostra o nome
-   * no canvas agora que o array não tem mais barra de título própria, e
-   * clicar com o botão direito nesse ponteiro (ver `_onMicroContextMenu`)
-   * reabre o popup de configurações (nome/tamanho/orientação) que antes vivia
-   * atrás da engrenagem. Posicionado acima do array, com a mesma busca de
+   * no canvas agora que o array não tem mais barra de título própria (o
+   * popup de configurações — nome/tamanho/orientação — abre pelo botão
+   * direito no PUXADOR do array, não neste ponteiro; ver
+   * `_onMicroContextMenu`). Posicionado acima do array, com a mesma busca de
    * espaço livre usada pra qualquer elemento novo, pra não nascer em cima de
    * outra coisa (nem do próprio array) — a MENOS que o usuário já tenha
    * reposicionado o rótulo deste array antes (ver `microLayout`), aí volta
@@ -1465,13 +1465,21 @@ export class App {
     );
   }
 
+  /** Nome, tamanho e orientação de um array. Set não tem campo de tamanho:
+   * crescer encheria o conjunto de 0s repetidos e tiraria o `hashTable` (a
+   * ordem do CPython, ver pyset.js) de sincronia com as células — um set só
+   * muda de tamanho pelo código (`add`/`remove`/`discard`). Deque com
+   * `maxlen` não passa desse limite (com `maxlen=0` não há o que mudar). */
   _openMicroArraySettingsPopup(node, screenPt) {
+    const maxlen = node.isDeque && Number.isInteger(node.maxlen) ? node.maxlen : null;
+    const showSize = !node.isSet && maxlen !== 0;
     this.microArraySettingsPopup.open(screenPt.x, screenPt.y, node, {
       returnFocusTo: this.microView.svg,
-      maxSize: MAX_ARRAY_SIZE,
+      maxSize: maxlen !== null ? Math.min(maxlen, MAX_ARRAY_SIZE) : MAX_ARRAY_SIZE,
+      showSize,
       onSave: ({ name, size, orientation }) => {
         this.micro.renameArray(node.id, name);
-        this.micro.resizeArray(node.id, size);
+        if (size !== undefined) this.micro.resizeArray(node.id, size);
         this.micro.setArrayOrientation(node.id, orientation);
         this.microRunner.updateOrientation(node.id, orientation);
         if (this.microSelectedId === node.id) this._syncCodeEditorSelection('array', node.id);
@@ -3925,11 +3933,12 @@ export class App {
     this._renderMicroOnly();
   }
 
-  /** Clique com o botão direito no canvas micro: sobre uma label de texto ou
-   * o ponteiro-rótulo de um array/dict (ver `_createArrayLabelPointer`/
-   * `_createDictLabelPointer`), abre o popup de configurações correspondente
-   * — em qualquer outro ponto, só bloqueia o menu nativo do navegador, como
-   * já fazia antes. */
+  /** Clique com o botão direito no canvas micro: sobre uma label de texto,
+   * o puxador de um array/set/deque, dict ou matriz (ver
+   * `_findMicroHandleUnder`) ou um gráfico, seleciona o elemento (o puxador e
+   * o gráfico) e abre o popup de configurações correspondente — em qualquer
+   * outro ponto (inclusive o ponteiro-rótulo da coleção), só bloqueia o menu
+   * nativo do navegador. */
   _onMicroContextMenu(e) {
     e.preventDefault();
     const screenPt = this._microScreenPointFromEvent(e);
@@ -3939,38 +3948,52 @@ export class App {
       this._openMicroLabelSettingsPopup(labelNode, screenPt);
       return;
     }
-    const pointerNode = this._findMicroPointerAt(worldPt);
-    if (pointerNode?.isArrayLabel) {
-      const arrayNode = this.micro.arrays.get(pointerNode.labelArrayId);
-      if (arrayNode) this._openMicroArraySettingsPopup(arrayNode, screenPt);
+    // ponteiro (o rótulo da coleção também), variável ou struct por cima:
+    // ficam em camadas acima das coleções, então tapam o puxador e o gráfico
+    const covered = this._findMicroPointerAt(worldPt) || this._findMicroVariableAt(worldPt) || this._findMicroStructAt(worldPt);
+    if (covered) return;
+    const handle = this._findMicroHandleUnder(worldPt);
+    if (handle) {
+      this._selectMicroForContextMenu(handle.kind, handle.node.id);
+      if (handle.kind === 'array') this._openMicroArraySettingsPopup(handle.node, screenPt);
+      else if (handle.kind === 'dict') this._openMicroDictSettingsPopup(handle.node, screenPt);
+      else this._openMicroMatrixSettingsPopup(handle.node, screenPt);
       return;
     }
-    if (pointerNode?.isDictLabel) {
-      const dictNode = this.micro.dicts.get(pointerNode.labelDictId);
-      if (dictNode) this._openMicroDictSettingsPopup(dictNode, screenPt);
-      return;
-    }
-    if (pointerNode?.isMatrixLabel) {
-      const matrixNode = this.micro.matrices.get(pointerNode.labelMatrixId);
-      if (matrixNode) this._openMicroMatrixSettingsPopup(matrixNode, screenPt);
-      return;
-    }
-    // gráfico: só se nenhum elemento estiver por cima dele nesse ponto
-    const covered =
-      pointerNode ||
-      this._findMicroStructAt(worldPt) ||
-      this._findMicroArrayAt(worldPt) ||
-      this._findMicroDictAt(worldPt) ||
-      this._findMicroMatrixAt(worldPt) ||
-      this._findMicroVariableAt(worldPt);
-    const chartNode = covered ? null : this._findMicroChartAt(worldPt);
+    // gráfico: só se nenhuma coleção estiver por cima dele nesse ponto
+    const overChart = this._findMicroArrayAt(worldPt) || this._findMicroDictAt(worldPt) || this._findMicroMatrixAt(worldPt);
+    const chartNode = overChart ? null : this._findMicroChartAt(worldPt);
     if (chartNode) {
-      this.microSelectedIds = new Set();
-      this.microSelectedId = chartNode.id;
-      this._syncCodeEditorSelection(null, null);
-      this._renderMicroOnly();
+      this._selectMicroForContextMenu(null, chartNode.id);
       this._openMicroChartSettingsPopup(chartNode, screenPt);
     }
+  }
+
+  /** Coleção cujo puxador está VISÍVEL sob o ponto: `{kind, node}`, com
+   * `kind` 'matrix' | 'dict' | 'array'. Percorre as camadas de cima pra
+   * baixo (matrizes, dicts, arrays — ver MicroCanvasView): o corpo de uma
+   * coleção de camada mais alta tapa o puxador de uma de camada mais baixa. */
+  _findMicroHandleUnder(worldPt) {
+    const layers = [
+      ['matrix', this.micro.matrices, matrixHandleRect, (pt) => this._findMicroMatrixAt(pt)],
+      ['dict', this.micro.dicts, dictHandleRect, (pt) => this._findMicroDictAt(pt)],
+      ['array', this.micro.arrays, arrayHandleRect, (pt) => this._findMicroArrayAt(pt)],
+    ];
+    for (const [kind, map, handleOf, findAt] of layers) {
+      const node = this._findMicroHandleAt(map, handleOf, worldPt);
+      if (node) return { kind, node };
+      if (findAt(worldPt)) return null; // corpo desta camada por cima
+    }
+    return null;
+  }
+
+  /** Seleciona só o elemento cujo popup o botão direito vai abrir (`kind`
+   * nulo pra elementos fora do código, como o gráfico). */
+  _selectMicroForContextMenu(kind, id) {
+    this.microSelectedIds = new Set();
+    this.microSelectedId = id;
+    this._syncCodeEditorSelection(kind, kind ? id : null);
+    this._renderMicroOnly();
   }
 
   /** Popup do botão direito num gráfico de complexidade: quais funções

@@ -7,7 +7,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { desmontarApp, montarApp, tecla } from '../helpers/dom.js';
 import { linhas } from '../helpers/runDsl.js';
-import { arrayHandleRect, arrayLayout, chartLayout } from '../../src/render/MicroCanvasView.js';
+import { arrayHandleRect, arrayLayout, chartLayout, dictHandleRect, matrixHandleRect } from '../../src/render/MicroCanvasView.js';
 
 let app;
 const $ = (sel) => document.querySelector(sel);
@@ -295,6 +295,14 @@ describe('atalhos e configurações', () => {
     expect(app.microMode).toBe('area');
     tecla(document.body, 'v');
     expect(app.microMode).toBe('select');
+  });
+
+  test('a barra de ferramentas mostra um ícone SVG em cada botão, Selecionar ativo de início', () => {
+    const selecionar = $('.mode-btn[aria-label="Selecionar / Mover"]');
+    expect(selecionar).not.toBeNull();
+    expect(selecionar.classList.contains('active')).toBe(true);
+    expect(selecionar.querySelector('svg')).not.toBeNull();
+    expect($$('.mode-toolbar .mode-btn').every((b) => b.querySelector('svg'))).toBe(true);
   });
 
   test('atalhos de letra não disparam enquanto se digita no editor', () => {
@@ -596,6 +604,90 @@ describe('ferramenta Ligar nós de grafo', () => {
   });
 });
 
+describe('popup de configurações pelo puxador (botão direito)', () => {
+  const svg = () => $('.micro-canvas');
+  const popup = () => $('.array-settings-popup');
+  const nomeNoPopup = () => popup().querySelector('.array-settings-input').value;
+  /** Botão direito no ponto (x, y) do MUNDO — sem layout no jsdom, o canvas
+   * fica em (0, 0) da janela e a tela é o mundo escalado e deslocado. */
+  function botaoDireito(x, y) {
+    const { tx, ty, scale } = app.microViewport;
+    const ev = new MouseEvent('contextmenu', { clientX: x * scale + tx, clientY: y * scale + ty, button: 2, bubbles: true, cancelable: true });
+    svg().dispatchEvent(ev);
+    return ev;
+  }
+  /** Centro (mundo) do puxador de uma coleção. */
+  function centroDoPuxador(node, handleOf) {
+    const h = handleOf(node);
+    return { x: node.x + h.x + h.w / 2, y: node.y + h.y + h.h / 2 };
+  }
+  /** Cria nums (lista), s (set), d (dict) e m (matriz) pelo Sandbox. */
+  function criarColecoes() {
+    escreverCodigo(linhas('nums = [1, 2, 3]', 's = {4, 5}', 'd = {"a": 1}', 'm = [[1, 2], [3, 4]]'));
+    [0, 1, 2, 3].forEach(ctrlEnterNaLinha);
+    const porNome = (map, nome) => [...map.values()].find((n) => n.name === nome);
+    return {
+      nums: porNome(app.micro.arrays, 'nums'),
+      s: porNome(app.micro.arrays, 's'),
+      d: porNome(app.micro.dicts, 'd'),
+      m: porNome(app.micro.matrices, 'm'),
+    };
+  }
+  const rotuloDe = (node) =>
+    [...app.micro.pointers.values()].find(
+      (p) => p.labelArrayId === node.id || p.labelDictId === node.id || p.labelMatrixId === node.id,
+    );
+
+  test('abre o popup da lista, do set, do dict e da matriz pelo puxador', () => {
+    const { nums, s, d, m } = criarColecoes();
+    const casos = [
+      [nums, arrayHandleRect, 'nums'],
+      [s, arrayHandleRect, 's'],
+      [d, dictHandleRect, 'd'],
+      [m, matrixHandleRect, 'm'],
+    ];
+    for (const [node, handleOf, nome] of casos) {
+      expect(node).toBeTruthy();
+      const { x, y } = centroDoPuxador(node, handleOf);
+      const ev = botaoDireito(x, y);
+      expect(ev.defaultPrevented).toBe(true);
+      expect(popup()).not.toBeNull();
+      expect(nomeNoPopup()).toBe(nome);
+      tecla(popup().querySelector('.array-settings-input'), 'Escape'); // fecha
+      expect(popup()).toBeNull();
+    }
+  });
+
+  test('abrir pelo puxador também seleciona a coleção', () => {
+    const { d } = criarColecoes();
+    const { x, y } = centroDoPuxador(d, dictHandleRect);
+    botaoDireito(x, y);
+    expect(app.microSelectedId).toBe(d.id);
+    expect(app._microSelectionIds()).toEqual([d.id]);
+  });
+
+  test('o ponteiro-rótulo não abre mais o popup — só bloqueia o menu nativo', () => {
+    const { nums, d, m } = criarColecoes();
+    for (const node of [nums, d, m]) {
+      const rotulo = rotuloDe(node);
+      expect(rotulo).toBeTruthy();
+      const ev = botaoDireito(rotulo.x + 5, rotulo.y + 5);
+      expect(ev.defaultPrevented).toBe(true);
+      expect(popup()).toBeNull();
+    }
+  });
+
+  test('um ponteiro por cima do puxador tem prioridade: não abre o popup', () => {
+    const { nums } = criarColecoes();
+    const { x, y } = centroDoPuxador(nums, arrayHandleRect);
+    const rotulo = rotuloDe(nums);
+    Object.assign(rotulo, { x: x - 5, y: y - 5 });
+    app._renderMicroOnly();
+    botaoDireito(x, y);
+    expect(popup()).toBeNull();
+  });
+});
+
 describe('pan com a barra de espaço', () => {
   const svg = () => $('.micro-canvas');
   const container = () => $('.micro-container');
@@ -633,5 +725,64 @@ describe('pan com a barra de espaço', () => {
     evento(window, 'pointermove', 200, 200, { button: 2 });
     evento(window, 'pointerup', 200, 200, { button: 2 });
     expect(app.microViewport).toMatchObject({ tx, ty });
+  });
+});
+
+describe('popup de configurações da lista (botão direito no puxador)', () => {
+  const svg = () => $('.micro-canvas');
+  const popup = () => $('.array-settings-popup');
+  const campo = (rotulo) =>
+    [...popup().querySelectorAll('.array-settings-row')].find((r) => r.querySelector('label')?.textContent === rotulo)?.querySelector('input');
+
+  /** Cria a coleção no Sandbox (Ctrl+Enter em cada linha) e devolve o array. */
+  function criarNoSandbox(...codigo) {
+    escreverCodigo(linhas(...codigo));
+    codigo.forEach((_, i) => ctrlEnterNaLinha(i));
+    return [...app.micro.arrays.values()].at(-1);
+  }
+  /** Botão direito no centro do puxador do array (mundo escalado e
+   * deslocado por tx/ty, sem layout no jsdom). */
+  function botaoDireitoNoPuxador(arr) {
+    const h = arrayHandleRect(arr);
+    const { tx, ty, scale } = app.microViewport;
+    const x = arr.x + h.x + h.w / 2;
+    const y = arr.y + h.y + h.h / 2;
+    svg().dispatchEvent(new MouseEvent('contextmenu', { clientX: x * scale + tx, clientY: y * scale + ty, button: 2, bubbles: true, cancelable: true }));
+  }
+  const salvar = () => botao('.array-settings-popup .btn', 'Salvar').click();
+
+  test('lista comum mostra o campo Tamanho e salvar redimensiona', () => {
+    const nums = criarNoSandbox('nums = [1, 2]');
+    botaoDireitoNoPuxador(nums);
+    expect(popup()).toBeTruthy();
+    expect(campo('Tamanho').value).toBe('2');
+    campo('Tamanho').value = '4';
+    salvar();
+    expect(nums.cells).toEqual([1, 2, 0, 0]);
+  });
+
+  test('set não mostra o campo Tamanho e salvar não mexe nas células', () => {
+    const s = criarNoSandbox('s = {3, 1, 2}');
+    expect(s.isSet).toBe(true);
+    const celulas = [...s.cells];
+    const tabela = s.hashTable;
+    botaoDireitoNoPuxador(s);
+    expect(popup()).toBeTruthy();
+    expect(campo('Tamanho')).toBeUndefined();
+    campo('Nome').value = 'conj';
+    salvar();
+    expect(s.name).toBe('conj');
+    expect(s.cells).toEqual(celulas);
+    expect(s.hashTable).toBe(tabela);
+  });
+
+  test('deque com maxlen limita o tamanho ao maxlen', () => {
+    const f = criarNoSandbox('from collections import deque', 'f = deque([1, 2], maxlen=3)');
+    expect(f).toMatchObject({ isDeque: true, maxlen: 3 });
+    botaoDireitoNoPuxador(f);
+    expect(campo('Tamanho').max).toBe('3');
+    campo('Tamanho').value = '10';
+    salvar();
+    expect(f.cells).toEqual([1, 2, 0]);
   });
 });

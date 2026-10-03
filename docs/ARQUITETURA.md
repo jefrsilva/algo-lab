@@ -45,11 +45,13 @@ npm install
 npm run dev       # servidor Vite em http://localhost:5173
 npm run build     # build de produção em dist/
 npm run preview   # serve o build de produção localmente
+npm test          # testes automatizados (Vitest, pasta tests/)
+npm run test:watch  # testes em modo observação
 ```
 
-- O repositório **não tem** suíte de testes, linter nem checagem de tipos. Pra verificar uma mudança, rode o app e exercite a funcionalidade no navegador (ver [seção 10](#10-como-verificar-uma-mudança)).
+- **Testes:** `tests/` tem a suíte automatizada (Vitest) — linguagem comparada ao Python real, interpretador, modelo, reprodução e um teste de integração que monta o app inteiro no jsdom. Organização e onde pôr um teste novo: [tests/README.md](../tests/README.md). O CI (`.github/workflows/testes.yml`) roda `npm test` e `npm run build` em push na `main` e em pull request. Não há linter nem checagem de tipos, e os testes não enxergam o desenho (o jsdom não faz layout) — ver [seção 10](#10-como-verificar-uma-mudança).
 - `.claude/launch.json` tem configurações prontas de dev server (`algo-visualizer`, porta 5173, e `algo-visualizer-5174`).
-- **Deploy:** Cloudflare Pages via integração Git (não há workflow no repositório). O build é `npm run build`, a saída fica em `dist/` e a versão do Node está fixada em `.node-version`. `public/_headers` vai pra `dist/` e define cache longo pros arquivos com hash em `/assets/*`. O app é servido na raiz do domínio, então `vite.config.js` não define `base`; se um dia for pra um subcaminho (ex.: GitHub Pages), é preciso definir.
+- **Deploy:** Cloudflare Pages via integração Git (não há workflow de deploy no repositório; o de `.github/workflows/` só roda os testes e o build). O build é `npm run build`, a saída fica em `dist/` e a versão do Node está fixada em `.node-version`. `public/_headers` vai pra `dist/` e define cache longo pros arquivos com hash em `/assets/*`. O app é servido na raiz do domínio, então `vite.config.js` não define `base`; se um dia for pra um subcaminho (ex.: GitHub Pages), é preciso definir.
 
 ---
 
@@ -59,7 +61,13 @@ npm run preview   # serve o build de produção localmente
 index.html                  página única; aplica o tema salvo antes do 1º paint e carrega os CSS
 vite.config.js              config mínima do Vite (porta 5173, saída em dist/)
 public/_headers             cabeçalhos de cache do Cloudflare Pages
+vitest.config.js            config dos testes (pasta tests/, ambiente Node por padrão)
 scripts/run-dsl.mjs         roda um programa da DSL em Node, sem navegador (verificação rápida do interpretador)
+tests/                      testes automatizados (Vitest) — ver tests/README.md
+  dsl/                      programas da DSL x saída do Python real, execução, bugs conhecidos
+  interpreter/  core/  app/  ui/   testes por camada (ui/App.test.js monta o app inteiro no jsdom)
+  helpers/                  runDsl (roda um programa sem DOM) e montarApp/tecla (DOM)
+.github/workflows/testes.yml  CI: npm test + npm run build em push/PR
 .claude/skills/              skills do Claude Code pras tarefas comuns (receitas da seção 8 + verificação)
 src/
   main.js                   ponto de entrada: importa as fontes, aplica o tema, faz `new App(root)`
@@ -444,6 +452,8 @@ Cada widget é uma classe independente, sem classe base. Recebe um container e c
 
 > Cada receita tem uma skill correspondente em `.claude/skills/` (ex.: `novo-builtin-dsl`, `novo-elemento-modelo`), que a usa como fonte e acrescenta a verificação. Ao mudar uma receita, atualize a skill.
 >
+> Toda receita termina com um teste: o lugar de cada tipo de teste está em [tests/README.md](../tests/README.md) (ex.: built-in novo → um caso em `tests/dsl/casos.js` com a saída do Python).
+>
 > As receitas listam **todos** os pontos de contato conhecidos. Antes de começar, use `grep` pra achar um recurso parecido que já existe (ex.: `matrix` pra um elemento novo, `'sorted'` pra um built-in novo) e siga o mesmo caminho por todas as camadas.
 
 ### 8.1 Novo built-in da linguagem (função global, ex.: `abs(x)`)
@@ -606,12 +616,11 @@ Inclua em `_saveProject`, leia com validação defensiva em `_applyLoadedProject
 
 ## 10. Como verificar uma mudança
 
-Sem testes automatizados, o roteiro mínimo é rodar `npm run dev`, abrir http://localhost:5173 e, conforme o que você mexeu:
+Primeiro, sempre: `npm test` (a suíte de `tests/`, ver [tests/README.md](../tests/README.md)) e `npm run build`, ambos sem erro — é o mesmo que o CI roda. Acrescente testes pro que você mudou. Os testes cobrem a linguagem, o modelo, a reprodução e o fluxo da interface (no jsdom), mas **não enxergam o desenho**: medidas, posições, setas e cores precisam de um navegador. Pra isso, rode `npm run dev`, abra http://localhost:5173 e, conforme o que você mexeu:
 
-- **Linguagem:** testar a construção no **Sandbox** (Ctrl+Enter linha a linha, observando o flash verde ou vermelho, o destaque e o console) e na **Simulação** (Rodar, avançar e voltar passos com Ctrl+,/Ctrl+., conferir a linha destacada, os cursores e o console por passo). Inclua um caso de erro (nome inexistente, índice fora da lista) e um caso dentro de uma função recursiva.
+- **Linguagem:** testar a construção no **Sandbox** (Ctrl+Enter linha a linha, observando o flash verde ou vermelho, o destaque e o console) e na **Simulação** (Rodar, avançar e voltar passos com Ctrl+,/Ctrl+., conferir a linha destacada, os cursores e o console por passo). Inclua um caso de erro (nome inexistente, índice fora da lista) e um caso dentro de uma função recursiva — e transforme-os em testes em `tests/dsl/`.
 - **Elemento visual:** criar à mão (Ctrl+Espaço) e por código; selecionar, arrastar, apagar (Delete), editar (duplo clique), botão direito; ligar um ponteiro por arraste; alternar Ctrl+A (nós simplificados), N (nomes completos) e o tema claro/escuro; dar zoom e pan.
 - **Reprodução:** arrastar um elemento no meio da reprodução, voltar e avançar passos, rodar de novo e conferir que as posições foram lembradas.
 - **Persistência:** salvar o projeto, recarregar a página, carregar o arquivo e conferir que tudo voltou (inclusive cores, janelas deslizantes e anotações).
-- **Build:** `npm run build` deve terminar sem erros.
 
-Atalhos: `node scripts/run-dsl.mjs programa.py [--steps] [--model]` roda um programa da DSL em Node, sem navegador, pelo mesmo caminho da Simulação (imprime o console, os passos e o modelo final). A skill `verificar-mudanca` junta isso a um smoke test com Playwright (`.claude/skills/verificar-mudanca/smoke.mjs`).
+Atalhos: `node scripts/run-dsl.mjs programa.py [--steps] [--model]` roda um programa da DSL em Node, sem navegador, pelo mesmo caminho da Simulação (imprime o console, os passos e o modelo final). A skill `verificar-mudanca` junta isso aos testes e a um smoke test com Playwright (`.claude/skills/verificar-mudanca/smoke.mjs`).

@@ -41,4 +41,4 @@ Fonte da verdade: receita **8.3** de `docs/ARQUITETURA.md` e o pipeline da seç�
 
 ## Verificação
 
-Skill `verificar-mudanca`: `npm run build`; `node scripts/run-dsl.mjs --steps` mostrando os passos esperados (linha certa, um passo por ação); casos de erro de sintaxe; uso dentro de `def` recursiva e dentro de laços (sinais `break`/`return` atravessando o bloco novo). Teste também a linha isolada no Sandbox (smoke no navegador ou script Playwright pontual com Ctrl+Enter).
+Testes: casos em `tests/dsl/casos.js` (saída do Python real), o parse em `tests/interpreter/parser.test.js`/`blockParser.test.js` e os passos/erros em `tests/dsl/execucao.test.js`. Skill `verificar-mudanca`: `npm test`; `npm run build`; `node scripts/run-dsl.mjs --steps` mostrando os passos esperados (linha certa, um passo por ação); casos de erro de sintaxe; uso dentro de `def` recursiva e dentro de laços (sinais `break`/`return` atravessando o bloco novo). Teste também a linha isolada no Sandbox (smoke no navegador ou script Playwright pontual com Ctrl+Enter).

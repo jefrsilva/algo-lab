@@ -12,19 +12,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm run dev       # Vite dev server, http://localhost:5173
 npm run build     # production build to dist/
 npm run preview   # preview a production build
+npm test          # Vitest suite in tests/ (run once)
+npm run test:watch
 ```
 
-There is no test suite, no linter, and no type checker configured in this repo (`package.json` only has the three Vite scripts). Verify changes by running the app in a browser and exercising the feature manually (the `.claude/launch.json` dev-server config is named `algo-visualizer`, port 5173).
+Automated tests live in `tests/` (Vitest; see [tests/README.md](tests/README.md)): DSL programs whose output must match real Python (`tests/dsl/casos.js`, and `python.test.js` checks that answer key against `python3` when available), interpreter units (lexer/parser/blockParser/format/pyset/pytuple), `MicroModel`, `MicroProgramRunner`/`MicroRuntimeAdapter`/settings, and a jsdom integration test that mounts the whole `App` (Simulação, playback, Sandbox Ctrl+Enter, shortcuts, quick actions, save/load). Known DSL-vs-Python gaps are pinned in `tests/dsl/bugs-conhecidos.test.js` with `test.fails` — fixing one makes its test fail, so flip it to `test`. CI (`.github/workflows/testes.yml`) runs `npm test` + `npm run build` on pushes to `main` and on PRs. Add a test with every change; there is still no linter or type checker. jsdom does no layout, so drawing/geometry still needs a browser check (the `.claude/launch.json` dev-server config is named `algo-visualizer`, port 5173).
 
 `node scripts/run-dsl.mjs <arquivo.py|->` runs a DSL program headlessly in Node through the same path as Simulação (`--steps` lists the steps, `--model` dumps the final `MicroModel`) — the fastest way to check interpreter changes.
 
 ## Project skills
 
-`.claude/skills/` holds skills (pt-BR) for the recurring tasks, built from the recipes in section 8 of `docs/ARQUITETURA.md`: `novo-builtin-dsl`, `nova-sintaxe-dsl`, `novo-elemento-modelo`, `novo-elemento-anotacao`, `nova-ferramenta`, `nova-quick-action`, `nova-configuracao`, `novo-popup`, `novo-campo-projeto`, plus `verificar-mudanca` (build + headless DSL runs + Playwright smoke test with screenshot) and `sincronizar-docs`. When a recipe changes, update the matching skill too.
+`.claude/skills/` holds skills (pt-BR) for the recurring tasks, built from the recipes in section 8 of `docs/ARQUITETURA.md`: `novo-builtin-dsl`, `nova-sintaxe-dsl`, `novo-elemento-modelo`, `novo-elemento-anotacao`, `nova-ferramenta`, `nova-quick-action`, `nova-configuracao`, `novo-popup`, `novo-campo-projeto`, plus `verificar-mudanca` (`npm test` + build + headless DSL runs + Playwright smoke test with screenshot) and `sincronizar-docs`. When a recipe changes, update the matching skill too.
 
 ## Deploy
 
-Hosted on **Cloudflare Pages** via its Git integration (no workflow in this repo): build command `npm run build`, output directory `dist`, Node version pinned by `.node-version`. `public/_headers` (copied into `dist/` by Vite) sets long-lived caching for the hashed `/assets/*` files. The app is served from the domain root, so `vite.config.js` needs no `base`; if it ever moves to a subpath (e.g. GitHub Pages), `base` must be set.
+Hosted on **Cloudflare Pages** via its Git integration (no deploy workflow in this repo — `.github/workflows/testes.yml` only runs the tests and the build): build command `npm run build`, output directory `dist`, Node version pinned by `.node-version`. `public/_headers` (copied into `dist/` by Vite) sets long-lived caching for the hashed `/assets/*` files. The app is served from the domain root, so `vite.config.js` needs no `base`; if it ever moves to a subpath (e.g. GitHub Pages), `base` must be set.
 
 ## Big-picture architecture
 
@@ -72,4 +74,4 @@ Small, single-purpose classes instantiated and wired together by `App.js` (no sh
 
 - `App.js` is intentionally monolithic and large; read the specific method/section you need (grep for it) rather than the whole file — many sections have explanatory Portuguese comments describing *why*, not just what.
 - The DSL's `interpreter.js`/`evaluator.js` talk to the model only through the `Environment` interface — changes there usually need a matching change in `MicroRuntimeAdapter`.
-- There's no automated test suite; changes must be verified by running `npm run dev` and exercising the UI directly.
+- Run `npm test` before committing and add tests for what you change (where each kind of test goes: [tests/README.md](tests/README.md)). The suite can't see rendering — visual changes still need `npm run dev` (or the Playwright smoke test) and a look at the canvas.

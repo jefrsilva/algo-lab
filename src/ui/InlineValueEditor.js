@@ -62,11 +62,12 @@ export class InlineValueEditor {
    *   como bool (padrão true).
    * @param options.onCancel chamado ao cancelar (Esc) — além de, não em vez
    *   de, simplesmente fechar sem chamar `onCommit`.
-   * @param options.autoGrow(value) => {width,height} (px de tela) — quando
+   * @param options.autoGrow(value) => {width,height[,x,y]} (px de tela) — quando
    *   dado, o campo é redimensionado a cada tecla pra caber o conteúdo atual
    *   (ver App#_editMicroLabelInPlace); sem isso o campo fica fixo no
    *   tamanho de `rect`, como sempre (edição de valor numérico de tamanho
-   *   sempre igual, ex: dado de um nó).
+   *   sempre igual, ex: dado de um nó). Com `x`/`y`, o campo também
+   *   muda de lugar (um nome ancorado pela direita cresce pra esquerda).
    * @param options.returnFocusTo elemento a receber o foco de teclado de
    *   volta quando este editor fechar POR TECLADO (Enter/Esc, com o campo
    *   ainda focado no momento — ver `close`) — sem isso, confirmar/cancelar
@@ -120,6 +121,8 @@ export class InlineValueEditor {
     if (autoGrow) {
       const applyGrow = () => {
         const size = autoGrow(input.value);
+        if (size.x != null) input.style.left = `${size.x}px`;
+        if (size.y != null) input.style.top = `${size.y}px`;
         input.style.width = `${size.width}px`;
         input.style.height = `${size.height}px`;
       };

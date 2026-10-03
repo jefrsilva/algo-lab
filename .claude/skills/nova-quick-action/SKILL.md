@@ -14,7 +14,7 @@ Fonte da verdade: receita **8.8** de `docs/ARQUITETURA.md`. Veja os comandos exi
    - outros: `{ name, aliases, description, disabled: null | 'motivo', run }`.
 2. Nomes em inglês no padrão `verbo objeto` (`new …`, `remove …`) para a busca abreviada funcionar (`n p` → `new pointer`). Confira que o nome/alias não colide com os existentes.
 3. Implemente `_quickNewX` seguindo `_quickNewCollection`/`_quickNewNode`:
-   - posição com `_microCreatePosition`;
+   - posição com `_microCreatePosition` (o ponteiro que nasce junto com o elemento, como o rótulo de uma coleção, vai por `_microPointerSpotNear(id, nome, { movable: true })` — à esquerda/acima, longe o bastante pra seta aparecer);
    - criação no `MicroModel` (ou no `Map` de anotação do App);
    - seleção e `this._renderMicroOnly()`;
    - edição in place do nome (`_editMicroNameInPlace`) ou do dado (`_openMicroDataPopup`);

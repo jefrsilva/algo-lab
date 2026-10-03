@@ -215,9 +215,9 @@ Ids (`nextId`) nunca se repetem: cada "Rodar" recria os elementos com ids novos.
 
 - `App#microLayout`: posição escolhida pelo usuário, por chave de `microLayoutKey.js` (`pointer:global:head`, `array:nums`, `cursor:nums[i]`…). Nunca é limpo entre execuções, só ao criar ou carregar um projeto.
 - `MicroProgramRunner#stepLayout`: quadros-chave de posição por passo, com chave do tipo `array:call:leftHalf#2`.
-- `App#microWindows`: janelas deslizantes, por chave de cursor (`nums[l]`).
+- `App#microWindows`: janelas deslizantes, por chave de cursor (`nums[l]`). A cor da janela (`color`) também mora aqui: é a cor única dos dois cursores e do colchete, e por isso sobrevive a novas execuções e ao save/load.
 
-Já `App#microColors` (cor manual) é por **id**, e funciona porque os snapshots preservam os ids dentro de uma execução.
+Já `App#microColors` (cor manual) é por **id**, e funciona porque os snapshots preservam os ids dentro de uma execução. O canvas recebe `App#_microEffectiveColors()`, que é `microColors` com a cor de cada janela aplicada aos seus cursores; Alt+1…Alt+0 num cursor de janela muda a cor da janela, não a do id.
 
 ### 5.6 Elementos do modelo × elementos de anotação
 

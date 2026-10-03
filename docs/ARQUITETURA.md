@@ -447,7 +447,7 @@ Cada widget é uma classe independente, sem classe base. Recebe um container e c
 | `Dialog.js` | `confirm`/`alert` modais baseados em Promise (substituem os nativos). | `this.dialog` |
 | `CanvasTitle.js` | Título editável no topo do canvas. | `this.microCanvasTitle` |
 | `NodePopup.js` | Popup pra digitar o valor de um nó. | `this.microPopup` |
-| `ArraySettingsPopup.js` | Configurações de array, dict ou matriz (nome, tamanho, orientação, remover). Três instâncias. | `this.micro{Array,Dict,Matrix}SettingsPopup` |
+| `ArraySettingsPopup.js` | Configurações de array, dict ou matriz (nome, tamanho, orientação, remover). Três instâncias. Set não tem campo de tamanho e deque com `maxlen` não passa dele (ver `App#_openMicroArraySettingsPopup`). | `this.micro{Array,Dict,Matrix}SettingsPopup` |
 | `LabelSettingsPopup.js` | Texto, cor e tamanho de uma label. | `this.microLabelSettingsPopup` |
 | `ChartSettingsPopup.js` | Funções exibidas, escala e títulos dos eixos de um gráfico Big-O (aplica a cada mudança). | `this.microChartSettingsPopup` |
 | `InlineValueEditor.js` | Editor in place sobre o canvas (valor ou nome). `parseEditedValue` converte texto em número, string ou bool. | `this.microInlineEditor` |

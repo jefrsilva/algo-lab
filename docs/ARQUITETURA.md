@@ -78,6 +78,7 @@ src/
     MicroProgramRunner.js   motor da Simulação: roda o programa, tira snapshots, controla a reprodução
     microLayoutKey.js       chave estável (por nome) pra lembrar a posição dos elementos entre execuções
     microAlign.js           alinhar/distribuir retângulos (funções puras, usadas pela AlignToolbar)
+    microTreeLayout.js      organizar uma árvore binária por níveis (função pura, usada pela TreeLayoutToolbar)
     settings.js             preferências do usuário (localStorage, um objeto só)
     theme.js                tema escuro/claro (data-theme no <html>)
   core/
@@ -98,6 +99,7 @@ src/
     svgUtils.js             svgEl(tag, attrs)
   ui/                       widgets de interface independentes, instanciados e ligados pelo App
     CodeEditor.js  CallTree.js  PlaybackControls.js  ConsoleWindow.js  ModeToolbar.js  AlignToolbar.js
+    TreeLayoutToolbar.js
     QuickActionPalette.js  AppMenu.js  SettingsDialog.js  Dialog.js  CanvasTitle.js
     NodePopup.js  ArraySettingsPopup.js  LabelSettingsPopup.js  ChartSettingsPopup.js
     InlineValueEditor.js  fitPopup.js
@@ -307,13 +309,15 @@ Ligar nós de grafo (ferramenta 5/L, ou Shift + arraste começando num nó de gr
 
 Alinhar e distribuir: com 2+ elementos selecionados aparece, logo acima da barra de modos, a `AlignToolbar` (alinhar à esquerda/centro/direita/topo/meio/fundo; com 3+, também distribuir na horizontal/vertical — os mesmos 8 comandos estão no Ctrl+Espaço como `align …`/`distribute …`). `App#_runMicroAlignAction` monta o retângulo desenhado de cada elemento (`_microElementRect`: coleções com a aba, nó simplificado só o círculo), calcula os deslocamentos com `microAlign.js` e aplica por `_microSetNodePos`, o mesmo caminho de soltar um arraste (na reprodução, vale só pro passo atual). A referência do alinhamento é o primeiro elemento selecionado — a ordem de inserção de `microSelectedIds` é a ordem de clique/Ctrl+clique —, que não se move; numa seleção que começou por retângulo (`_selectMicroRect` marca o Set em `_microAnchorlessSelection`, e `_toggleMicroSelection` repassa a marca), vale o extremo do grupo. Distribuir deixa o mesmo espaço livre entre vizinhos, com o primeiro e o último (pelo centro) parados.
 
+Organizar como árvore: com exatamente um TreeNode (struct `type: 'tree'`) selecionado aparece, no mesmo lugar, a `TreeLayoutToolbar` com "Árvore ↕" (níveis um abaixo do outro) e "Árvore ↔" (níveis lado a lado, filho esquerdo acima do direito) — também no Ctrl+Espaço como `layout tree vertical`/`layout tree horizontal`. As duas barras dividem o mesmo host em linha (`.align-toolbar-host`, flex), então nunca se sobrepõem. `App#_runMicroTreeLayout` arranja a **subárvore** que começa no nó selecionado (structs não guardam o pai), com ele parado no lugar, seguindo só left/right (campos físicos `prev`/`next`) que apontam pra outro TreeNode; a matemática é `microTreeLayout.js#treeLayout` (compacta, por contornos de subárvore, estilo Reingold–Tilford; filho único vai pro seu lado; um nó já visitado — ciclo ou dois pais — entra uma vez só). O tamanho da caixa vem de `_microElementRect` (círculo no modo simplificado) e as folgas de `TREE_GAPS`, por orientação e modo. Aplica por `_microSetNodePos` (na reprodução, vale só pro passo atual). Ponteiros e variáveis não se movem, e structs não têm chave de layout por nome, então rodar o programa de novo volta às posições padrão.
+
 Leitura de gráfico Big-O (mouse sobre a área de plotagem, sem tecla e sem botão pressionado): o x do mouse vira o inteiro n mais próximo em [0, floor(nMax)] e, entre as curvas marcadas que existem em n (`from`) e não saíram pelo topo (f(n) ≤ yMax), vale a de menor distância vertical até o cursor — ponto e guia na cor da curva, n acima do eixo n e f(n) ao lado do ponto, os dois textos na cor de texto do tema (`--text-0` em `canvas.css`: quase branco no escuro, escuro no claro — o render não põe `fill` neles). Com gráficos sobrepostos, lê o de cima. É estado transitório (`App#_microChartReadout`, passado ao render como `readout` do gráfico): fora do `MicroModel`, dos snapshots e do projeto; só re-renderiza quando muda gráfico, n ou curva.
 
 ### 6.4 Render
 
 `App#_renderMicroOnly()` é **o** render. Ele é chamado depois de praticamente qualquer mudança e:
 
-1. renderiza a `ModeToolbar` e a `AlignToolbar` (com o número de elementos selecionados que dá pra mover);
+1. renderiza a `ModeToolbar`, a `AlignToolbar` (com o número de elementos selecionados que dá pra mover) e a `TreeLayoutToolbar` (se há um só TreeNode selecionado, `_microSelectedTreeRoot`);
 2. calcula o frame ativo, os destaques (seleção, `touched` do passo, alvos "linkados" dos ponteiros destacados, janelas deslizantes) e o que está fora de escopo (fica esmaecido);
 3. monta arrays de objetos simples de render, um por tipo de elemento, já com posição (incluindo arraste em andamento), flags (`selected`, `dragging`, `cursor`, `linked*`…) e âncoras de setas;
 4. monta a lista de `edges` (setas) com origem e alvo;
@@ -366,6 +370,7 @@ Preferências de tela (não do projeto) ficam num único objeto do localStorage 
 | Áreas e gráficos | `_snapMicroArea`, `_microAreaRectFromDrag`, `_microAreaResizedRect`, `_createMicroArea`, `_createMicroChart`. |
 | Seleção múltipla e janelas | `_toggleMicroSelection`, `_selectMicroRect`, `_quickNewSlidingWindow`, `_microWindowPartner`, `_microWindowRange`. |
 | Alinhar e distribuir | `_runMicroAlignAction`, `_microElementRect`, `_microAlignableIds`, `_microSelectionAnchor` (ver `microAlign.js`). |
+| Organizar árvore | `_runMicroTreeLayout`, `_microSelectedTreeRoot` (ver `microTreeLayout.js`). |
 | Quick actions | `_openQuickActions` (lista de comandos) e `_quickNew*` (um por comando), `_editMicroNameInPlace`, `_quickDiscard`. |
 | Ligar nós de grafo | `_findMicroGraphNodeAt`, `_findMicroGraphLinkTarget`, `_startMicroGraphLink`, `_toggleMicroGraphNeighbor` (ferramenta 5/L e Shift + arraste num nó de grafo, ver 6.3). |
 | Cursores por gesto | `_findMicroCursorCellAt`, `_createMicroIndexCursor`, `_startMicroIndexCursorDrag`. |
@@ -390,6 +395,8 @@ Preferências de tela (não do projeto) ficam num único objeto do localStorage 
 **`microLayoutKey.js`**: `microLayoutKey(kind, {name, frameId, cursorKey, dictName, key})` devolve a chave estável ou `null`. Structs anônimos e arrays/dicts/matrizes criados dentro de chamadas ficam sem chave de propósito, porque vários nasceriam na mesma posição; o comentário do arquivo explica.
 
 **`microAlign.js`**: `alignRects(rects, mode, anchorId)` e `distributeRects(rects, axis)` — puras, sobre `{id, x, y, w, h}`, devolvem `Map<id, {dx, dy}>` só com quem se move. `ALIGN_MODES` lista os modos (`left`, `center`, `right`, `top`, `middle`, `bottom`).
+
+**`microTreeLayout.js`**: `treeLayout(rootId, childrenOf, {orientation, w, h, siblingGap, levelGap})` — pura; `childrenOf(id)` devolve `[esquerdo, direito]`; devolve `Map<id, {dx, dy}>` com o deslocamento de cada nó em relação à raiz (que entra com `{0, 0}`). `TREE_GAPS[orientação][detailed|simplified]` guarda as folgas usadas pelo App.
 
 **`settings.js`**: `SETTINGS_DEFAULTS`, `VALIDATORS`, `getSetting`, `setSetting` e migração das chaves antigas do localStorage (`readLegacy`).
 
@@ -447,6 +454,7 @@ Cada widget é uma classe independente, sem classe base. Recebe um container e c
 | `ConsoleWindow.js` | Console de `print`, encaixado sob o canvas ou flutuante (arrastável e redimensionável). Persiste o modo e a geometria nas configurações. | `this.microConsole` |
 | `ModeToolbar.js` | Barra de modos do canvas (ícones em `ICONS`, lista de modos vinda de `MICRO_MODES`). Sem estado. | `this.microModeToolbar` |
 | `AlignToolbar.js` | Botões de alinhar (2+ selecionados) e distribuir (3+), acima da barra de modos; some sem seleção suficiente (`ALIGN_BUTTONS[].min`). Sem estado: recebe `count` e chama `actions.run(id)`. | `this.microAlignToolbar` |
+| `TreeLayoutToolbar.js` | Botões "Árvore ↕"/"Árvore ↔" (`TREE_LAYOUT_BUTTONS`), ao lado do lugar da `AlignToolbar`, só com um TreeNode selecionado. Sem estado: recebe `enabled` e chama `actions.run(orientation)`. | `this.microTreeToolbar` |
 | `QuickActionPalette.js` | Caixa Ctrl+Espaço: casamento abreviado (`scoreName`), sugestão em cinza, ↑/↓/Tab/Enter/Esc. Os comandos vêm de quem abre. | `this.microQuickActions` |
 | `AppMenu.js` | Menu hambúrguer (`items`, `onSelect(id)`). | `this.appMenu` |
 | `SettingsDialog.js` | Janela modal de configurações. A estrutura fica em `SECTIONS` (tipos `choice`, `toggle`, `stepper`…). Não aplica nada, só chama `onChange(key, value)`. | `this.settingsDialog` |

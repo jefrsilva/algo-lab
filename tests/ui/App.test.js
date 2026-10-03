@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { desmontarApp, montarApp, tecla } from '../helpers/dom.js';
 import { linhas } from '../helpers/runDsl.js';
-import { arrayHandleRect, arrayLayout, chartLayout, dictHandleRect, matrixHandleRect } from '../../src/render/MicroCanvasView.js';
+import { STRUCT_W, arrayHandleRect, arrayLayout, chartLayout, dictHandleRect, matrixHandleRect } from '../../src/render/MicroCanvasView.js';
 
 let app;
 const $ = (sel) => document.querySelector(sel);
@@ -502,6 +502,99 @@ describe('alinhar e distribuir a seleção', () => {
     input.dispatchEvent(new Event('input', { bubbles: true }));
     tecla(input, 'Enter');
     expect(b.x).toBe(0);
+  });
+});
+
+describe('organizar uma árvore por níveis', () => {
+  const svg = () => $('.micro-canvas');
+  const botaoArvore = (id) => $(`.tree-layout-btn[data-tree-layout="${id}"]`);
+  function clicar(x, y, opts = {}) {
+    const { tx, ty } = app.microViewport;
+    const ev = (alvo, tipo) =>
+      alvo.dispatchEvent(new MouseEvent(tipo, { clientX: x + tx, clientY: y + ty, button: 0, bubbles: true, ...opts }));
+    ev(svg(), 'pointerdown');
+    ev(window, 'pointerup');
+  }
+  /** Roda uma BST de 10 nós na Simulação e vai pro último passo; devolve os
+   * structs por valor. */
+  function montarBst() {
+    rodarNaSimulacao(
+      linhas(
+        'def inserir(r, v):',
+        '    if r is None:',
+        '        return TreeNode(v)',
+        '    if v < r.data:',
+        '        r.left = inserir(r.left, v)',
+        '    else:',
+        '        r.right = inserir(r.right, v)',
+        '    return r',
+        'raiz = None',
+        'for v in [50, 30, 70, 20, 40, 60, 80, 35, 65, 90]:',
+        '    raiz = inserir(raiz, v)',
+      ),
+    );
+    botao('.playback-btn', '⏭').click();
+    return Object.fromEntries([...app.micro.structs.values()].map((n) => [n.data, n]));
+  }
+
+  test('com um TreeNode selecionado aparecem os botões; "Árvore ↕" arranja por níveis com a raiz parada', () => {
+    const no = montarBst();
+    expect($('.tree-layout-toolbar')).toBeNull();
+    const { x, y } = no[50];
+    clicar(x + 60, y + 20);
+    expect(app._microSelectionIds()).toEqual([no[50].id]);
+    expect(botaoArvore('vertical')).not.toBeNull();
+    botaoArvore('vertical').click();
+
+    expect([no[50].x, no[50].y]).toEqual([x, y]);
+    // níveis alinhados, um abaixo do outro
+    expect(new Set([no[30].y, no[70].y]).size).toBe(1);
+    expect(new Set([no[20].y, no[40].y, no[60].y, no[80].y]).size).toBe(1);
+    expect(new Set([no[35].y, no[65].y, no[90].y]).size).toBe(1);
+    expect(y < no[30].y && no[30].y < no[20].y && no[20].y < no[35].y).toBe(true);
+    // esquerdo à esquerda, direito à direita, sem sobreposição no nível
+    const ordem = [20, 30, 35, 40, 50, 60, 65, 70, 80, 90].map((v) => no[v].x);
+    expect([...ordem].sort((a, b) => a - b)).toEqual(ordem);
+    const nivel2 = [20, 40, 60, 80].map((v) => no[v].x);
+    for (let i = 1; i < nivel2.length; i++) expect(nivel2[i] - nivel2[i - 1]).toBeGreaterThanOrEqual(STRUCT_W);
+    // ponteiros não se movem
+    const raiz = [...app.micro.pointers.values()].find((p) => p.label === 'raiz');
+    const antes = { x: raiz.x, y: raiz.y };
+    botaoArvore('vertical').click();
+    expect({ x: raiz.x, y: raiz.y }).toEqual(antes);
+  });
+
+  test('"Árvore ↔" pelo Ctrl+Espaço: níveis lado a lado, esquerdo acima do direito', () => {
+    const no = montarBst();
+    clicar(no[30].x + 60, no[30].y + 20);
+    tecla(window, ' ', { code: 'Space', ctrlKey: true });
+    const input = $('.quick-action-input');
+    input.value = 'layout tree horizontal';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    tecla(input, 'Enter');
+    // só a subárvore do 30 se mexe; o 30 fica parado
+    expect(new Set([no[20].x, no[40].x]).size).toBe(1);
+    expect(no[20].x).toBeGreaterThan(no[30].x);
+    expect(no[35].x).toBeGreaterThan(no[40].x);
+    expect(no[20].y).toBeLessThan(no[30].y);
+    expect(no[40].y).toBeGreaterThan(no[30].y);
+  });
+
+  test('não aparece pra nó de lista nem com 2 selecionados, e o comando fica indisponível', () => {
+    const lista = app.micro.addStruct(0, 0, 1);
+    const arvore = app.micro.addStruct(300, 0, 2, 'tree');
+    app._renderMicroOnly();
+    clicar(lista.x + 60, lista.y + 20);
+    expect($('.tree-layout-toolbar')).toBeNull();
+    clicar(arvore.x + 60, arvore.y + 20);
+    expect($('.tree-layout-toolbar')).not.toBeNull();
+    clicar(lista.x + 60, lista.y + 20, { ctrlKey: true });
+    expect($('.tree-layout-toolbar')).toBeNull();
+    tecla(window, ' ', { code: 'Space', ctrlKey: true });
+    const input = $('.quick-action-input');
+    input.value = 'layout tree vertical';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    expect($('.quick-action-item.disabled')).not.toBeNull();
   });
 });
 

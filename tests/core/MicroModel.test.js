@@ -233,6 +233,24 @@ describe('arrays', () => {
     m.setArrayOrientation(arr.id, 'diagonal');
     expect(arr.orientation).toBe('vertical');
   });
+
+  test('orientação pilha: só lista/deque, não set', () => {
+    const arr = m.addArray(0, 0, {});
+    m.setArrayOrientation(arr.id, 'stack');
+    expect(arr.orientation).toBe('stack');
+    const s = m.addArray(0, 0, { isSet: true });
+    m.setArrayOrientation(s.id, 'stack');
+    expect(s.orientation).toBe('horizontal');
+  });
+
+  test('a pilha sobrevive a salvar e carregar', () => {
+    const arr = m.addArray(0, 0, { orientation: 'stack' });
+    const outro = new MicroModel();
+    outro.loadFrom(m.toJSON());
+    expect(outro.arrays.get(arr.id).orientation).toBe('stack');
+    outro.loadFrom({ arrays: [{ id: 'a1', isSet: true, orientation: 'stack' }] });
+    expect(outro.arrays.get('a1').orientation).toBe('horizontal');
+  });
 });
 
 describe('dicts', () => {

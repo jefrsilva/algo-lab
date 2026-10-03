@@ -44,7 +44,7 @@ export class MicroModel {
   constructor() {
     this.structs = new Map(); // id -> {id, x, y, data, type:'list'|'tree'|'graph', next, prev, neighborsArrayId}
     this.pointers = new Map(); // id -> {id, x, y, label, target, frameId}
-    this.arrays = new Map(); // id -> {id, x, y, kind:'value'|'ref', orientation:'horizontal'|'vertical', cells}
+    this.arrays = new Map(); // id -> {id, x, y, kind:'value'|'ref', orientation:'horizontal'|'vertical'|'stack', cells}
     this.dicts = new Map(); // id -> {id, x, y, orientation:'horizontal'|'vertical', cells: {key, kind:'value'|'ref', value}[], name}
     this.variables = new Map(); // id -> {id, x, y, name, value: number|boolean|string, frameId}
     this.matrices = new Map(); // id -> {id, x, y, name, cells: (number|string|boolean)[][], labelPointerId}
@@ -558,9 +558,12 @@ export class MicroModel {
     node.cells[index] = targetStructId ?? null;
   }
 
+  /** 'horizontal' | 'vertical' | 'stack' — a pilha (vertical com a posição 0
+   * embaixo e o último elemento no topo) não vale pra set, que não tem posição. */
   setArrayOrientation(arrayId, orientation) {
     const node = this.arrays.get(arrayId);
-    if (node && (orientation === 'horizontal' || orientation === 'vertical')) node.orientation = orientation;
+    if (!node) return;
+    if (orientation === 'horizontal' || orientation === 'vertical' || (orientation === 'stack' && !node.isSet)) node.orientation = orientation;
   }
 
   toggleArrayOrientation(arrayId) {
@@ -773,7 +776,7 @@ export class MicroModel {
         x: n.x || 0,
         y: n.y || 0,
         kind: n.kind === 'ref' ? 'ref' : 'value',
-        orientation: n.orientation === 'vertical' ? 'vertical' : 'horizontal',
+        orientation: n.orientation === 'vertical' || (n.orientation === 'stack' && !n.isSet) ? n.orientation : 'horizontal',
         // célula tupla volta a ser `PyTuple` (ver pytuple.js#reviveRaw)
         cells: Array.isArray(n.cells) ? n.cells.map(reviveRaw) : [],
         name: n.name,

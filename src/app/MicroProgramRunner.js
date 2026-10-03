@@ -27,7 +27,7 @@ const AUTOPLAY_BASE_MS = 700;
  * que `createPosition`/o usuário deu a ele) e atualizado por `updatePosition`
  * sempre que o usuário arrasta um elemento (ver App.js, _onMicroPointerUpWindow).
  *
- * `this.orientations` (id de array -> 'horizontal'|'vertical') segue
+ * `this.orientations` (id de array -> 'horizontal'|'vertical'|'stack') segue
  * exatamente o mesmo padrão de `this.positions`, pelo mesmo motivo: a
  * orientação de um array é preferência de layout do usuário (ver popup de
  * configurações, App#_openMicroArraySettingsPopup), não parte da lógica do

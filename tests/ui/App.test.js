@@ -1159,4 +1159,28 @@ describe('popup de configurações da lista (botão direito no puxador)', () => 
     salvar();
     expect(f.cells).toEqual([1, 2, 0]);
   });
+
+  const botaoOrientacao = (texto) => [...popup().querySelectorAll('.array-orient-btn')].find((b) => b.textContent.includes(texto));
+
+  test('lista tem a orientação Pilha: o último elemento fica no topo', () => {
+    const pilha = criarNoSandbox('pilha = [1, 2, 3]');
+    botaoDireitoNoPuxador(pilha);
+    botaoOrientacao('Pilha').click();
+    expect(botaoOrientacao('Pilha').classList.contains('active')).toBe(true);
+    salvar();
+    expect(pilha.orientation).toBe('stack');
+    const ys = arrayLayout(pilha).cells.map((c) => c.y);
+    expect(ys[2]).toBeLessThan(ys[1]);
+    expect(ys[1]).toBeLessThan(ys[0]);
+    // reabrir mostra a Pilha marcada
+    botaoDireitoNoPuxador(pilha);
+    expect(botaoOrientacao('Pilha').classList.contains('active')).toBe(true);
+  });
+
+  test('set não oferece a orientação Pilha', () => {
+    const s = criarNoSandbox('s = {1, 2}');
+    botaoDireitoNoPuxador(s);
+    expect(botaoOrientacao('Vertical')).toBeTruthy();
+    expect(botaoOrientacao('Pilha')).toBeUndefined();
+  });
 });

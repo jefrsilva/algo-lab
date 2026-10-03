@@ -4,9 +4,10 @@ import { Assign, TupleAssign, ChainAssign, ExprStmt, Name, NumberLit, StrLit, FS
 /**
  * Parser recursive-descent com precedência estilo Python (menor pra maior):
  * expressão condicional (a if cond else b) → or → and → not → comparações
- * (== != < <= > >= is [not] in [not]) → + - → * / % → unário (-) → potência (** , associativo à direita) → pós-fixo
- * (.campo, [expr], [expr:expr:expr], (args)) → primário (número, None,
- * True, False, identificador, [lista], (expr), (tupla,)).
+ * (== != < <= > >= is [not] in [not]) → + - → * / % → unário (-) →
+ * potência (** , associativo à direita) → pós-fixo (.campo, [expr],
+ * [expr:expr:expr], (args)) → primário (número, None, True, False,
+ * identificador, [lista], (expr), (tupla,)).
  *
  * Reconhece uma instrução de atribuição por linha: `alvo = expressão`,
  * `alvo (+= -= *= /=) expressão` (açúcar sintático desenrolado aqui mesmo, em

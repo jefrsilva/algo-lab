@@ -16,6 +16,12 @@ npm run preview   # preview a production build
 
 There is no test suite, no linter, and no type checker configured in this repo (`package.json` only has the three Vite scripts). Verify changes by running the app in a browser and exercising the feature manually (the `.claude/launch.json` dev-server config is named `algo-visualizer`, port 5173).
 
+`node scripts/run-dsl.mjs <arquivo.py|->` runs a DSL program headlessly in Node through the same path as Simulação (`--steps` lists the steps, `--model` dumps the final `MicroModel`) — the fastest way to check interpreter changes.
+
+## Project skills
+
+`.claude/skills/` holds skills (pt-BR) for the recurring tasks, built from the recipes in section 8 of `docs/ARQUITETURA.md`: `novo-builtin-dsl`, `nova-sintaxe-dsl`, `novo-elemento-modelo`, `novo-elemento-anotacao`, `nova-ferramenta`, `nova-quick-action`, `nova-configuracao`, `novo-popup`, `novo-campo-projeto`, plus `verificar-mudanca` (build + headless DSL runs + Playwright smoke test with screenshot) and `sincronizar-docs`. When a recipe changes, update the matching skill too.
+
 ## Deploy
 
 Hosted on **Cloudflare Pages** via its Git integration (no workflow in this repo): build command `npm run build`, output directory `dist`, Node version pinned by `.node-version`. `public/_headers` (copied into `dist/` by Vite) sets long-lived caching for the hashed `/assets/*` files. The app is served from the domain root, so `vite.config.js` needs no `base`; if it ever moves to a subpath (e.g. GitHub Pages), `base` must be set.

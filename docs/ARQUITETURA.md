@@ -59,6 +59,8 @@ npm run preview   # serve o build de produção localmente
 index.html                  página única; aplica o tema salvo antes do 1º paint e carrega os CSS
 vite.config.js              config mínima do Vite (porta 5173, saída em dist/)
 public/_headers             cabeçalhos de cache do Cloudflare Pages
+scripts/run-dsl.mjs         roda um programa da DSL em Node, sem navegador (verificação rápida do interpretador)
+.claude/skills/              skills do Claude Code pras tarefas comuns (receitas da seção 8 + verificação)
 src/
   main.js                   ponto de entrada: importa as fontes, aplica o tema, faz `new App(root)`
   app/                      orquestração (estado de topo e "cola" entre as camadas)
@@ -440,6 +442,8 @@ Cada widget é uma classe independente, sem classe base. Recebe um container e c
 
 ## 8. Receitas: onde mexer pra tarefas comuns
 
+> Cada receita tem uma skill correspondente em `.claude/skills/` (ex.: `novo-builtin-dsl`, `novo-elemento-modelo`), que a usa como fonte e acrescenta a verificação. Ao mudar uma receita, atualize a skill.
+>
 > As receitas listam **todos** os pontos de contato conhecidos. Antes de começar, use `grep` pra achar um recurso parecido que já existe (ex.: `matrix` pra um elemento novo, `'sorted'` pra um built-in novo) e siga o mesmo caminho por todas as camadas.
 
 ### 8.1 Novo built-in da linguagem (função global, ex.: `abs(x)`)
@@ -609,3 +613,5 @@ Sem testes automatizados, o roteiro mínimo é rodar `npm run dev`, abrir http:/
 - **Reprodução:** arrastar um elemento no meio da reprodução, voltar e avançar passos, rodar de novo e conferir que as posições foram lembradas.
 - **Persistência:** salvar o projeto, recarregar a página, carregar o arquivo e conferir que tudo voltou (inclusive cores, janelas deslizantes e anotações).
 - **Build:** `npm run build` deve terminar sem erros.
+
+Atalhos: `node scripts/run-dsl.mjs programa.py [--steps] [--model]` roda um programa da DSL em Node, sem navegador, pelo mesmo caminho da Simulação (imprime o console, os passos e o modelo final). A skill `verificar-mudanca` junta isso a um smoke test com Playwright (`.claude/skills/verificar-mudanca/smoke.mjs`).

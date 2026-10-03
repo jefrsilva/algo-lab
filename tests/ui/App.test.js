@@ -297,6 +297,14 @@ describe('atalhos e configurações', () => {
     expect(app.microMode).toBe('select');
   });
 
+  test('a barra de ferramentas mostra um ícone SVG em cada botão, Selecionar ativo de início', () => {
+    const selecionar = $('.mode-btn[aria-label="Selecionar / Mover"]');
+    expect(selecionar).not.toBeNull();
+    expect(selecionar.classList.contains('active')).toBe(true);
+    expect(selecionar.querySelector('svg')).not.toBeNull();
+    expect($$('.mode-toolbar .mode-btn').every((b) => b.querySelector('svg'))).toBe(true);
+  });
+
   test('atalhos de letra não disparam enquanto se digita no editor', () => {
     textarea().focus();
     tecla(textarea(), 'n');
@@ -566,5 +574,64 @@ describe('pan com a barra de espaço', () => {
     evento(window, 'pointermove', 200, 200, { button: 2 });
     evento(window, 'pointerup', 200, 200, { button: 2 });
     expect(app.microViewport).toMatchObject({ tx, ty });
+  });
+});
+
+describe('popup de configurações da lista (botão direito no puxador)', () => {
+  const svg = () => $('.micro-canvas');
+  const popup = () => $('.array-settings-popup');
+  const campo = (rotulo) =>
+    [...popup().querySelectorAll('.array-settings-row')].find((r) => r.querySelector('label')?.textContent === rotulo)?.querySelector('input');
+
+  /** Cria a coleção no Sandbox (Ctrl+Enter em cada linha) e devolve o array. */
+  function criarNoSandbox(...codigo) {
+    escreverCodigo(linhas(...codigo));
+    codigo.forEach((_, i) => ctrlEnterNaLinha(i));
+    return [...app.micro.arrays.values()].at(-1);
+  }
+  /** Botão direito no centro do puxador do array (mundo escalado e
+   * deslocado por tx/ty, sem layout no jsdom). */
+  function botaoDireitoNoPuxador(arr) {
+    const h = arrayHandleRect(arr);
+    const { tx, ty, scale } = app.microViewport;
+    const x = arr.x + h.x + h.w / 2;
+    const y = arr.y + h.y + h.h / 2;
+    svg().dispatchEvent(new MouseEvent('contextmenu', { clientX: x * scale + tx, clientY: y * scale + ty, button: 2, bubbles: true, cancelable: true }));
+  }
+  const salvar = () => botao('.array-settings-popup .btn', 'Salvar').click();
+
+  test('lista comum mostra o campo Tamanho e salvar redimensiona', () => {
+    const nums = criarNoSandbox('nums = [1, 2]');
+    botaoDireitoNoPuxador(nums);
+    expect(popup()).toBeTruthy();
+    expect(campo('Tamanho').value).toBe('2');
+    campo('Tamanho').value = '4';
+    salvar();
+    expect(nums.cells).toEqual([1, 2, 0, 0]);
+  });
+
+  test('set não mostra o campo Tamanho e salvar não mexe nas células', () => {
+    const s = criarNoSandbox('s = {3, 1, 2}');
+    expect(s.isSet).toBe(true);
+    const celulas = [...s.cells];
+    const tabela = s.hashTable;
+    botaoDireitoNoPuxador(s);
+    expect(popup()).toBeTruthy();
+    expect(campo('Tamanho')).toBeUndefined();
+    campo('Nome').value = 'conj';
+    salvar();
+    expect(s.name).toBe('conj');
+    expect(s.cells).toEqual(celulas);
+    expect(s.hashTable).toBe(tabela);
+  });
+
+  test('deque com maxlen limita o tamanho ao maxlen', () => {
+    const f = criarNoSandbox('from collections import deque', 'f = deque([1, 2], maxlen=3)');
+    expect(f).toMatchObject({ isDeque: true, maxlen: 3 });
+    botaoDireitoNoPuxador(f);
+    expect(campo('Tamanho').max).toBe('3');
+    campo('Tamanho').value = '10';
+    salvar();
+    expect(f.cells).toEqual([1, 2, 0]);
   });
 });

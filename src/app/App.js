@@ -1459,13 +1459,21 @@ export class App {
     );
   }
 
+  /** Nome, tamanho e orientação de um array. Set não tem campo de tamanho:
+   * crescer encheria o conjunto de 0s repetidos e tiraria o `hashTable` (a
+   * ordem do CPython, ver pyset.js) de sincronia com as células — um set só
+   * muda de tamanho pelo código (`add`/`remove`/`discard`). Deque com
+   * `maxlen` não passa desse limite (com `maxlen=0` não há o que mudar). */
   _openMicroArraySettingsPopup(node, screenPt) {
+    const maxlen = node.isDeque && Number.isInteger(node.maxlen) ? node.maxlen : null;
+    const showSize = !node.isSet && maxlen !== 0;
     this.microArraySettingsPopup.open(screenPt.x, screenPt.y, node, {
       returnFocusTo: this.microView.svg,
-      maxSize: MAX_ARRAY_SIZE,
+      maxSize: maxlen !== null ? Math.min(maxlen, MAX_ARRAY_SIZE) : MAX_ARRAY_SIZE,
+      showSize,
       onSave: ({ name, size, orientation }) => {
         this.micro.renameArray(node.id, name);
-        this.micro.resizeArray(node.id, size);
+        if (size !== undefined) this.micro.resizeArray(node.id, size);
         this.micro.setArrayOrientation(node.id, orientation);
         this.microRunner.updateOrientation(node.id, orientation);
         if (this.microSelectedId === node.id) this._syncCodeEditorSelection('array', node.id);

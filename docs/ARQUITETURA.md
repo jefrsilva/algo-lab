@@ -190,7 +190,7 @@ São seis `Map`s indexados por id. Nenhum elemento sabe se desenhar.
 Pontos importantes:
 
 - **Heap × frames.** Structs, arrays, dicts e matrizes são o "heap" compartilhado e aparecem em qualquer aba. Ponteiros e variáveis têm `frameId` (`'global'` ou o id de uma chamada), e só os do frame em exibição (mais os globais) são desenhados. O `frameId` de um array, dict ou matriz diz só a qual frame pertence o **nome** dele (uma coleção criada numa chamada some no fim dela, a menos que continue alcançável — ver `releaseDeadArrays`).
-- **Ponteiro-rótulo.** Arrays, dicts e matrizes não têm barra de título. O nome aparece num ponteiro dedicado (`isArrayLabel`/`isDictLabel`/`isMatrixLabel`) que aponta pra coleção inteira. O botão direito nesse ponteiro abre o popup de configurações da coleção.
+- **Ponteiro-rótulo.** Arrays, dicts e matrizes não têm barra de título. O nome aparece num ponteiro dedicado (`isArrayLabel`/`isDictLabel`/`isMatrixLabel`) que aponta pra coleção inteira. O popup de configurações da coleção abre pelo botão direito no **puxador** dela (a aba à esquerda ou acima da caixa), não nesse ponteiro — o botão direito no ponteiro-rótulo só bloqueia o menu nativo.
 - **Cursor de leitura.** Ler `nums[i]` no código cria (ou move) um ponteiro especial com `readCursorKey = "nums[i]"`, que aponta pra célula lida e é recalculado quando `i` muda (`MicroRuntimeAdapter#_showReadCursor` e `_refreshDependentCursors`). Cursores são excluídos do `toJSON` e reaparecem quando o código roda de novo.
 - **Integridade referencial.** Os métodos `remove*` anulam referências pendentes (ponteiros e células que apontavam pro elemento removido). Sempre use a API do `MicroModel` em vez de mexer nos `Map`s direto.
 - **Serialização.** `toJSON()`/`loadFrom()` preservam os ids, já que as referências são por id, e toleram arquivos malformados ou de outras versões.
@@ -289,7 +289,8 @@ pointerup (App#_onMicroPointerUpWindow) → confirma: move o elemento (e grava m
    área/gráfico/label, seleciona…
 dblclick (App#_onMicroDblClick)        → edição in place (dado, célula, nome, texto, eixo);
                                          numa divisória entre células de array → _splitMicroArray
-contextmenu (App#_onMicroContextMenu)  → popups de configurações (label, coleção via ponteiro-rótulo, gráfico)
+contextmenu (App#_onMicroContextMenu)  → popups de configurações (label, coleção pelo puxador — App#_findMicroHandleUnder,
+                                         já selecionando a coleção —, gráfico); ponteiro, variável ou struct por cima bloqueiam
 wheel (App#_onMicroWheel)              → zoom
 pointermove no <svg>, sem arrasto      → App#_onMicroHoverMove: guarda a posição do mouse e, com Shift,
    (App#_onMicroHoverMove)               mostra a leitura do gráfico sob ele (App#_updateMicroChartReadout
@@ -424,7 +425,7 @@ Dividido em duas metades:
    - larguras dinâmicas: `displayName`, `pointerWidth`, `variableWidth`, `labelSize`;
    - layouts: `arrayLayout`, `dictLayout`, `matrixLayout`, `matrixCellRect`, `chartLayout`;
    - portas e pinos: `structPrevPort`, `structNextPort`, `structNeighborPort`, `structDataRect`, `pointerPort`, `variableValueRect`;
-   - puxadores: `arrayHandleRect`, `dictHandleRect`, `matrixHandleRect` (a aba fora da caixa, que serve de alvo de ligação pra coleção inteira e de alça de arraste) e `boxWithHandle`;
+   - puxadores: `arrayHandleRect`, `dictHandleRect`, `matrixHandleRect` (a aba fora da caixa, que serve de alvo de ligação pra coleção inteira, de alça de arraste e, no botão direito, abre o popup de configurações) e `boxWithHandle`;
    - divisórias entre células de array: `arrayDividers` (faixa de `ARRAY_DIVIDER_HIT` px, cursor de "dividir"; duplo clique ali cria, abaixo, dois arrays anônimos com as células antes/depois do corte — `App#_splitMicroArray`);
    - anotações: `areaHandles`, `CHART_FUNCTIONS`, `chartNMax`, `chartYMax`, `chartReadout` (leitura do Shift + mouse: n arredondado e curva mais próxima na vertical, usando as escalas `px`/`py` que `chartLayout` exporta) e `chartReadoutLabels` (onde ficam os textos dessa leitura, sem sair do gráfico).
 2. **A classe `MicroCanvasView`**: `constructor(container)` cria o `<svg>`, os `<defs>` (setas, padrão do grid) e as camadas; `render({...})` recebe as listas já posicionadas; `setViewport`, `screenToWorld`, `getSize`. Os `_render<Tipo>` fazem o diff por id. Não tem lógica de interação nenhuma.
@@ -447,7 +448,7 @@ Cada widget é uma classe independente, sem classe base. Recebe um container e c
 | `Dialog.js` | `confirm`/`alert` modais baseados em Promise (substituem os nativos). | `this.dialog` |
 | `CanvasTitle.js` | Título editável no topo do canvas. | `this.microCanvasTitle` |
 | `NodePopup.js` | Popup pra digitar o valor de um nó. | `this.microPopup` |
-| `ArraySettingsPopup.js` | Configurações de array, dict ou matriz (nome, tamanho, orientação, remover). Três instâncias. | `this.micro{Array,Dict,Matrix}SettingsPopup` |
+| `ArraySettingsPopup.js` | Configurações de array, dict ou matriz (nome, tamanho, orientação, remover), aberto pelo botão direito no puxador da coleção. Três instâncias. | `this.micro{Array,Dict,Matrix}SettingsPopup` |
 | `LabelSettingsPopup.js` | Texto, cor e tamanho de uma label. | `this.microLabelSettingsPopup` |
 | `ChartSettingsPopup.js` | Funções exibidas, escala e títulos dos eixos de um gráfico Big-O (aplica a cada mudança). | `this.microChartSettingsPopup` |
 | `InlineValueEditor.js` | Editor in place sobre o canvas (valor ou nome). `parseEditedValue` converte texto em número, string ou bool. | `this.microInlineEditor` |

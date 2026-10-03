@@ -7,7 +7,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { desmontarApp, montarApp, tecla } from '../helpers/dom.js';
 import { linhas } from '../helpers/runDsl.js';
-import { arrayHandleRect, chartLayout } from '../../src/render/MicroCanvasView.js';
+import { arrayHandleRect, chartLayout, dictHandleRect, matrixHandleRect } from '../../src/render/MicroCanvasView.js';
 
 let app;
 const $ = (sel) => document.querySelector(sel);
@@ -442,6 +442,90 @@ describe('alinhar e distribuir a seleção', () => {
     input.dispatchEvent(new Event('input', { bubbles: true }));
     tecla(input, 'Enter');
     expect(b.x).toBe(0);
+  });
+});
+
+describe('popup de configurações pelo puxador (botão direito)', () => {
+  const svg = () => $('.micro-canvas');
+  const popup = () => $('.array-settings-popup');
+  const nomeNoPopup = () => popup().querySelector('.array-settings-input').value;
+  /** Botão direito no ponto (x, y) do MUNDO — sem layout no jsdom, o canvas
+   * fica em (0, 0) da janela e a tela é o mundo escalado e deslocado. */
+  function botaoDireito(x, y) {
+    const { tx, ty, scale } = app.microViewport;
+    const ev = new MouseEvent('contextmenu', { clientX: x * scale + tx, clientY: y * scale + ty, button: 2, bubbles: true, cancelable: true });
+    svg().dispatchEvent(ev);
+    return ev;
+  }
+  /** Centro (mundo) do puxador de uma coleção. */
+  function centroDoPuxador(node, handleOf) {
+    const h = handleOf(node);
+    return { x: node.x + h.x + h.w / 2, y: node.y + h.y + h.h / 2 };
+  }
+  /** Cria nums (lista), s (set), d (dict) e m (matriz) pelo Sandbox. */
+  function criarColecoes() {
+    escreverCodigo(linhas('nums = [1, 2, 3]', 's = {4, 5}', 'd = {"a": 1}', 'm = [[1, 2], [3, 4]]'));
+    [0, 1, 2, 3].forEach(ctrlEnterNaLinha);
+    const porNome = (map, nome) => [...map.values()].find((n) => n.name === nome);
+    return {
+      nums: porNome(app.micro.arrays, 'nums'),
+      s: porNome(app.micro.arrays, 's'),
+      d: porNome(app.micro.dicts, 'd'),
+      m: porNome(app.micro.matrices, 'm'),
+    };
+  }
+  const rotuloDe = (node) =>
+    [...app.micro.pointers.values()].find(
+      (p) => p.labelArrayId === node.id || p.labelDictId === node.id || p.labelMatrixId === node.id,
+    );
+
+  test('abre o popup da lista, do set, do dict e da matriz pelo puxador', () => {
+    const { nums, s, d, m } = criarColecoes();
+    const casos = [
+      [nums, arrayHandleRect, 'nums'],
+      [s, arrayHandleRect, 's'],
+      [d, dictHandleRect, 'd'],
+      [m, matrixHandleRect, 'm'],
+    ];
+    for (const [node, handleOf, nome] of casos) {
+      expect(node).toBeTruthy();
+      const { x, y } = centroDoPuxador(node, handleOf);
+      const ev = botaoDireito(x, y);
+      expect(ev.defaultPrevented).toBe(true);
+      expect(popup()).not.toBeNull();
+      expect(nomeNoPopup()).toBe(nome);
+      tecla(popup().querySelector('.array-settings-input'), 'Escape'); // fecha
+      expect(popup()).toBeNull();
+    }
+  });
+
+  test('abrir pelo puxador também seleciona a coleção', () => {
+    const { d } = criarColecoes();
+    const { x, y } = centroDoPuxador(d, dictHandleRect);
+    botaoDireito(x, y);
+    expect(app.microSelectedId).toBe(d.id);
+    expect(app._microSelectionIds()).toEqual([d.id]);
+  });
+
+  test('o ponteiro-rótulo não abre mais o popup — só bloqueia o menu nativo', () => {
+    const { nums, d, m } = criarColecoes();
+    for (const node of [nums, d, m]) {
+      const rotulo = rotuloDe(node);
+      expect(rotulo).toBeTruthy();
+      const ev = botaoDireito(rotulo.x + 5, rotulo.y + 5);
+      expect(ev.defaultPrevented).toBe(true);
+      expect(popup()).toBeNull();
+    }
+  });
+
+  test('um ponteiro por cima do puxador tem prioridade: não abre o popup', () => {
+    const { nums } = criarColecoes();
+    const { x, y } = centroDoPuxador(nums, arrayHandleRect);
+    const rotulo = rotuloDe(nums);
+    Object.assign(rotulo, { x: x - 5, y: y - 5 });
+    app._renderMicroOnly();
+    botaoDireito(x, y);
+    expect(popup()).toBeNull();
   });
 });
 

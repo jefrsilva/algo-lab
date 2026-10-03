@@ -6,7 +6,8 @@ import { fitPopupInContainer } from './fitPopup.js';
  * tamanho fixo pra editar, ver `showSize`; matriz tem DOIS tamanhos,
  * linhas e colunas, ver `sizeFields`) e orientação (não se aplica à
  * matriz, ver `showOrientation`), além da ação de remover. Aberto pelo
- * botão direito no ponteiro-rótulo (modo micro).
+ * botão direito no puxador da coleção (modo micro, ver
+ * App#_onMicroContextMenu).
  */
 export class ArraySettingsPopup {
   constructor(container) {

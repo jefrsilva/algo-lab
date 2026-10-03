@@ -445,6 +445,16 @@
   cursor: default;
 }
 
+/* divisória entre duas células — duplo clique divide o array ali */
+.array-divider-hit {
+  fill: transparent;
+  cursor: col-resize;
+}
+
+.array-divider-hit.vertical {
+  cursor: row-resize;
+}
+
 /* faixa do índice de cada posição — arrastar dali cria um cursor pra ela */
 .array-index-hit {
   fill: transparent;

@@ -20,6 +20,7 @@ import {
   variableValueRect,
   arrayLayout,
   arrayHandleRect,
+  arrayDividers,
   dictHandleRect,
   matrixHandleRect,
   boxWithHandle,
@@ -2077,6 +2078,59 @@ export class App {
     return null;
   }
 
+  /** Divisória entre duas células do array `node` sob o ponto (ver
+   * MicroCanvasView#arrayDividers) — devolve o índice de corte (a primeira
+   * célula depois dela), ou null. */
+  _findMicroArrayDividerAt(node, worldPt) {
+    const lx = worldPt.x - node.x;
+    const ly = worldPt.y - node.y;
+    const d = arrayDividers(node).find((r) => lx >= r.x && lx <= r.x + r.w && ly >= r.y && ly <= r.y + r.h);
+    return d ? d.at : null;
+  }
+
+  /** Duplo clique numa divisória: cria DOIS arrays novos abaixo de `node`,
+   * com as células antes e depois de `at` — como se ele tivesse sido cortado
+   * ali. O original fica intacto. Os pedaços são anônimos (nome "__…", sem
+   * ponteiro-rótulo, igual o array de vizinhos de um nó de grafo) e lado a
+   * lado, com o mesmo tipo/orientação do original; se o espaço logo abaixo
+   * estiver ocupado, descem juntos até caber. */
+  _splitMicroArray(node, at) {
+    // ocupação ANTES de criar os pedaços (senão eles mesmos contariam)
+    const occupied = this._microOccupiedRects();
+    const opts = { kind: node.kind, orientation: node.orientation, isDeque: !!node.isDeque, size: 0, name: '' };
+    const [first, second] = [node.cells.slice(0, at), node.cells.slice(at)].map((cells) => {
+      const arr = this.micro.addArray(node.x, node.y, opts);
+      this.micro.setArrayContents(arr.id, node.kind, cells);
+      arr.name = `__split_${arr.id}`;
+      return arr;
+    });
+    // caixa + aba de cada um, relativa ao canto da caixa (ver boxWithHandle)
+    const bounds = (n) => {
+      const { width, height } = arrayLayout(n);
+      return boxWithHandle(width, height, arrayHandleRect(n));
+    };
+    const src = bounds(node);
+    const a = bounds(first);
+    const b = bounds(second);
+    const gap = 24;
+    const margin = 14; // = _findFreeMicroPosition
+    const secondDx = a.x + a.w + gap - b.x; // o segundo à direita do primeiro
+    const rectsAt = (y) => [
+      { x: node.x + a.x, y: y + a.y, w: a.w, h: a.h },
+      { x: node.x + secondDx + b.x, y: y + b.y, w: b.w, h: b.h },
+    ];
+    const overlaps = (p, q) => !(p.x + p.w + margin <= q.x || q.x + q.w + margin <= p.x || p.y + p.h + margin <= q.y || q.y + q.h + margin <= p.y);
+    let y = node.y + src.y + src.h + gap - Math.min(a.y, b.y);
+    for (let i = 0; i < 30 && rectsAt(y).some((p) => occupied.some((r) => overlaps(p, r))); i += 1) y += 40;
+    first.x = node.x;
+    first.y = y;
+    second.x = node.x + secondDx;
+    second.y = y;
+    this.microSelectedIds = new Set();
+    this._selectMicroElement('array', first.id);
+    this._renderMicroOnly();
+  }
+
   _findMicroDictAt(worldPt) {
     for (const node of this.micro.dicts.values()) {
       if (!this._microPickable(node)) continue;
@@ -3663,6 +3717,11 @@ export class App {
     }
     const arrayNode = this._findMicroArrayAt(worldPt);
     if (arrayNode) {
+      const splitAt = this._findMicroArrayDividerAt(arrayNode, worldPt);
+      if (splitAt != null) {
+        this._splitMicroArray(arrayNode, splitAt);
+        return;
+      }
       const cellHit = this._findMicroArrayCellAt(worldPt);
       if (arrayNode.kind === 'value' && cellHit?.array.id === arrayNode.id) this._openMicroArrayCellPopup(arrayNode, cellHit.index);
       return;

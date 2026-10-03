@@ -693,6 +693,26 @@ export function arrayLayout(node) {
   return { width, height, cells };
 }
 
+/** Largura (mundo) da faixa sensível de cada divisória entre duas células
+ * de um array — ver `arrayDividers`. */
+export const ARRAY_DIVIDER_HIT = 8;
+
+/** Divisórias ENTRE duas células vizinhas de um array (relativas ao canto da
+ * caixa): `at` é o índice da primeira célula depois da divisória — o ponto
+ * de corte de um duplo clique ali (ver App#_splitMicroArray). Cobrem só a
+ * faixa das células (a faixa de índice continua criando cursores). Set não
+ * tem posição, então não tem divisória. */
+export function arrayDividers(node) {
+  if (node.isSet || node.cells.length < 2) return [];
+  const half = ARRAY_DIVIDER_HIT / 2;
+  const vertical = node.orientation === 'vertical';
+  return arrayLayout(node).cells.slice(1).map((c) =>
+    vertical
+      ? { at: c.index, x: c.x, y: c.y - half, w: c.w, h: ARRAY_DIVIDER_HIT }
+      : { at: c.index, x: c.x - half, y: c.y, w: ARRAY_DIVIDER_HIT, h: c.h },
+  );
+}
+
 /** `arrayLayout` de um set — mesmo formato de retorno (quem desenha, clica
  * ou liga setas não precisa saber a diferença), com `SET_PAD` de folga em
  * volta das células e sem faixa de índice na vertical. O pino de um set de
@@ -2143,6 +2163,12 @@ export class MicroCanvasView {
         }
         el.appendChild(svgEl('circle', { class: 'struct-port array-cell-port', cx: c.port.x, cy: c.port.y, r: PORT_R }));
       }
+    });
+    // divisórias entre células, por cima delas: só dão o cursor de "dividir"
+    // (duplo clique ali divide o array, ver App#_splitMicroArray) — o
+    // hit-test é por coordenada (`arrayDividers`)
+    arrayDividers(node).forEach((d) => {
+      el.appendChild(svgEl('rect', { class: `array-divider-hit${node.orientation === 'vertical' ? ' vertical' : ''}`, x: d.x, y: d.y, width: d.w, height: d.h }));
     });
   }
 

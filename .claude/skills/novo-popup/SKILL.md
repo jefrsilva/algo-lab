@@ -12,7 +12,7 @@ Fonte da verdade: receita **8.11** de `docs/ARQUITETURA.md`. Gabaritos: `src/ui/
 1. `src/ui/XSettingsPopup.js`: classe com `constructor(container)`, `open(screenX, screenY, node, { onChange | onSave, onRemove, returnFocusTo })`, `close()`, `get isOpen()`. DOM à mão (`document.createElement`), textos em pt-BR.
 2. Posicione com `fitPopupInContainer` (`src/ui/fitPopup.js`) e reaproveite as classes CSS `.array-settings-*`; estilo novo só com tokens de `variables.css`.
 3. Confirmações com `Dialog`, nunca `window.confirm`/`alert`.
-4. `App`: instancie em `_buildLayout`; abra a partir de `_onMicroContextMenu` (no ramo do elemento); e **acrescente `this.xPopup.isOpen` ao guard do começo de `_onMicroPointerDown`** — sem isso, cliques no canvas atravessam o popup.
+4. `App`: instancie em `_buildLayout`; abra a partir de `_onMicroContextMenu` (no ramo do elemento, respeitando a ordem das camadas: o que está desenhado por cima — label, ponteiro, variável, struct — é testado antes; coleções abrem pelo puxador, via `_findMicroHandleUnder`); e **acrescente `this.xPopup.isOpen` ao guard do começo de `_onMicroPointerDown`** — sem isso, cliques no canvas atravessam o popup.
 5. Cada mudança aplicada chama `this._renderMicroOnly()`; se o dado vai para o arquivo do projeto, skill `novo-campo-projeto`.
 6. Fechar com Esc e devolver o foco (`returnFocusTo`).
 

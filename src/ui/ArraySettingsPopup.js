@@ -7,7 +7,8 @@ import { fitPopupInContainer } from './fitPopup.js';
  * `showSize`; o deque com `maxlen` limita o `maxSize`; matriz tem DOIS tamanhos,
  * linhas e colunas, ver `sizeFields`) e orientação (não se aplica à
  * matriz, ver `showOrientation`), além da ação de remover. Aberto pelo
- * botão direito no ponteiro-rótulo (modo micro).
+ * botão direito no puxador da coleção (modo micro, ver
+ * App#_onMicroContextMenu).
  */
 export class ArraySettingsPopup {
   constructor(container) {

@@ -331,8 +331,8 @@ export class MicroProgramRunner {
     };
     note(this.micro.structs, () => 'struct');
     note(this.micro.arrays, (n) => `array:${scope(n)}:${n.name}`);
-    note(this.micro.dicts, (n) => `dict:${n.name}`);
-    note(this.micro.matrices, (n) => `matrix:${n.name}`);
+    note(this.micro.dicts, (n) => `dict:${scope(n)}:${n.name}`);
+    note(this.micro.matrices, (n) => `matrix:${scope(n)}:${n.name}`);
     note(this.micro.variables, (n) => `variable:${scope(n)}:${n.name}`);
     note(this.micro.pointers, (n) => {
       if (n.readCursorKey) return `cursor:${scope(n)}:${n.readCursorKey}`;

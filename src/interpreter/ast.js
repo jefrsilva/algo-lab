@@ -81,7 +81,10 @@ export const Call = (callee, args, kwargs = []) => ({ type: 'Call', callee, args
  * parser.js#parseImport. */
 export const Import = (module, names) => ({ type: 'Import', module, names });
 
-export const BinOp = (op, left, right) => ({ type: 'BinOp', op, left, right });
+/** `inplace` (só '+') marca o "x += valor" desenrolado pelo parser (ver
+ * parser.js#parseAssignRhs): com "x" uma lista viva, estende a MESMA lista
+ * em vez de criar outra (ver evaluator.js, caso 'BinOp'). */
+export const BinOp = (op, left, right, inplace = false) => ({ type: 'BinOp', op, left, right, ...(inplace ? { inplace: true } : {}) });
 export const UnaryOp = (op, operand) => ({ type: 'UnaryOp', op, operand });
 /** Comparação encadeada "a < b <= c" (2+ operadores — uma comparação só é
  * um `BinOp`): `ops[k]` compara `operands[k]` com `operands[k + 1]`, cada
@@ -90,6 +93,12 @@ export const UnaryOp = (op, operand) => ({ type: 'UnaryOp', op, operand });
  * os mesmos nomes do `BinOp` ('<', '==', 'in', 'notin'...). Ver
  * parser.js#parseComparison e evaluator.js, caso 'Compare'. */
 export const Compare = (operands, ops) => ({ type: 'Compare', operands, ops });
+/** Expressão condicional "body if test else orelse" — só um dos dois ramos é
+ * avaliado (depois do teste), igual Python. Ver parser.js#parseExpr,
+ * evaluator.js (caso 'IfExp') e interpreter.js#resolveUserCalls (o ramo não
+ * escolhido nunca chama função nenhuma — "return 1 if n <= 1 else n *
+ * fat(n - 1)" para no caso base). */
+export const IfExp = (test, body, orelse) => ({ type: 'IfExp', test, body, orelse });
 
 /**
  * Statements de bloco (produzidos por blockParser.js, não pelo parser de uma

@@ -111,6 +111,32 @@ describe('Simulação', () => {
     expect(app.micro.pointers.get(nums.labelPointerId).label).toBe('nums');
   });
 
+  test('"x = x + [2]" com outro nome na lista antiga leva o rótulo "x" pra lista nova', () => {
+    rodarNaSimulacao(linhas('x = [0]', 'y = x', 'x = x + [2]'));
+    botao('.playback-btn', '⏭').click();
+    const arrays = [...app.micro.arrays.values()];
+    const nova = arrays.find((a) => a.name === 'x');
+    const antiga = arrays.find((a) => a !== nova);
+    expect(nova.cells).toEqual([0, 2]);
+    expect(app.micro.pointers.get(nova.labelPointerId)).toMatchObject({ label: 'x', target: { kind: 'array', id: nova.id } });
+    expect(antiga.labelPointerId).toBeFalsy();
+    const y = [...app.micro.pointers.values()].find((p) => p.label === 'y');
+    expect(y.target).toEqual({ kind: 'array', id: antiga.id });
+  });
+
+  test('dict reatribuído com alias leva o rótulo; dict local tem rótulo no frame da chamada', () => {
+    rodarNaSimulacao(linhas('d = {"a": 1}', 'e = d', 'd = {"b": 2}', 'def f():', '    t = {}', '    return t', 'r = f()'));
+    botao('.playback-btn', '⏭').click();
+    const dicts = [...app.micro.dicts.values()];
+    const d = dicts.find((x) => x.name === 'd');
+    expect(app.micro.pointers.get(d.labelPointerId)).toMatchObject({ label: 'd', target: { kind: 'dict', id: d.id } });
+    const antigo = dicts.find((x) => x.cells[0]?.key === 'a');
+    expect(antigo.labelPointerId).toBeFalsy();
+    const t = dicts.find((x) => x.name === 't');
+    expect(t.frameId).not.toBe('global');
+    expect(app.micro.pointers.get(t.labelPointerId).frameId).toBe(t.frameId);
+  });
+
   test('voltar pro Sandbox encerra a reprodução', () => {
     rodarNaSimulacao('x = 1');
     botao('.code-editor-mode-btn', 'Sandbox').click();
@@ -138,6 +164,14 @@ describe('Sandbox (Ctrl+Enter linha a linha)', () => {
     expect($('.code-editor-line-flash.success')).not.toBeNull();
     ctrlEnterNaLinha(1);
     expect($('.code-editor-line-flash.error')).not.toBeNull();
+  });
+
+  test('expressão condicional, abs/int e lista reatribuída também rodam linha a linha', () => {
+    escreverCodigo(linhas('n = abs(int("-4")) if True else 0', 'xs = [n]', 'xs = xs + [1]', 'print(xs)'));
+    [0, 1, 2, 3].forEach(ctrlEnterNaLinha);
+    expect(variaveis().map((v) => [v.name, v.value])).toEqual([['n', 4]]);
+    expect(consoleTexto()).toContain('[4, 1]');
+    expect([...app.micro.arrays.values()]).toHaveLength(1);
   });
 
   test('condição de if/while é avaliada e mostra o resultado', () => {

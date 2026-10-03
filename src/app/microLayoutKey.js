@@ -40,16 +40,17 @@ export function microLayoutKey(kind, { name, frameId, cursorKey, dictName, key }
     // ficam sem chave (cascateamento de sempre), igual struct anônimo.
     case 'array':
       return name && scope === 'global' ? `array:${name}` : null;
+    // dict/matriz criados numa chamada: mesma regra de array
     case 'dict':
-      return name ? `dict:${name}` : null;
+      return name && scope === 'global' ? `dict:${name}` : null;
     case 'array-label':
       return name && scope === 'global' ? `array-label:${name}` : null;
     case 'dict-label':
-      return name ? `dict-label:${name}` : null;
+      return name && scope === 'global' ? `dict-label:${name}` : null;
     case 'matrix':
-      return name ? `matrix:${name}` : null;
+      return name && scope === 'global' ? `matrix:${name}` : null;
     case 'matrix-label':
-      return name ? `matrix-label:${name}` : null;
+      return name && scope === 'global' ? `matrix-label:${name}` : null;
     case 'cursor':
       return cursorKey ? `cursor:${cursorKey}` : null;
     case 'array-in-dict':

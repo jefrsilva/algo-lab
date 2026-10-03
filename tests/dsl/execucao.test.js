@@ -67,6 +67,12 @@ describe('avisos no console (⚠) em vez de exceção', () => {
     ['s = {1, 2}\nprint(s[0])', 'Set não tem posições'],
     ['a = [Node(1), 2]', 'Lista misturando nós e valores'],
     ['print(f"{3:q}")', 'f-string: Formato inválido: "q"'],
+    ['x = int("3.5")', `int(...): '3.5' não é um número inteiro.`],
+    ['x = int("12", 2)', `int(...): '12' não é um número inteiro na base 2.`],
+    ['x = abs("a")', 'abs(x): x precisa ser um número.'],
+    ['x = int(5, 2)', 'int(x, base): com base, x precisa ser um texto'],
+    ['d = {"m": {"a": 1}}', `d['m']: um dict só guarda número, texto, bool, tupla, nó, None ou lista`],
+    ['s = {1}\nprint(s[1:])', 'Set não tem posições'],
   ])('%j', (codigo, aviso) => {
     const { output } = runDsl(codigo);
     expect(output.some((l) => l.startsWith('⚠ ') && l.includes(aviso))).toBe(true);
@@ -133,6 +139,110 @@ describe('recursão e frames', () => {
   });
 });
 
+describe('escopo e reatribuição de nomes', () => {
+  const ponteiro = (micro, label, frameId = 'global') => valores(micro.pointers).find((p) => p.label === label && p.frameId === frameId);
+
+  test('atribuir dentro de função cria um nome local, sem mexer no global de mesmo nome', () => {
+    const codigo = linhas('def f(p):', '    p = None', '    x = 9', 'p = Node(1)', 'x = 1', 'f(p)', 'print(p.data, x)');
+    const { micro, output, steps, runner } = runDsl(codigo);
+    expect(output).toEqual(['1 1']);
+    // em nenhum passo o "p" global perde o nó
+    steps.forEach((_s, i) => {
+      runner.goToStep(i);
+      const p = ponteiro(micro, 'p');
+      if (p) expect(p.target?.kind).toBe('struct');
+    });
+    expect(valores(micro.variables).filter((v) => v.name === 'x').map((v) => v.value).sort()).toEqual([1, 9]);
+  });
+
+  test('parâmetro local esconde a lista global de mesmo nome', () => {
+    const codigo = linhas('a = [100]', 'def primeiro(a):', '    return a[0]', 'print(primeiro([7, 8]))');
+    expect(runDsl(codigo).output).toEqual(['7']);
+  });
+
+  test('"x = x + [..]" sem outro nome apontando reaproveita a mesma lista do canvas', () => {
+    const { micro, runner } = runDsl(linhas('nums = [1, 2]', 'u = nums[-1]', 'nums = nums + [3]'));
+    runner.goToStep(0);
+    const id = array(micro, 'nums').id;
+    runner.goToStep(2);
+    expect(valores(micro.arrays)).toHaveLength(1);
+    expect(array(micro, 'nums')).toMatchObject({ id, cells: [1, 2, 3] });
+    // o cursor "nums[-1]" acompanha o novo fim da lista
+    const cursor = valores(micro.pointers).find((p) => p.readCursorKey === 'nums[-1]');
+    expect(cursor.target).toEqual({ kind: 'arrayCell', arrayId: id, index: 2 });
+  });
+
+  test('com outro nome apontando, a lista antiga continua (sem nome) e o nome vai pra uma nova', () => {
+    const { micro } = runDsl(linhas('x = [0]', 'y = x', 'x = x + [2]'));
+    const x = array(micro, 'x');
+    expect(x.cells).toEqual([0, 2]);
+    const antiga = micro.arrays.get(ponteiro(micro, 'y').target.id);
+    expect(antiga).not.toBe(x);
+    expect(antiga.cells).toEqual([0]);
+    expect(antiga.name).toBe(antiga.id);
+  });
+
+  test('"+=" estende a mesma lista, vista por todos os nomes', () => {
+    const { micro, output } = runDsl(linhas('a = [1]', 'b = a', 'b += [2, 3]', 'print(a)'));
+    expect(output).toEqual(['[1, 2, 3]']);
+    expect(valores(micro.arrays)).toHaveLength(1);
+  });
+
+  test('nome troca de tipo: a ligação antiga sai do modelo', () => {
+    const { micro } = runDsl(linhas('x = 5', 'x = Node(1)', 'p = Node(2)', 'p = 3', 'l = [1]', 'l = None'));
+    expect(valores(micro.variables).map((v) => [v.name, v.value])).toEqual([['p', 3]]);
+    expect(valores(micro.pointers).map((p) => [p.label, p.target?.kind ?? null]).sort()).toEqual([
+      ['l', null],
+      ['x', 'struct'],
+    ]);
+    expect(micro.arrays.size).toBe(0);
+  });
+
+  test('"d = {...}" de novo reaproveita a caixa do dict e solta as listas das células', () => {
+    const { micro, runner } = runDsl(linhas('d = {"k": [1]}', 'd = {"z": 2}'));
+    runner.goToStep(0);
+    const id = valores(micro.dicts)[0].id;
+    runner.goToStep(1);
+    expect(valores(micro.dicts)).toEqual([expect.objectContaining({ id, name: 'd', cells: [{ key: 'z', kind: 'value', value: 2 }] })]);
+    expect(micro.arrays.size).toBe(0);
+  });
+
+  test('lista sem nome que ninguém mais alcança some', () => {
+    const { micro } = runDsl(linhas('x = [0]', 'y = x', 'x = x + [2]', 'y = None'));
+    expect(valores(micro.arrays).map((a) => a.name)).toEqual(['x']);
+  });
+
+  test('"a, b = b, a" com listas troca as duas', () => {
+    const { micro, output } = runDsl(linhas('a = [1]', 'b = [2]', 'a, b = b, a', 'print(a, b)'));
+    expect(output).toEqual(['[2] [1]']);
+    expect(micro.arrays.size).toBe(2);
+  });
+
+  test('dict criado numa chamada pertence ao frame dela e some no fim (com as listas)', () => {
+    const codigo = linhas('def f():', '    memo = {}', '    memo[1] = [5]', '    return 0', 'memo = {"g": 1}', 'f()');
+    const { micro, steps, runner } = runDsl(codigo);
+    const dentro = steps.findIndex((s) => s.activeFrameId !== 'global' && s.line === 2);
+    runner.goToStep(dentro);
+    const local = valores(micro.dicts).find((d) => d.frameId === steps[dentro].activeFrameId);
+    expect(local.name).toBe('memo');
+    expect(micro.arrays.get(local.cells[0].value).frameId).toBe(local.frameId);
+    runner.goToStep(steps.length - 1);
+    expect(valores(micro.dicts).map((d) => [d.name, d.frameId])).toEqual([['memo', 'global']]);
+    expect(micro.arrays.size).toBe(0);
+  });
+
+  test('dict devolvido por função continua vivo pelo nome de quem recebeu', () => {
+    const { output } = runDsl(linhas('def f():', '    t = {"a": [1]}', '    return t', 'r = f()', 'r["a"].append(2)', 'print(r)'));
+    expect(output).toEqual(["{'a': [1, 2]}"]);
+  });
+
+  test('lista pode trocar de tipo (lista → set) mantendo a caixa', () => {
+    const { micro, output } = runDsl(linhas('s = [3, 1, 3]', 's = set(s)', 'print(s)'));
+    expect(output).toEqual(['{1, 3}']);
+    expect(array(micro, 's')).toMatchObject({ isSet: true, cells: [1, 3] });
+  });
+});
+
 describe('estado do modelo', () => {
   test('lista vira array de valores', () => {
     const { micro } = runDsl('nums = [4, 5, 6]');
@@ -196,6 +306,27 @@ describe('estado do modelo', () => {
       { key: 'a', kind: 'value', value: 1 },
       { key: 'b', kind: 'value', value: 2 },
     ]);
+  });
+
+  test('dict literal com lista liga a célula a uma lista sem nome', () => {
+    const { micro } = runDsl('g = {"a": [1, 2], "b": 3}');
+    const g = valores(micro.dicts).find((x) => x.name === 'g');
+    expect(g.cells.map((c) => [c.key, c.kind])).toEqual([
+      ['a', 'arrayref'],
+      ['b', 'value'],
+    ]);
+    const lista = micro.arrays.get(g.cells[0].value);
+    expect(lista).toMatchObject({ kind: 'value', cells: [1, 2] });
+    expect(lista.labelPointerId).toBeUndefined();
+  });
+
+  test('expressão condicional só avalia o ramo escolhido', () => {
+    const { micro, output, steps } = runDsl(
+      linhas('x = Node(1) if False else None', 'def fat(n):', '    return 1 if n <= 1 else n * fat(n - 1)', 'print(x, fat(4))'),
+    );
+    expect(output).toEqual(['None 24']);
+    expect(micro.structs.size).toBe(0);
+    expect(steps.some((s) => s.kind === 'limit')).toBe(false);
   });
 
   test('matriz guarda as linhas', () => {

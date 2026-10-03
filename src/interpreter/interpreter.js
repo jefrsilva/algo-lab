@@ -1,4 +1,4 @@
-import { evaluate, assign, assignChain, truthy, iterableItems, loopValues, NoneValue } from './evaluator.js';
+import { evaluate, assign, assignChain, assignTuple, truthy, iterableItems, loopValues, NoneValue } from './evaluator.js';
 
 /**
  * Interpreta um PROGRAMA (lista de statements produzida por blockParser.js)
@@ -137,9 +137,9 @@ export function* runProgram(program, functions, env) {
       return { signal: ABORT, value: undefined };
     }
     callDepth += 1;
-    // lista passada como argumento é identificada pelo NOME no frame de quem
-    // chama — que o frame novo não enxerga (arrays têm escopo de frame, ver
-    // MicroRuntimeAdapter#_findArray). Troca por uma referência estável (id)
+    // lista/dict/matriz passada como argumento é identificada pelo NOME no
+    // frame de quem chama — que o frame novo não enxerga (nomes têm escopo de
+    // frame, ver MicroRuntimeAdapter#_bindingIn). Troca por uma referência estável (id)
     // ANTES de empilhar o frame novo; mesma coisa com o retorno, abaixo.
     if (env.stableRef) argValues = argValues.map((v) => env.stableRef(v));
     // (um argumento nomeado pode deixar buraco antes dele — ver tryUserCall)
@@ -249,7 +249,8 @@ export function* runProgram(program, functions, env) {
    * avaliação da esquerda pra direita. `and`/`or` preservam o curto-circuito
    * (o lado direito só é resolvido — e as chamadas dele só executam — se o
    * esquerdo não decidir sozinho), essencial pra caso base tipo
-   * "return no != None and busca(no.next, x)". */
+   * "return no != None and busca(no.next, x)"; "a if cond else b" idem (só
+   * o ramo escolhido). */
   function* resolveUserCalls(node) {
     const ok = (n) => ({ signal: CONTINUE, node: n });
     if (!containsUserCall(node)) return ok(node);
@@ -269,6 +270,16 @@ export function* runProgram(program, functions, env) {
       const decided = node.op === 'and' ? !truthy(left.value, env) : truthy(left.value, env);
       if (decided) return ok({ type: 'Value', value: left.value });
       return yield* resolveUserCalls(node.right);
+    }
+
+    if (node.type === 'IfExp') {
+      // "a if cond else b" — mesmo cuidado do and/or: o teste é avaliado UMA
+      // vez e só as chamadas do ramo escolhido executam (sem isso, "return 1
+      // if n <= 1 else n * fat(n - 1)" nunca pararia de recursar)
+      const test = yield* evalExpr(node.test);
+      if (test.signal.kind === 'abort') return { signal: test.signal, node: null };
+      if (test.value === undefined) return ok({ type: 'Value', value: undefined });
+      return yield* resolveUserCalls(truthy(test.value, env) ? node.body : node.orelse);
     }
 
     if (node.type === 'BinOp' && node.op !== 'in' && node.op !== 'notin' && !containsUserCall(node.left)) {
@@ -357,7 +368,7 @@ export function* runProgram(program, functions, env) {
         }
         values.splice(0, 1, ...items);
       }
-      stmt.targets.forEach((t, i) => assign(t, values[i], env));
+      assignTuple(stmt.targets, values, env);
       return yield* tick({ line: stmt.line, kind: 'assign' });
     }
 

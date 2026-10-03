@@ -88,7 +88,8 @@
  * uma das reconhecidas — "Node(valor)", "TreeNode(valor)", "GraphNode(valor)", "len(nome)", "range(...)",
  * "sum(...)", "min(...)", "max(...)", "sorted(...)", "enumerate(...)",
  * "list(...)", "set(...)", "tuple(...)", "deque(...)" (e os métodos de deque,
- * ver `callDequeMethod`), "str(valor)", "sep.join(...)", "texto.upper()",
+ * ver `callDequeMethod`), "str(valor)", "abs(x)", "int(x[, base])",
+ * "sep.join(...)", "texto.upper()",
  * "texto.lower()", "texto.split(...)", "texto.replace(...)",
  * "texto.strip(...)", "texto.lstrip(...)", "texto.rstrip(...)", "texto.startswith(...)", "texto.endswith(...)",
  * "texto.find(...)", "texto.count(...)",
@@ -158,6 +159,12 @@
  *                                                         (rotate/reverse/
  *                                                         clear); false se
  *                                                         não coube
+ *   stableRef(value) -> TypedValue (opcional)          — referência a coleção
+ *                                                         por id (sobrevive a
+ *                                                         troca de frame/nome)
+ *   holdValues(values) -> void (opcional)              — valores ainda por
+ *                                                         atribuir (ver
+ *                                                         `assignTuple`)
  *   assignDictKey(name, key, value) -> void (opcional) — "d[chave] = valor";
  *                                                         sem ele, cai no
  *                                                         fallback de mutar
@@ -473,6 +480,8 @@ export function exprLabel(node) {
       return `${exprLabel(node.object)}[${exprLabel(node.index)}]`;
     case 'TupleLiteral':
       return node.elements.length === 1 ? `(${exprLabel(node.elements[0])},)` : `(${node.elements.map(exprLabel).join(', ')})`;
+    case 'IfExp':
+      return `${exprLabel(node.body)} if ${exprLabel(node.test)} else ${exprLabel(node.orelse)}`;
     default:
       return '?';
   }
@@ -497,6 +506,11 @@ export function exprDependencies(node, out = new Set()) {
       break;
     case 'Compare':
       node.operands.forEach((o) => exprDependencies(o, out));
+      break;
+    case 'IfExp':
+      exprDependencies(node.test, out);
+      exprDependencies(node.body, out);
+      exprDependencies(node.orelse, out);
       break;
     case 'Attribute':
       exprDependencies(node.object, out);
@@ -752,8 +766,10 @@ function stringCharAt(str, idx) {
 
 /** Texto de um valor tipado pra "print(...)" — mesma regra de `str(valor)`
  * do Python (string "crua", sem aspas; o resto igual a `describeArg`/
- * `exprLabel`, que já usam essa mesma grafia noutros lugares da ferramenta). */
-function formatPrintValue(v) {
+ * `exprLabel`, que já usam essa mesma grafia noutros lugares da ferramenta).
+ * `env` (opcional) expande uma lista viva no modelo ('arrayref') — sozinha
+ * ou dentro de um dict/tupla: "{0: [7, 8]}", não "{0: <lista>}". */
+function formatPrintValue(v, env) {
   switch (v.kind) {
     case 'scalar':
       return String(v.value);
@@ -773,24 +789,33 @@ function formatPrintValue(v) {
     case 'matrixref':
       return `[${v.rows.map(formatRawList).join(', ')}]`;
     case 'dict':
-      return formatPrintDict(v.entries);
+      return formatPrintDict(v.entries, env);
     case 'set':
-      return formatPrintSet(v.elements);
+      return formatPrintSet(v.elements, env);
     case 'deque':
-      return formatPrintDeque(v.elements, v.maxlen);
+      return formatPrintDeque(v.elements, v.maxlen, env);
     case 'nodelist':
-      return formatPrintArray(v.items);
+      return formatPrintArray(v.items, env);
     case 'tuple': {
       // "(1, 'a')" — item de texto entre aspas, tupla de um item com
       // vírgula ("(1,)"), igual `repr()` do Python
-      const parts = v.items.map((it) => (it.kind === 'string' ? pyStringRepr(it.value) : formatPrintValue(it)));
+      const parts = v.items.map((it) => reprItem(it, env));
       return parts.length === 1 ? `(${parts[0]},)` : `(${parts.join(', ')})`;
     }
-    case 'arrayref':
-      return '<lista>';
+    case 'arrayref': {
+      const items = env?.iterateArray?.(v.name);
+      return items === undefined ? '<lista>' : formatLiveArray(v.name, items, env);
+    }
     default:
       return '?';
   }
+}
+
+/** Texto de um item DENTRO de uma coleção (lista, set, tupla, valor de
+ * dict) — `repr()` do Python: texto entre aspas, o resto igual
+ * `formatPrintValue`. */
+function reprItem(v, env) {
+  return v.kind === 'string' ? pyStringRepr(v.value) : formatPrintValue(v, env);
 }
 
 /** Texto de uma lista de valores crus (célula de array/matriz) — igual
@@ -801,15 +826,12 @@ function formatRawList(raws) {
 
 /** Texto de um dict (`Map<chave, TypedValue>` — ver `DictValue`) — igual
  * `repr()` de um dict Python: `{'a': 1, 'b': 2}`. Ordem de inserção (Map já
- * preserva, igual dict do Python 3.7+). Usada por "print(...)" (ver
- * `formatPrintValue`) E por quem exibe o valor bruto de uma variável fora do
- * avaliador (ver MicroCanvasView#_renderVariables — variável de dict guarda
- * o próprio Map como valor bruto no modelo, ver MicroRuntimeAdapter). */
-export function formatPrintDict(entries) {
+ * preserva, igual dict do Python 3.7+). `env` como em `formatPrintValue`. */
+export function formatPrintDict(entries, env) {
   const parts = [];
   entries.forEach((v, k) => {
     const keyText = typeof k === 'string' ? pyStringRepr(k) : String(k);
-    parts.push(`${keyText}: ${v.kind === 'string' ? pyStringRepr(v.value) : formatPrintValue(v)}`);
+    parts.push(`${keyText}: ${reprItem(v, env)}`);
   });
   return `{${parts.join(', ')}}`;
 }
@@ -817,28 +839,28 @@ export function formatPrintDict(entries) {
 /** Texto de um array já vivo no modelo (lista de valores tipados, ver
  * `env.iterateArray`) pra "print(nome)" — igual `repr()` de uma lista Python:
  * elemento string entre aspas, resto igual `formatPrintValue`. */
-function formatPrintArray(items) {
-  return `[${items.map((v) => (v.kind === 'string' ? pyStringRepr(v.value) : formatPrintValue(v))).join(', ')}]`;
+function formatPrintArray(items, env) {
+  return `[${items.map((v) => reprItem(v, env)).join(', ')}]`;
 }
 
 /** Mesma ideia de `formatPrintArray`, com chaves — "{1, 2, 3}"; vazio é
  * "set()", igual Python ("{}" seria um dict). */
-function formatPrintSet(items) {
+function formatPrintSet(items, env) {
   if (items.length === 0) return 'set()';
-  return `{${items.map((v) => (v.kind === 'string' ? pyStringRepr(v.value) : formatPrintValue(v))).join(', ')}}`;
+  return `{${items.map((v) => reprItem(v, env)).join(', ')}}`;
 }
 
 /** "deque([1, 2, 3])" / "deque([1, 2], maxlen=3)" — `repr()` do Python. */
-function formatPrintDeque(items, maxlen) {
-  return `deque(${formatPrintArray(items)}${maxlen != null ? `, maxlen=${maxlen}` : ''})`;
+function formatPrintDeque(items, maxlen, env) {
+  return `deque(${formatPrintArray(items, env)}${maxlen != null ? `, maxlen=${maxlen}` : ''})`;
 }
 
 /** Texto de um array vivo por nome pro print/f-string — set com chaves,
  * deque como "deque([...])". */
 function formatLiveArray(name, items, env) {
-  if (env.isSet?.(name)) return formatPrintSet(items);
-  if (env.isDeque?.(name)) return formatPrintDeque(items, env.dequeMaxlen?.(name) ?? null);
-  return formatPrintArray(items);
+  if (env.isSet?.(name)) return formatPrintSet(items, env);
+  if (env.isDeque?.(name)) return formatPrintDeque(items, env.dequeMaxlen?.(name) ?? null, env);
+  return formatPrintArray(items, env);
 }
 
 const UNHASHABLE_WARNING = 'Set só guarda valores imutáveis (número, texto, bool, tupla) ou nós — lista/dict dentro de set (ou de uma tupla do set) não é permitido.';
@@ -1008,6 +1030,29 @@ function materializeList(v, env) {
   return listValueFrom(items, env) ?? v;
 }
 
+/** Texto -> inteiro, com as regras de "int(texto, base)" do Python: espaços
+ * em volta, sinal, "_" entre dígitos ("1_000") e o prefixo da base ("0x" com
+ * base 16, "0b" com 2, "0o" com 8). `undefined` se não é um inteiro válido
+ * nessa base. */
+function parseIntText(text, base) {
+  let t = text.trim();
+  let sign = 1;
+  if (t.startsWith('+') || t.startsWith('-')) {
+    if (t.startsWith('-')) sign = -1;
+    t = t.slice(1);
+  }
+  const prefix = { 2: 'b', 8: 'o', 16: 'x' }[base];
+  if (prefix && t.length > 2 && t[0] === '0' && t[1].toLowerCase() === prefix) t = t.slice(2).replace(/^_/, '');
+  if (!/^[0-9a-z]+(_[0-9a-z]+)*$/i.test(t)) return undefined;
+  let n = 0;
+  for (const ch of t.replace(/_/g, '')) {
+    const digit = parseInt(ch, 36);
+    if (digit >= base) return undefined;
+    n = n * base + digit;
+  }
+  return sign * n;
+}
+
 /** `repr()` de uma string em Python usa aspas simples (`'texto'`) por
  * convenção — só pra elemento dentro de um array impresso (ver
  * `formatPrintArray`); `print("texto")` sozinho imprime sem aspas nenhuma
@@ -1018,15 +1063,10 @@ function pyStringRepr(str) {
 
 /** Texto de um valor tipado pro print e pra f-string — `str()` do Python, ou
  * `repr()` com `repr` (string entre aspas, igual "{x!r}"/"{x=}"). Um array
- * vivo chega do `evaluate` como 'arrayref' e é expandido aqui (set com
- * chaves, ver `formatLiveArray`). */
+ * vivo chega do `evaluate` como 'arrayref' e é expandido por
+ * `formatPrintValue` (set com chaves, ver `formatLiveArray`). */
 function valueText(v, env, repr) {
-  if (v.kind === 'arrayref' && env.iterateArray) {
-    const items = env.iterateArray(v.name);
-    if (items !== undefined) return formatLiveArray(v.name, items, env);
-  }
-  if (repr && v.kind === 'string') return pyStringRepr(v.value);
-  return formatPrintValue(v);
+  return repr ? reprItem(v, env) : formatPrintValue(v, env);
 }
 
 export function evaluate(node, env) {
@@ -1232,6 +1272,14 @@ export function evaluate(node, env) {
         return info ? matrixRowOf(info, indexValue.value) : undefined;
       }
 
+      // "sorted(nums)[0]", "[3, 1, 2][-1]" — lista que é resultado de uma
+      // expressão (não está no modelo, então não tem cursor de leitura)
+      if (objValue?.kind === 'array' || objValue?.kind === 'nodelist') {
+        const items = iterableItems(objValue, env);
+        const i = indexValue.value < 0 ? items.length + indexValue.value : indexValue.value;
+        return items[i];
+      }
+
       if (node.object.type !== 'Name') return undefined;
 
       // "m[i]" com "m" uma matriz viva no modelo — devolve a LINHA
@@ -1279,19 +1327,28 @@ export function evaluate(node, env) {
         return indices === undefined ? undefined : TupleValue(indices.map((idx) => objValue.items[idx]));
       }
 
-      if (node.object.type !== 'Name' || !env.iterateArray) return undefined;
-      if (env.isSet?.(node.object.name)) {
-        env.warn?.(`Set não tem posições — "${node.object.name}[...]" não é permitido (use "sorted(${node.object.name})" pra ter uma lista).`);
-        return undefined;
+      // lista de VALORES — número, texto ou bool — ou de NÓS (uma lista de
+      // referências nova, ver 'nodelist'): resultado de uma expressão
+      // ("sorted(nums)[::-1]", "list('abc')[1:]", "m[i][1:]") ou lista viva
+      // no modelo, por nome ou por expressão ("d[chave][1:]")
+      let items;
+      if (objValue?.kind === 'array' || objValue?.kind === 'matrixrow') items = iterableItems(objValue, env);
+      else if (objValue?.kind === 'nodelist') items = objValue.items;
+      else {
+        const listName = objValue?.kind === 'arrayref' ? objValue.name : node.object.type === 'Name' ? node.object.name : null;
+        if (listName == null || !env.iterateArray) return undefined;
+        const shown = node.object.type === 'Name' ? node.object.name : exprLabel(node.object);
+        if (env.isSet?.(listName)) {
+          env.warn?.(`Set não tem posições — "${shown}[...]" não é permitido (use "sorted(${shown})" pra ter uma lista).`);
+          return undefined;
+        }
+        if (env.isDeque?.(listName)) {
+          // o TypeError do Python — deque tem índice, mas não fatia
+          env.warn?.(`Deque não aceita fatia — "${shown}[a:b]" não é permitido (use "list(${shown})[a:b]").`);
+          return undefined;
+        }
+        items = env.iterateArray(listName);
       }
-      if (env.isDeque?.(node.object.name)) {
-        // o TypeError do Python — deque tem índice, mas não fatia
-        env.warn?.(`Deque não aceita fatia — "${node.object.name}[a:b]" não é permitido (use "list(${node.object.name})[a:b]").`);
-        return undefined;
-      }
-      // lista de VALORES — número, texto ou bool (ex.: "list('abc')[1:]") —
-      // ou de NÓS (uma lista de referências nova, ver 'nodelist')
-      const items = env.iterateArray(node.object.name);
       if (items === undefined) return undefined;
       const indices = sliceIndices(items.length, start, stop, step);
       if (indices === undefined) return undefined;
@@ -1528,6 +1585,49 @@ export function evaluate(node, env) {
           return v === undefined ? undefined : StringValue(valueText(v, env, false));
         }
 
+        // "abs(x)" — valor absoluto; bool conta como 0/1, igual Python.
+        if (fname === 'abs' && node.args.length === 1) {
+          const v = evaluate(node.args[0], env);
+          if (v === undefined) return undefined;
+          if (v.kind === 'scalar' || v.kind === 'bool') return Scalar(Math.abs(Number(v.value)));
+          env.warn?.('abs(x): x precisa ser um número.');
+          return undefined;
+        }
+
+        // "int()" (0), "int(x)" — número sem a parte fracionária (corta em
+        // direção a zero: int(-2.7) é -2), bool vira 0/1, texto é lido como
+        // inteiro ("int('42')", "int(' -7 ')") — "int('3.5')" é o ValueError
+        // do Python — e "int(texto, base)" lê em outra base ("int('ff', 16)",
+        // "int('0b101', 2)").
+        if (fname === 'int' && node.args.length <= 2) {
+          if (node.args.length === 0) return Scalar(0);
+          const v = evaluate(node.args[0], env);
+          if (v === undefined) return undefined;
+          let base = 10;
+          if (node.args.length === 2) {
+            const b = evaluate(node.args[1], env);
+            if (b === undefined) return undefined;
+            if (b.kind !== 'scalar' || !Number.isInteger(b.value) || b.value < 2 || b.value > 36) {
+              env.warn?.('int(texto, base): a base precisa ser um inteiro de 2 a 36.');
+              return undefined;
+            }
+            if (v.kind !== 'string') {
+              env.warn?.('int(x, base): com base, x precisa ser um texto — ex: int("ff", 16).');
+              return undefined;
+            }
+            base = b.value;
+          }
+          if (v.kind === 'scalar') return Scalar(Math.trunc(v.value));
+          if (v.kind === 'bool') return Scalar(Number(v.value));
+          if (v.kind === 'string') {
+            const n = parseIntText(v.value, base);
+            if (n === undefined) env.warn?.(`int(...): ${pyStringRepr(v.value)} não é um número inteiro${base === 10 ? '' : ` na base ${base}`}.`);
+            return n === undefined ? undefined : Scalar(n);
+          }
+          env.warn?.('int(x): x precisa ser um número, um bool ou um texto com um número inteiro.');
+          return undefined;
+        }
+
         // "print(a, b, ...)" — escreve no console da ferramenta (ver
         // `env.print`, opcional: sem ele — ex. algum Environment futuro que
         // não tenha console — a chamada só devolve None sem efeito, mesmo
@@ -1744,6 +1844,14 @@ export function evaluate(node, env) {
       return result;
     }
 
+    case 'IfExp': {
+      // "a if cond else b" — só o ramo escolhido é avaliado (um "Node(v)" ou
+      // cursor de leitura do outro ramo não pode acontecer)
+      const test = evaluate(node.test, env);
+      if (test === undefined) return undefined;
+      return evaluate(truthy(test, env) ? node.body : node.orelse, env);
+    }
+
     case 'BinOp': {
       if (node.op === 'and' || node.op === 'or') {
         const left = evaluate(node.left, env);
@@ -1805,6 +1913,19 @@ export function evaluate(node, env) {
       let left = evaluate(node.left, env);
       let right = evaluate(node.right, env);
       if (left === undefined || right === undefined) return undefined;
+      // "x += [..]" com "x" uma lista ou deque viva (ver ast.js#BinOp,
+      // `inplace`): estende a MESMA lista, igual list.__iadd__ do Python —
+      // quem mais aponta pra ela ("y = x") vê os itens novos — pelo mesmo
+      // caminho de "x.extend(...)". Devolve a própria lista: a atribuição
+      // "x = x" que vem depois não muda nada.
+      if (node.inplace && node.op === '+' && left.kind === 'arrayref' && !env.isSet?.(left.name)) {
+        const extend = {
+          type: 'Call',
+          callee: { type: 'Attribute', object: { type: 'Value', value: left }, attr: 'extend' },
+          args: [{ type: 'Value', value: right }],
+        };
+        return evaluate(extend, env) === undefined ? undefined : left;
+      }
       // "s == {1, 2}" / "a == b" com sets vivos — compara pelo conteúdo
       if (node.op === '==' || node.op === '!=') {
         left = materializeSet(left, env);
@@ -1971,6 +2092,22 @@ export function assignChain(targetNodes, value, env) {
     const fresh = ['array', 'set', 'matrix'].includes(current.kind) || (current.kind === 'dict' && !current.sourceName);
     if (k === 0 && fresh && target.type === 'Name') current = evaluate(target, env) ?? current;
   });
+}
+
+/** "a, b = b, a" — `values` já avaliados (TODOS antes de qualquer
+ * atribuição), atribuídos a cada alvo em ordem. Uma lista/dict/matriz
+ * referenciada pelo NOME ("b" do lado direito) é trocada por uma referência
+ * estável (`env.stableRef`, por id) e segurada (`env.holdValues`) até o fim:
+ * senão "a = b" (o primeiro) apagaria a lista antiga de "a" que o segundo
+ * alvo ainda vai receber. Item `undefined` é pulado (não resolveu). */
+export function assignTuple(targetNodes, values, env) {
+  const stable = values.map((v) => (v !== undefined && env.stableRef ? env.stableRef(v) : v));
+  env.holdValues?.(stable.filter((v) => v !== undefined));
+  try {
+    targetNodes.forEach((t, i) => assign(t, stable[i], env));
+  } finally {
+    env.holdValues?.([]);
+  }
 }
 
 /**

@@ -1,6 +1,6 @@
 ---
 name: novo-builtin-dsl
-description: Adiciona uma função built-in (ex. abs, enumerate, reversed) ou um método de lista/string/dict/set/deque (ex. lista.reverse(), s.split()) à linguagem Python-like do visualizador. Use quando pedirem para a DSL suportar uma função ou método novo do Python, ou para corrigir o comportamento de um existente.
+description: Adiciona uma função built-in (ex. round, reversed, float) ou um método de lista/string/dict/set/deque (ex. lista.reverse(), s.split()) à linguagem Python-like do visualizador. Use quando pedirem para a DSL suportar uma função ou método novo do Python, ou para corrigir o comportamento de um existente.
 ---
 
 # Novo built-in ou método da DSL
@@ -12,9 +12,9 @@ Fonte da verdade: receitas **8.1** e **8.2** de `docs/ARQUITETURA.md` — leia-a
 1. Ache um built-in/método parecido e siga o mesmo caminho: `grep -n "fname === 'sorted'" src/interpreter/evaluator.js`, `grep -n "method === 'append'" src/interpreter/evaluator.js`.
 2. Confira a semântica exata no Python real (`python3 -c ...`): tipos aceitos, erros, casos de borda. O objetivo é imitar o CPython (ver como `pyset.js` replica até a ordem de sets).
 
-## Função global (`abs(x)`, receita 8.1)
+## Função global (`round(x)`, receita 8.1)
 
-1. `src/interpreter/evaluator.js`, `evaluate` → `case 'Call'` → bloco `node.callee.type === 'Name'`: `if (fname === 'abs' && node.args.length === 1) { ... }` junto dos outros. Avalie args com `evaluate(arg, env)`; devolva valor tipado (`Scalar(...)` etc.) ou `undefined` + `env.warn?.('mensagem em pt-BR')`.
+1. `src/interpreter/evaluator.js`, `evaluate` → `case 'Call'` → bloco `node.callee.type === 'Name'`: `if (fname === 'round' && node.args.length === 1) { ... }` junto dos outros (`abs`/`int` são exemplos recentes). Avalie args com `evaluate(arg, env)`; devolva valor tipado (`Scalar(...)` etc.) ou `undefined` + `env.warn?.('mensagem em pt-BR')`.
 2. Precisa ler/escrever o modelo? Crie método novo na interface `Environment` (documente no comentário do topo de `evaluator.js`) e implemente em `src/app/MicroRuntimeAdapter.js`, chamando `this._touch(kind, id)` em tudo que ler/escrever (destaque).
 3. Realce: inclua o nome em `KEYWORDS` de `src/ui/CodeEditor.js`, se fizer sentido.
 4. Lexer/parser não mudam: `nome(args)` já vira `Call`.

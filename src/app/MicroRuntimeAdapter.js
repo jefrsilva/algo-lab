@@ -46,6 +46,10 @@ function storableRaw(v) {
   return undefined;
 }
 
+/** Ponteiro-rótulo de uma coleção (mostra o nome dela no canvas, ver
+ * App#_createArrayLabelPointer) — decoração, não um nome do código. */
+const isLabel = (p) => !!(p.isArrayLabel || p.isDictLabel || p.isMatrixLabel);
+
 /** Índice negativo conta do fim ("nums[-1]" é o último), igual Python — o
  * resultado ainda pode estar fora do intervalo (quem chama confere). */
 function fromEnd(index, length) {
@@ -139,35 +143,44 @@ export class MicroRuntimeAdapter {
     if (this.frameStack.length > 1) this.frameStack.pop();
   }
 
-  /** "Coleta de lixo" das listas criadas dentro de chamadas — chamada por
-   * interpreter.js#callFunction logo depois de `popFrame`. Uma lista cujo
-   * nome pertence a um frame que já terminou (`frameId` fora da pilha) só
-   * continua no canvas se ainda é alcançável: pelos valores em `keepValues`
-   * (o retorno da chamada e os valores intermediários que quem chamou ainda
-   * vai usar, ex: o resultado da 1ª chamada em "f(g(a), g(b))"), por um
-   * ponteiro de um frame ainda ATIVO (incluindo o global), por uma célula
-   * de dict ou pela lista de vizinhos de um nó. O resto some — ex: no merge
-   * sort, os "leftHalf"/"rightHalf"/"result" de cada chamada que não foram
-   * devolvidos pra cima. Lista criada fora de chamada (global, à mão no
-   * canvas) nunca é candidata. Passos anteriores da reprodução continuam
-   * mostrando a lista (cada passo tem seu snapshot). */
+  /** "Coleta de lixo" das coleções (lista, dict, matriz) criadas dentro de
+   * chamadas — chamada por interpreter.js#callFunction logo depois de
+   * `popFrame`. Uma coleção cujo nome pertence a um frame que já terminou
+   * (`frameId` fora da pilha) só continua no canvas se ainda é alcançável:
+   * pelos valores em `keepValues` (o retorno da chamada e os valores
+   * intermediários que quem chamou ainda vai usar, ex: o resultado da 1ª
+   * chamada em "f(g(a), g(b))"), por um ponteiro de um frame ainda ATIVO
+   * (incluindo o global), por uma célula de dict ou pela lista de vizinhos de
+   * um nó. O resto some — ex: no merge sort, os "leftHalf"/"rightHalf"/
+   * "result" de cada chamada que não foram devolvidos pra cima. Coleção
+   * criada fora de chamada (global, à mão no canvas) nunca é candidata.
+   * Passos anteriores da reprodução continuam mostrando a coleção (cada passo
+   * tem seu snapshot). */
   releaseDeadArrays(keepValues = []) {
     const live = new Set(this.frameStack.map((f) => f.id));
-    const dead = Array.from(this.micro.arrays.values()).filter((a) => !live.has(a.frameId ?? 'global'));
-    if (!dead.length) return;
+    const isDead = (n) => !live.has(n.frameId ?? 'global');
     const reachable = new Set();
     const keep = (v) => {
       if (v?.kind === 'tuple') v.items.forEach(keep); // "return (lista, n)"
-      if (v?.kind !== 'arrayref') return;
-      const arr = this._resolveArrayByName(v.name);
-      if (arr) reachable.add(arr.id);
+      const node = this._collectionOf(v);
+      if (node) reachable.add(node.id);
     };
     keepValues.forEach(keep);
-    // cursor de leitura e rótulo não "seguram" a lista — são decoração dela
+    // cursor de leitura e rótulo não "seguram" a coleção — são decoração dela
     this.micro.pointers.forEach((p) => {
-      if (p.readCursorKey || p.isArrayLabel || !live.has(p.frameId ?? 'global')) return;
-      if (p.target?.kind === 'array') reachable.add(p.target.id);
-      else if (p.target?.kind === 'arrayCell') reachable.add(p.target.arrayId);
+      if (p.readCursorKey || isLabel(p) || isDead(p)) return;
+      if (p.target?.kind === 'arrayCell') reachable.add(p.target.arrayId);
+      else if (p.target?.kind === 'dictCell') reachable.add(p.target.dictId);
+      else if (p.target?.kind === 'matrixCell') reachable.add(p.target.matrixId);
+      else if (p.target?.id) reachable.add(p.target.id);
+    });
+    // dicts primeiro: as listas das células de um dict que some vão junto
+    // (elas nascem no frame do dict, ver `_writeDictCell`)
+    this.micro.dicts.forEach((d) => {
+      if (isDead(d) && !reachable.has(d.id)) this.micro.removeDict(d.id);
+    });
+    this.micro.matrices.forEach((m) => {
+      if (isDead(m) && !reachable.has(m.id)) this.micro.removeMatrix(m.id);
     });
     this.micro.dicts.forEach((d) =>
       d.cells.forEach((c) => {
@@ -177,8 +190,8 @@ export class MicroRuntimeAdapter {
     this.micro.structs.forEach((s) => {
       if (s.neighborsArrayId) reachable.add(s.neighborsArrayId);
     });
-    dead.forEach((a) => {
-      if (!reachable.has(a.id)) this.micro.removeArray(a.id);
+    Array.from(this.micro.arrays.values()).forEach((a) => {
+      if (isDead(a) && !reachable.has(a.id)) this.micro.removeArray(a.id);
     });
   }
 
@@ -186,60 +199,108 @@ export class MicroRuntimeAdapter {
     this.touched.push({ kind, id });
   }
 
-  /** Resolve um nome dentro do frame ATUAL primeiro; se não achar e o frame
-   * atual não for o 'global', cai pro 'global' — mesma regra do Python: uma
-   * função enxerga o escopo global + os próprios locais, nunca os locais de
-   * quem a chamou (sem escopo dinâmico, sem encadear por vários níveis). */
-  _findInFrame(map, matches) {
-    const currentId = this.currentFrameId;
-    const local = Array.from(map.values()).find((n) => n.frameId === currentId && matches(n));
-    if (local || currentId === 'global') return local;
-    return Array.from(map.values()).find((n) => n.frameId === 'global' && matches(n));
+  /** O que "nome" é DENTRO do frame `frameId` — `{type, node}`, com `type`
+   * 'pointer' | 'variable' | 'array' | 'dict' | 'matrix' —, ou `undefined`.
+   * Um nome tem UMA ligação por frame (atribuir troca a anterior, ver
+   * `assignName`). O ponteiro-rótulo de uma coleção (mesmo texto que o nome
+   * dela, ver App#_createArrayLabelPointer) e o cursor de leitura não contam:
+   * são decoração de outro elemento — sem excluí-los, "d = {...}" e depois
+   * "d[chave]" achariam o rótulo antes do dict de verdade. Coleções (heap)
+   * pertencem pelo NOME ao frame onde nasceram (`frameId`, ausente = global
+   * — criada à mão no canvas ou de projeto antigo). */
+  _bindingIn(frameId, name) {
+    const here = (n) => (n.frameId ?? 'global') === frameId;
+    const find = (map, matches) => {
+      for (const n of map.values()) if (here(n) && matches(n)) return n;
+      return undefined;
+    };
+    const candidates = [
+      ['pointer', this.micro.pointers, (p) => p.label === name && !p.readCursorKey && !isLabel(p)],
+      ['variable', this.micro.variables, (v) => v.name === name],
+      ['array', this.micro.arrays, (a) => a.name === name],
+      ['dict', this.micro.dicts, (d) => d.name === name],
+      ['matrix', this.micro.matrices, (m) => m.name === name],
+    ];
+    for (const [type, map, matches] of candidates) {
+      const node = find(map, matches);
+      if (node) return { type, node };
+    }
+    return undefined;
   }
 
-  /** O ponteiro-rótulo de um array/dict (ver App#_createArrayLabelPointer/
-   * _createDictLabelPointer) tem `label` IGUAL ao `name` da coleção — é só
-   * decoração pro canvas (mostra o nome ao lado), nunca deve ser resolvido
-   * como um ponteiro de verdade por esse mesmo nome. Sem excluí-lo aqui,
-   * "d = {...}" seguido de "d[chave] = valor" (ou qualquer leitura de "d")
-   * encontraria esse ponteiro ANTES do dict/array de verdade (`target.kind`
-   * é 'dict'/'array', nunca 'struct', então `resolveName` devolveria
-   * silenciosamente None) — mesmo problema valeria pra reatribuir "arr =
-   * Node(x)" corromper o rótulo de um array já existente. */
-  _findPointer(name) {
-    return this._findInFrame(
-      this.micro.pointers,
-      (p) => p.label === name && !p.isArrayLabel && !p.isDictLabel && !p.isMatrixLabel,
-    );
+  /** Resolve um nome igual Python: o frame ATUAL primeiro e, se não achar, o
+   * 'global' — uma função enxerga o escopo global + os próprios locais, nunca
+   * os locais de quem a chamou (sem escopo dinâmico). Um nome local, de
+   * qualquer tipo, esconde o global de mesmo nome (o parâmetro "a" de "def
+   * merge(a, b)" não cai numa lista global chamada "a"). */
+  _lookup(name) {
+    const local = this._bindingIn(this.currentFrameId, name);
+    if (local || this.currentFrameId === 'global') return local;
+    return this._bindingIn('global', name);
   }
 
-  _findVariable(name) {
-    return this._findInFrame(this.micro.variables, (v) => v.name === name);
+  /** Coleção (`type` 'array' | 'dict' | 'matrix') que "nome" é, por QUALQUER
+   * caminho válido: o ID dela (referência estável, ver `stableRef`), o nome
+   * CANÔNICO (`.name`) ou um ponteiro que aponta pra ela inteira (um alias
+   * criado por "outro = arr"/"outro = d[chave]", ver `assignName`). É o que
+   * faz vários nomes apontarem pra MESMA coleção (igual struct sempre
+   * permitiu com vários ponteiros) — usado em toda leitura/escrita "por
+   * nome" (getIndex/getLength/arrayAppend/iterateArray/assignDictKey...). */
+  _resolveCollection(type, name) {
+    const map = this._collectionMap(type);
+    const byId = map.get(name);
+    if (byId) return byId;
+    const binding = this._lookup(name);
+    if (binding?.type === type) return binding.node;
+    if (binding?.type === 'pointer' && binding.node.target?.kind === type) return map.get(binding.node.target.id);
+    return undefined;
   }
 
-  _findArray(name) {
-    // O array em si é "heap" (continua visível em qualquer aba), mas o NOME
-    // canônico dele pertence ao frame onde foi criado (`frameId`, ausente =
-    // 'global' — array criado à mão no canvas ou de projeto antigo): sem
-    // isso, "leftHalf = arr[:mid]" numa chamada recursiva acharia o
-    // "leftHalf" da chamada de cima e nunca criaria o seu. Mesma regra de
-    // ponteiro/variável (`_findInFrame`): frame atual, depois o global. Só
-    // pelo nome CANÔNICO (`.name`); leitura/escrita comuns usam
-    // `_resolveArrayByName`.
-    const arrays = Array.from(this.micro.arrays.values());
-    const inFrame = (frameId) => arrays.find((a) => a.name === name && (a.frameId ?? 'global') === frameId);
-    return inFrame(this.currentFrameId) ?? (this.currentFrameId === 'global' ? undefined : inFrame('global'));
+  _collectionMap(type) {
+    return type === 'array' ? this.micro.arrays : type === 'dict' ? this.micro.dicts : this.micro.matrices;
   }
 
-  /** Referência a array que precisa sobreviver a uma troca de frame
-   * (argumento/retorno de função, ver interpreter.js#callFunction): o nome
-   * vira o ID do array, que `_resolveArrayByName` aceita em qualquer frame
-   * (id nunca colide com identificador — tem "-", ver core/id.js). Qualquer
-   * outro valor volta intacto. */
+  _resolveArrayByName(name) {
+    return this._resolveCollection('array', name);
+  }
+
+  _resolveDictByName(name) {
+    return this._resolveCollection('dict', name);
+  }
+
+  _resolveMatrixByName(name) {
+    return this._resolveCollection('matrix', name);
+  }
+
+  /** Coleção viva que um valor tipado referencia ('arrayref', 'matrixref' ou
+   * dict lido de um nome — `sourceName`), ou `undefined`. */
+  _collectionOf(v) {
+    if (v?.kind === 'arrayref') return this._resolveArrayByName(v.name);
+    if (v?.kind === 'matrixref') return this._resolveMatrixByName(v.name);
+    if (v?.kind === 'dict' && v.sourceName) return this._resolveDictByName(v.sourceName);
+    return undefined;
+  }
+
+  /** Referência a coleção que precisa sobreviver a uma troca de frame
+   * (argumento/retorno de função, ver interpreter.js#callFunction; os
+   * valores de "a, b = b, a", ver evaluator.js#assignTuple): o nome vira o ID
+   * da coleção, que `_resolveCollection` aceita em qualquer frame (id nunca
+   * colide com identificador — tem "-", ver core/id.js). Qualquer outro valor
+   * volta intacto. */
   stableRef(value) {
-    if (value?.kind !== 'arrayref') return value;
-    const arr = this._resolveArrayByName(value.name);
-    return arr ? ArrayRefValue(arr.id) : value;
+    const node = this._collectionOf(value);
+    if (!node) return value;
+    if (value.kind === 'arrayref') return ArrayRefValue(node.id);
+    if (value.kind === 'matrixref') return { ...value, name: node.id };
+    return DictValue(value.entries, node.id);
+  }
+
+  /** Valores que o código ainda vai atribuir (ver evaluator.js#assignTuple —
+   * "a, b = b, a" com listas): enquanto valem, as coleções que eles
+   * referenciam contam como "compartilhadas" e não somem quando o primeiro
+   * nome é reatribuído (ver `_isShared`). */
+  holdValues(values) {
+    this.heldValues = values;
   }
 
   /** `ArrayRefValue` de um array já em mãos (célula de dict, "nó.neighbors")
@@ -250,56 +311,12 @@ export class MicroRuntimeAdapter {
     return this._resolveArrayByName(arr.name) === arr ? ArrayRefValue(arr.name) : ArrayRefValue(arr.id);
   }
 
-  /** Resolve "nome" pra um array vivo no modelo por QUALQUER caminho válido:
-   * o ID dele (referência estável, ver `stableRef`), o nome CANÔNICO dele
-   * (`.name`) OU um ponteiro que "aponta" pra ele
-   * (`{kind:'array', id}` — o rótulo automático de todo array criado por
-   * código, OU um alias criado por "outro = arr"/"outro = d[chave]", ver
-   * `assignName`). É o que faz múltiplos nomes apontarem pro MESMO array
-   * (igual struct sempre permitiu com múltiplos ponteiros) — usado em toda
-   * leitura/escrita de array "por nome" (getIndex/getLength/arrayAppend/
-   * arrayPop/iterateArray/assignIndex), nunca na guarda de criação de
-   * `assignName` (essa precisa saber especificamente sobre o nome canônico). */
-  _resolveArrayByName(name) {
-    const byId = this.micro.arrays.get(name);
-    if (byId) return byId;
-    const direct = this._findArray(name);
-    if (direct) return direct;
-    const pointer = this._findInFrame(this.micro.pointers, (p) => p.label === name);
-    return pointer?.target?.kind === 'array' ? this.micro.arrays.get(pointer.target.id) : undefined;
-  }
-
-  _findDict(name) {
-    // dicts não têm frameId — mesma regra de array (ver MicroModel.js).
-    return Array.from(this.micro.dicts.values()).find((d) => d.name === name);
-  }
-
-  /** Resolve "nome" pra um dict vivo no modelo por QUALQUER caminho válido —
-   * mesmo espírito de `_resolveArrayByName`: o nome CANÔNICO dele (`.name`)
-   * OU um ponteiro que aponta pra ele (`{kind:'dict', id}` — o rótulo
-   * automático, OU um alias criado por "outro = dict", ver `assignName`).
-   * Usado em toda leitura/escrita de dict "por nome" (resolveName,
-   * assignDictKey), nunca na guarda de criação de `assignName`. */
-  _resolveDictByName(name) {
-    const direct = this._findDict(name);
-    if (direct) return direct;
-    const pointer = this._findInFrame(this.micro.pointers, (p) => p.label === name);
-    return pointer?.target?.kind === 'dict' ? this.micro.dicts.get(pointer.target.id) : undefined;
-  }
-
-  _findMatrix(name) {
-    // matrizes não têm frameId — mesma regra de array (ver MicroModel.js).
-    return Array.from(this.micro.matrices.values()).find((m) => m.name === name);
-  }
-
-  /** Mesmo espírito de `_resolveArrayByName`: nome canônico OU um ponteiro
-   * que aponta pra matriz inteira (`{kind:'matrix', id}` — rótulo automático
-   * ou alias criado por "outro = m"). */
-  _resolveMatrixByName(name) {
-    const direct = this._findMatrix(name);
-    if (direct) return direct;
-    const pointer = this._findInFrame(this.micro.pointers, (p) => p.label === name);
-    return pointer?.target?.kind === 'matrix' ? this.micro.matrices.get(pointer.target.id) : undefined;
+  /** Valor tipado de um dict vivo: o `Map` reconstruído a partir das células
+   * (leitura sempre "fresca", ver `dictCellsToMap`) e, como `sourceName`, o
+   * nome que leva a ELE aqui (ou o id) — ver `DictValue`/`assignName`. */
+  _dictValue(dict) {
+    const ref = this._resolveDictByName(dict.name) === dict ? dict.name : dict.id;
+    return DictValue(dictCellsToMap(dict.cells, this.micro, (arr) => this._arrayRef(arr)), ref);
   }
 
   _touch(kind, id) {
@@ -309,43 +326,26 @@ export class MicroRuntimeAdapter {
 
   // ---- Environment: leitura ----
 
+  /** Valor de "nome": variável -> o valor; dict -> o `Map` (dict é valor de
+   * primeira classe, ver evaluator.js); ponteiro -> o nó/None, ou o dict pra
+   * onde ele aponta (alias criado por "outro = dict"). Lista e matriz (nome
+   * canônico ou alias) devolvem `undefined` de propósito: não são valores de
+   * primeira classe aqui — o `evaluate` (caso 'Name') cai pros caminhos que
+   * resolvem coleção por nome (`iterateArray`/`matrixInfo`), que enxergam o
+   * mesmo nome via `_resolveCollection`. */
   resolveName(name) {
-    const pointer = this._findPointer(name);
-    if (pointer) {
-      if (pointer.target?.kind === 'struct') return StructRef(pointer.target.id);
-      if (!pointer.target) return NoneValue;
-      if (pointer.target.kind === 'dict') {
-        // ponteiro mirando um dict inteiro — alias criado por "outro = dict"
-        // (ver assignName, caso 'dict' com `sourceName`) ou o rótulo
-        // automático (esse nem chega aqui, já excluído por `_findPointer`).
-        // Dict É representável direto aqui (ao contrário de array — ver
-        // comentário abaixo), então resolve e devolve igual ao caminho do
-        // nome canônico, com `sourceName` marcando de onde veio (permite
-        // encadear "c = outro" depois).
-        const dict = this.micro.dicts.get(pointer.target.id);
-        return dict ? DictValue(dictCellsToMap(dict.cells, this.micro, (arr) => this._arrayRef(arr)), dict.name) : undefined;
-      }
-      // ponteiro mirando um array (inteiro ou uma célula) — ex: um alias
-      // criado por "outro = arr"/"outro = d[chave]" (ver assignName, caso
-      // 'arrayref'; o rótulo automático de array/dict nem chega aqui, já é
-      // excluído por `_findPointer`). Esse valor não é representável aqui
-      // (resolveName só sabe devolver struct/none/scalar/bool/string/dict)
-      // — devolve `undefined` de propósito, não `NoneValue`: deixa o
-      // fallback de `evaluate()` (caso 'Name', ver evaluator.js) ou os
-      // caminhos que resolvem array diretamente por nome
-      // (getIndex/getLength/iterateArray/...) cuidarem disso — eles já
-      // enxergam esse mesmo ponteiro via `_resolveArrayByName`.
-      return undefined;
+    const binding = this._lookup(name);
+    if (!binding) return undefined;
+    const { type, node } = binding;
+    if (type === 'variable') return wrapValue(node.value);
+    if (type === 'dict') return this._dictValue(node);
+    if (type !== 'pointer') return undefined;
+    if (!node.target) return NoneValue;
+    if (node.target.kind === 'struct') return StructRef(node.target.id);
+    if (node.target.kind === 'dict') {
+      const dict = this.micro.dicts.get(node.target.id);
+      return dict ? this._dictValue(dict) : undefined;
     }
-    const variable = this._findVariable(name);
-    if (variable) return wrapValue(variable.value);
-    // dict é valor de primeira classe (ver evaluator.js), mas TAMBÉM tem
-    // entidade visual própria no modelo (irmã de array) — toda leitura
-    // reconstrói um Map novo a partir das `cells` (fonte de verdade fica no
-    // MicroModel, não num Map solto); escrita vai por `assignDictKey`.
-    // `dict.name` como `sourceName` — ver `DictValue`/`assignName`.
-    const dict = this._findDict(name);
-    if (dict) return DictValue(dictCellsToMap(dict.cells, this.micro, (arr) => this._arrayRef(arr)), dict.name);
     return undefined;
   }
 
@@ -575,7 +575,7 @@ export class MicroRuntimeAdapter {
   _refreshDependentCursors(changedName) {
     // só cursores do frame atual (ou globais) — um cursor criado dentro de
     // outra chamada pode depender de um nome igual que é LOCAL daquela
-    // chamada, não desta (ver _findInFrame); recalculá-lo aqui usaria o
+    // chamada, não desta (ver _lookup); recalculá-lo aqui usaria o
     // valor errado.
     Array.from(this.micro.pointers.values())
       .filter(
@@ -804,23 +804,31 @@ export class MicroRuntimeAdapter {
     return stored ?? buildFromItems(values, this.hashSeed);
   }
 
-  /** Grava `table` no set `arr`: células na ordem da tabela + a tabela.
-   * Valores e nós misturados não cabem num array do modelo (é de um tipo
-   * só) — avisa e não grava. `false` se não gravou. */
-  _writeSet(arr, table) {
+  /** Células de um set com a tabela `table`, na ordem dela: `{kind, cells}`
+   * (`emptyKind` se o set está vazio). Valores e nós misturados não cabem
+   * num array do modelo (é de um tipo só) — avisa e devolve `null`. */
+  _setCells(table, emptyKind) {
     const values = tableValues(table);
     const isRef = (v) => v.kind === 'struct' || v.kind === 'none';
     if (values.some(isRef) && !values.every(isRef)) {
       this.warn('Set misturando nós e valores (número/texto) não é suportado.');
-      return false;
+      return null;
     }
-    const kind = values.length > 0 ? (isRef(values[0]) ? 'ref' : 'value') : arr.kind;
+    const kind = values.length > 0 ? (isRef(values[0]) ? 'ref' : 'value') : emptyKind;
     const cells = values.map((v) => (kind === 'value' ? storableRaw(v) : v.kind === 'struct' ? v.id : null));
     if (cells.some((c) => c === undefined)) {
       this.warn('Set com tupla que tem nó dentro ainda não pode ser mostrado — só tuplas de número, texto, bool ou None.');
-      return false;
+      return null;
     }
-    this.micro.setSetContents(arr.id, kind, cells, serializeTable(table));
+    return { kind, cells };
+  }
+
+  /** Grava `table` no set `arr`: células na ordem da tabela + a tabela.
+   * `false` se não gravou (ver `_setCells`). */
+  _writeSet(arr, table) {
+    const contents = this._setCells(table, arr.kind);
+    if (!contents) return false;
+    this.micro.setSetContents(arr.id, contents.kind, contents.cells, serializeTable(table));
     return true;
   }
 
@@ -888,227 +896,298 @@ export class MicroRuntimeAdapter {
 
   // ---- Environment: escrita ----
 
-  /** "nome = valor" — dispatcha pelo que "nome" já é no modelo (ponteiro,
-   * variável ou array mantêm seu tipo; nome desconhecido é criado conforme o
-   * kind do valor). Ignora silenciosamente combinações de tipo incompatíveis
-   * (ex: atribuir um número a um nome que já é ponteiro). */
-  assignName(name, value) {
-    const pointer = this._findPointer(name);
-    if (pointer) {
-      if (value.kind === 'struct' || value.kind === 'none') {
-        this.micro.setPointerTarget(pointer.id, value.kind === 'struct' ? { kind: 'struct', id: value.id } : null);
-      } else if (value.kind === 'arrayref') {
-        // "nome" já é um ponteiro-alias de array (ver caso 'arrayref' mais
-        // abaixo) — reatribuir redireciona ele pra OUTRO array, mesma
-        // liberdade que um ponteiro-pra-struct sempre teve ("p = Node(1); p
-        // = Node(2)" religa `p`, não cria outro ponteiro).
-        const arr = this._resolveArrayByName(value.name);
-        if (!arr) return;
-        this.micro.setPointerTarget(pointer.id, { kind: 'array', id: arr.id });
-      } else if (value.kind === 'matrixref') {
-        // "nome" já é um ponteiro-alias de matriz — redireciona pra outra.
-        const m = this._resolveMatrixByName(value.name);
-        if (!m) return;
-        this.micro.setPointerTarget(pointer.id, { kind: 'matrix', id: m.id });
-      } else if (value.kind === 'dict' && value.sourceName) {
-        // "nome" já é um ponteiro-alias de dict (ver caso 'dict' mais abaixo)
-        // — reatribuir redireciona ele pra OUTRO dict, mesmo espírito de
-        // array/struct logo acima. `value.sourceName` só existe quando o
-        // dict veio de ler outro NOME já vivo no modelo (ver `DictValue`) —
-        // sem ele é um `DictLiteral` novo, incompatível com um ponteiro-alias.
-        const dict = this._resolveDictByName(value.sourceName);
-        if (!dict) return;
-        this.micro.setPointerTarget(pointer.id, { kind: 'dict', id: dict.id });
-      } else {
-        return;
+  /** Conteúdo de array do modelo pra uma lista/set/deque NOVA do avaliador
+   * ('array', 'nodelist', 'set', 'deque' — ver evaluator.js): `{kind, cells,
+   * isSet, hashTable, isDeque, maxlen}`, o formato de
+   * MicroModel#replaceArray. `null` se não cabe num array do modelo (já
+   * avisado no console); `undefined` se `value` não é nenhum desses. */
+  _listSpec(value) {
+    const isRef = (v) => v.kind === 'struct' || v.kind === 'none';
+    const refCell = (v) => (v.kind === 'struct' ? v.id : null);
+    switch (value.kind) {
+      case 'array':
+        return { kind: 'value', cells: [...value.elements] };
+      case 'nodelist':
+        // "fila = [raiz]" / "pai = [None] * n" — lista de referências (cada
+        // célula com o pino até o nó, ou ∅)
+        if (value.items.length > MAX_ARRAY_SIZE) this.warn(`Lista com mais de ${MAX_ARRAY_SIZE} itens — só os ${MAX_ARRAY_SIZE} primeiros aparecem.`);
+        return { kind: 'ref', cells: value.items.map(refCell) };
+      case 'set': {
+        // "s = {1, 2, 3}" / "s = set()" — um array de verdade marcado `isSet`
+        // (desenhado sem índices, com chaves — ver MicroCanvasView). Tudo que
+        // funciona "por nome" em array (len/in/for/sorted/sum...) funciona
+        // igual; o que depende de posição é barrado (ver getIndex/assignIndex
+        // e evaluator.js). Células na ordem da tabela hash (a do Python, ver
+        // pyset.js), com a tabela guardada junto pra "add"/"remove" seguintes
+        // continuarem dela.
+        const table = value.table ?? buildFromItems(value.elements, this.hashSeed);
+        const contents = this._setCells(table, 'value');
+        return contents && { ...contents, isSet: true, hashTable: serializeTable(table) };
       }
-      this._touch('pointer', pointer.id);
-      this._refreshDependentCursors(name);
-      return;
-    }
-
-    const variable = this._findVariable(name);
-    if (variable) {
-      // uma variável já existente pode trocar de tipo (scalar/bool/string/
-      // tupla) entre atribuições — mesmo dinamismo que Python tem de verdade.
-      const raw = this._storableOrWarn(value);
-      if (raw === undefined) return;
-      this.micro.setVariableValue(variable.id, raw);
-      this._touch('variable', variable.id);
-      this._refreshDependentCursors(name);
-      return;
-    }
-
-    // arrays não recebem reatribuição por nome, só criação (abaixo) quando
-    // ainda não existem NESTE frame — um array global com o mesmo nome não
-    // impede uma função de criar o seu local (igual Python).
-    const array = this._findArray(name);
-    if (array && (array.frameId ?? 'global') === this.currentFrameId) return;
-
-    const dict = this._findDict(name);
-    if (dict) return; // mesma regra de array — só criação na primeira atribuição
-
-    const matrix = this._findMatrix(name);
-    if (matrix) return; // mesma regra de array
-
-    if (value.kind === 'scalar' || value.kind === 'bool' || value.kind === 'string' || value.kind === 'tuple') {
-      // tupla vira variável comum, com o texto "(1, 2)" como valor
-      const raw = this._storableOrWarn(value);
-      if (raw === undefined) return;
-      const pos = this.createPosition('variable', undefined, microLayoutKey('variable', { name, frameId: this.currentFrameId }));
-      const node = this.micro.addVariable(pos.x, pos.y, name, raw, this.currentFrameId);
-      this._touch('variable', node.id);
-      // um cursor "nums[i]" pode ter nascido ANTES de "i" (criado à mão, ver
-      // `adoptReadCursor`) — passa a apontar assim que "i" existe
-      this._refreshDependentCursors(name);
-    } else if (value.kind === 'struct' || value.kind === 'none') {
-      const pos = this.createPosition('pointer', undefined, microLayoutKey('pointer', { name, frameId: this.currentFrameId }));
-      const node = this.micro.addPointer(pos.x, pos.y, name, this.currentFrameId);
-      this.micro.setPointerTarget(node.id, value.kind === 'struct' ? { kind: 'struct', id: value.id } : null);
-      this._touch('pointer', node.id);
-    } else if (value.kind === 'array') {
-      // "arr = []" precisa criar um array de VERDADE vazio (0 células), não
-      // um com uma célula fantasma — é o que faz "arr.append(x)" a partir do
-      // zero funcionar certo (ver janela deslizante, plano etapa 4).
-      const size = value.elements.length;
-      const pos = this.createPosition('array', size, microLayoutKey('array', { name, frameId: this.currentFrameId }));
-      const node = this.micro.addArray(pos.x, pos.y, { kind: 'value', orientation: 'horizontal', size, name, frameId: this.currentFrameId });
-      value.elements.forEach((v, i) => this.micro.setArrayCellValue(node.id, i, v));
-      this.onArrayCreated(node);
-      this._touch('array', node.id);
-    } else if (value.kind === 'nodelist') {
-      // "fila = [raiz]" / "pai = [None] * n" — lista de referências (cada
-      // célula com o pino até o nó, ou ∅), mesmo ponteiro-rótulo de array
-      const node = this._newNodeList(value.items, name, microLayoutKey('array', { name, frameId: this.currentFrameId }), this.currentFrameId);
-      this.onArrayCreated(node);
-      this._touch('array', node.id);
-    } else if (value.kind === 'set') {
-      // "s = {1, 2, 3}" / "s = set()" — um array de verdade marcado `isSet`
-      // (desenhado sem índices, com chaves — ver MicroCanvasView), com o
-      // mesmo ponteiro-rótulo de array. Tudo que funciona "por nome" em array
-      // (len/in/for/sorted/sum...) funciona igual; o que depende de posição
-      // é barrado (ver getIndex/assignIndex e evaluator.js). Valores OU nós,
-      // nunca os dois misturados (mesma regra de array).
-      // Células na ordem da tabela hash (a do Python, ver pyset.js), com a
-      // tabela guardada junto pra "add"/"remove" seguintes continuarem dela.
-      const hasRefs = value.elements.some((v) => v.kind === 'struct' || v.kind === 'none');
-      const hasValues = value.elements.some((v) => v.kind !== 'struct' && v.kind !== 'none');
-      if (hasRefs && hasValues) {
-        this.warn('Set misturando nós e valores (número/texto) não é suportado.');
-        return;
+      case 'deque': {
+        // "fila = deque()" / "fila = deque([raiz])" — um array de verdade
+        // marcado `isDeque` (desenhado com índices, como lista, e a marca de
+        // deque — ver MicroCanvasView). Valores OU nós, nunca os dois
+        // misturados (mesma regra de array).
+        const hasRefs = value.elements.some(isRef);
+        if (hasRefs && !value.elements.every(isRef)) {
+          this.warn('Deque misturando nós e valores (número/texto) não é suportado.');
+          return null;
+        }
+        const cells = value.elements.map((v) => (hasRefs ? refCell(v) : storableRaw(v)));
+        if (cells.some((c) => c === undefined)) {
+          this.warn('Deque com lista/dict (ou tupla com nó) dentro ainda não é suportado — só número, texto, bool, tupla, nós ou None.');
+          return null;
+        }
+        if (cells.length > MAX_ARRAY_SIZE) this.warn(`Deque com mais de ${MAX_ARRAY_SIZE} itens — só os ${MAX_ARRAY_SIZE} primeiros aparecem.`);
+        return { kind: hasRefs ? 'ref' : 'value', cells, isDeque: true, maxlen: value.maxlen };
       }
-      if (!hasRefs && value.elements.some((v) => storableRaw(v) === undefined)) {
-        this.warn('Set com tupla que tem nó dentro ainda não pode ser mostrado — só tuplas de número, texto, bool ou None.');
-        return;
-      }
-      const size = value.elements.length;
-      const pos = this.createPosition('array', size, microLayoutKey('array', { name, frameId: this.currentFrameId }));
-      const node = this.micro.addArray(pos.x, pos.y, { kind: hasRefs ? 'ref' : 'value', orientation: 'horizontal', size, name, isSet: true, frameId: this.currentFrameId });
-      this._writeSet(node, value.table ?? buildFromItems(value.elements, this.hashSeed));
-      this.onArrayCreated(node);
-      this._touch('array', node.id);
-    } else if (value.kind === 'deque') {
-      // "fila = deque()" / "fila = deque([raiz])" — um array de verdade
-      // marcado `isDeque` (desenhado com índices, como lista, e a marca de
-      // deque — ver MicroCanvasView), com o mesmo ponteiro-rótulo de array.
-      // Valores OU nós, nunca os dois misturados (mesma regra de array).
-      const isRef = (v) => v.kind === 'struct' || v.kind === 'none';
-      const hasRefs = value.elements.some(isRef);
-      if (hasRefs && !value.elements.every(isRef)) {
-        this.warn('Deque misturando nós e valores (número/texto) não é suportado.');
-        return;
-      }
-      if (!hasRefs && value.elements.some((v) => storableRaw(v) === undefined)) {
-        this.warn('Deque com lista/dict (ou tupla com nó) dentro ainda não é suportado — só número, texto, bool, tupla, nós ou None.');
-        return;
-      }
-      const size = value.elements.length;
-      if (size > MAX_ARRAY_SIZE) this.warn(`Deque com mais de ${MAX_ARRAY_SIZE} itens — só os ${MAX_ARRAY_SIZE} primeiros aparecem.`);
-      const pos = this.createPosition('array', size, microLayoutKey('array', { name, frameId: this.currentFrameId }));
-      const node = this.micro.addArray(pos.x, pos.y, {
-        kind: hasRefs ? 'ref' : 'value',
-        orientation: 'horizontal',
-        size,
-        name,
-        isDeque: true,
-        maxlen: value.maxlen,
-        frameId: this.currentFrameId,
-      });
-      value.elements.slice(0, MAX_ARRAY_SIZE).forEach((v, i) => {
-        if (hasRefs) this.micro.setArrayCellRef(node.id, i, v.kind === 'struct' ? v.id : null);
-        else this.micro.setArrayCellValue(node.id, i, storableRaw(v));
-      });
-      this.onArrayCreated(node);
-      this._touch('array', node.id);
-    } else if (value.kind === 'matrix') {
-      // "m = [[1, 2], [3, 4]]" / "m = [[0] * c for _ in range(l)]" — cria a
-      // matriz de verdade (grade), com ponteiro-rótulo (ver App#_createMatrixLabelPointer).
-      const size = { rows: value.rows.length, cols: value.rows[0]?.length ?? 1 };
-      const pos = this.createPosition('matrix', size, microLayoutKey('matrix', { name }));
-      const node = this.micro.addMatrix(pos.x, pos.y, { name, cells: value.rows });
-      this.onMatrixCreated(node);
-      this._touch('matrix', node.id);
-    } else if (value.kind === 'matrixref') {
-      // "b = m" — ponteiro novo mirando a MESMA matriz (alias, igual "b = arr").
-      const m = this._resolveMatrixByName(value.name);
-      if (!m) return;
-      const pos = this.createPosition('pointer', undefined, microLayoutKey('pointer', { name, frameId: this.currentFrameId }));
-      const node = this.micro.addPointer(pos.x, pos.y, name, this.currentFrameId);
-      this.micro.setPointerTarget(node.id, { kind: 'matrix', id: m.id });
-      this._touch('pointer', node.id);
-    } else if (value.kind === 'dict' && value.sourceName) {
-      // "nome = outroDict" (ver `DictValue#sourceName`) — cria um PONTEIRO
-      // novo mirando o MESMO dict (`{kind:'dict', id}`), nunca copia. Mesmo
-      // comportamento que struct/array já têm pra "p2 = p1"/"b = arr":
-      // vários nomes coexistem apontando pro mesmo dict, sem um roubar o
-      // nome do outro (ver `_resolveDictByName`).
-      const dict = this._resolveDictByName(value.sourceName);
-      if (!dict) return;
-      const pos = this.createPosition('pointer', undefined, microLayoutKey('pointer', { name, frameId: this.currentFrameId }));
-      const node = this.micro.addPointer(pos.x, pos.y, name, this.currentFrameId);
-      this.micro.setPointerTarget(node.id, { kind: 'dict', id: dict.id });
-      this._touch('pointer', node.id);
-    } else if (value.kind === 'dict') {
-      // "d = {...}" — cria a entidade dict de verdade, célula por CHAVE (kind
-      // por célula: valor OU referência a struct, ver MicroModel.js). Um
-      // valor de kind não representável (ex: array/dict aninhado) é
-      // simplesmente descartado — dict visual é "raso" por enquanto.
-      const cells = [];
-      value.entries.forEach((v, key) => {
-        if (v.kind === 'struct') cells.push({ key, kind: 'ref', value: v.id });
-        else if (v.kind === 'none') cells.push({ key, kind: 'ref', value: null });
-        else if (storableRaw(v) !== undefined) cells.push({ key, kind: 'value', value: storableRaw(v) });
-      });
-      const pos = this.createPosition('dict', cells.length, microLayoutKey('dict', { name }));
-      const node = this.micro.addDict(pos.x, pos.y, { orientation: 'horizontal', name, cells });
-      this.onDictCreated(node);
-      this._touch('dict', node.id);
-    } else if (value.kind === 'arrayref') {
-      // "nome = outroArray" / "nome = d[chave]" (célula arrayref, ver
-      // evaluator.js#ArrayRefValue) — cria um PONTEIRO novo mirando o MESMO
-      // array (`{kind:'array', id}`), nunca renomeia nem copia. É o mesmo
-      // comportamento que struct sempre teve (vários ponteiros pro mesmo
-      // struct, ver "p2 = p1" — evaluate(Name) devolve StructRef, assignName
-      // cria outro ponteiro com o mesmo alvo) — agora vale igual pra array,
-      // então "a = arr" e "b = arr" coexistem apontando pro mesmo array, sem
-      // um roubar o nome do outro (ver `_resolveArrayByName`, usado em toda
-      // leitura/escrita de array por nome — resolve tanto pelo nome
-      // CANÔNICO quanto por um ponteiro-alias como este).
-      const arr = this._resolveArrayByName(value.name);
-      if (!arr) return;
-      const pos = this.createPosition('pointer', undefined, microLayoutKey('pointer', { name, frameId: this.currentFrameId }));
-      const node = this.micro.addPointer(pos.x, pos.y, name, this.currentFrameId);
-      this.micro.setPointerTarget(node.id, { kind: 'array', id: arr.id });
-      this._touch('pointer', node.id);
+      default:
+        return undefined;
     }
   }
 
-  /** "d[chave] = valor" — canal dedicado (ver evaluator.js#assign) que
-   * escreve direto na CÉLULA do dict (por chave, criando-a se for nova — ver
-   * MicroModel#setDictCellValue/#setDictCellRef), em vez de reconstruir o
-   * dict inteiro. Tipo do valor decide se a célula vira 'value' ou 'ref',
-   * mesma regra de `assignIndex` pra array (mas por CÉLULA, já que dict
-   * aceita mistura de tipos entre chaves diferentes). */
+  /** A coleção `node` (`type` 'array' | 'dict' | 'matrix') é alcançável por
+   * outro caminho além do próprio nome — outro nome apontando pra ela ("y =
+   * x", parâmetro de uma chamada ainda ativa), célula de dict, lista de
+   * vizinhos de um nó ou um valor ainda por atribuir (`holdValues`)? (Rótulo
+   * e cursor de leitura não contam: são decoração dela.) */
+  _isShared(type, node) {
+    const live = new Set(this.frameStack.map((f) => f.id));
+    for (const p of this.micro.pointers.values()) {
+      if (p.readCursorKey || isLabel(p) || !live.has(p.frameId ?? 'global')) continue;
+      if (p.target?.kind === type && p.target.id === node.id) return true;
+    }
+    if ((this.heldValues ?? []).some((v) => this._collectionOf(v) === node)) return true;
+    if (type !== 'array') return false;
+    for (const d of this.micro.dicts.values()) {
+      if (d.cells.some((c) => c.kind === 'arrayref' && c.value === node.id)) return true;
+    }
+    for (const st of this.micro.structs.values()) {
+      if (st.neighborsArrayId === node.id) return true;
+    }
+    return false;
+  }
+
+  /** Coleção sem nome (o nome não é um identificador: lista de célula de
+   * dict, a antiga de "x = x + [2]" com alias, vizinhos de um nó) que ninguém
+   * mais alcança some do canvas — é o lixo do Python. Chamada depois de
+   * religar/apagar quem apontava pra ela. `target` é o alvo antigo
+   * ({kind, id}) de um ponteiro ou célula. */
+  _dropIfOrphan(target) {
+    if (!target || !['array', 'dict', 'matrix'].includes(target.kind)) return;
+    const node = this._collectionMap(target.kind).get(target.id);
+    if (!node || /^[A-Za-z_]\w*$/.test(node.name) || this._isShared(target.kind, node)) return;
+    this._removeCollection(target.kind, node);
+  }
+
+  /** Apaga uma coleção do modelo — um dict leva junto as listas sem nome das
+   * células dele (ver `_dropIfOrphan`). */
+  _removeCollection(type, node) {
+    if (type === 'array') this.micro.removeArray(node.id);
+    else if (type === 'matrix') this.micro.removeMatrix(node.id);
+    else {
+      const lists = node.cells.filter((c) => c.kind === 'arrayref' && c.value).map((c) => c.value);
+      this.micro.removeDict(node.id);
+      lists.forEach((id) => this._dropIfOrphan({ kind: 'array', id }));
+    }
+  }
+
+  /** Cursores de leitura da lista `arrayId` ("x[i]", "x[-1]") ou da matriz
+   * `matrixId` voltam a apontar pra posição certa depois que o conteúdo foi
+   * trocado. */
+  _refreshCollectionCursors(id) {
+    Array.from(this.micro.pointers.values())
+      .filter((p) => (p.readCursorArrayId === id || p.readCursorMatrixId === id) && (p.frameId === this.currentFrameId || p.frameId === 'global'))
+      .forEach((cursor) => this._recomputeCursor(cursor));
+  }
+
+  /** Que tipo de ligação "nome = valor" cria: 'variable' (número, texto,
+   * bool, tupla), 'pointer' (nó/None), 'alias' (ponteiro pra uma coleção já
+   * viva — "b = a", "d2 = d", "m2 = m"), 'array' (lista/set/deque nova, ver
+   * `_listSpec`), 'dict' (literal) ou 'matrix' (literal). `null` se o valor
+   * não vira nome (range, enumerate...). */
+  _bindingKindOf(value, spec) {
+    if (spec) return 'array';
+    switch (value.kind) {
+      case 'scalar':
+      case 'bool':
+      case 'string':
+      case 'tuple':
+        return 'variable';
+      case 'struct':
+      case 'none':
+        return 'pointer';
+      case 'arrayref':
+      case 'matrixref':
+        return this._collectionOf(value) ? 'alias' : null;
+      case 'dict':
+        if (!value.sourceName) return 'dict';
+        return this._collectionOf(value) ? 'alias' : null;
+      case 'matrix':
+        return 'matrix';
+      default:
+        return null;
+    }
+  }
+
+  /** Alvo de ponteiro pra um valor 'pointer'/'alias' (ver `_bindingKindOf`). */
+  _pointerTarget(value) {
+    if (value.kind === 'struct') return { kind: 'struct', id: value.id };
+    if (value.kind === 'none') return null;
+    const node = this._collectionOf(value);
+    const kind = value.kind === 'arrayref' ? 'array' : value.kind === 'matrixref' ? 'matrix' : 'dict';
+    return { kind, id: node.id };
+  }
+
+  /** "nome = valor", igual Python: "nome" passa a ser `valor`, seja lá o que
+   * era antes (número, nó, lista, dict, matriz...).
+   *
+   * Atribuir só olha o frame ATUAL: dentro de uma função sempre cria/atualiza
+   * um nome LOCAL (a DSL não tem "global"); o global de mesmo nome só é
+   * lido. Sem isso, o parâmetro "raiz" de "def inserir(raiz, v)" reescrevia
+   * o "raiz" global a cada chamada recursiva.
+   *
+   * Se o nome já existe com um tipo que comporta o valor, ele é atualizado
+   * NO LUGAR (ver `_assignInPlace` — mesma caixa do canvas). Senão, a ligação
+   * antiga sai (`_releaseBinding`) e uma nova é criada (`_createBinding`). */
+  assignName(name, value) {
+    const spec = this._listSpec(value);
+    if (spec === null) return; // lista que não cabe no modelo — já avisou
+    const kind = this._bindingKindOf(value, spec);
+    if (!kind) return;
+    let raw;
+    if (kind === 'variable') {
+      raw = this._storableOrWarn(value);
+      if (raw === undefined) return;
+    }
+    const existing = this._bindingIn(this.currentFrameId, name);
+    if (existing && this._assignInPlace(existing, { name, kind, value, spec, raw })) return;
+    const labelPointerId = existing ? this._releaseBinding(existing, kind) : null;
+    this._createBinding({ name, kind, value, spec, raw, labelPointerId });
+    // um cursor "nums[i]" pode depender de "i" (inclusive nascido ANTES de
+    // "i", criado à mão — ver `adoptReadCursor`)
+    this._refreshDependentCursors(name);
+  }
+
+  /** O nome já é algo que recebe o valor sem trocar de tipo: ponteiro
+   * religado, variável com valor novo, coleção reescrita (só se mais
+   * ninguém a enxerga — "x = x + [2]", "d = {}" de novo). `false` se não
+   * deu (aí a ligação é trocada). */
+  _assignInPlace({ type, node }, { name, kind, value, spec, raw }) {
+    if (type === 'pointer' && (kind === 'pointer' || kind === 'alias')) {
+      const previous = node.target;
+      this.micro.setPointerTarget(node.id, this._pointerTarget(value));
+      this._dropIfOrphan(previous);
+      this._touch('pointer', node.id);
+      this._refreshDependentCursors(name);
+      return true;
+    }
+    if (type === 'variable' && kind === 'variable') {
+      this.micro.setVariableValue(node.id, raw);
+      this._touch('variable', node.id);
+      this._refreshDependentCursors(name);
+      return true;
+    }
+    if (type === 'pointer' || type === 'variable') return false;
+    if (kind === 'alias' && this._collectionOf(value) === node) return true; // "x = x"
+    if (kind !== type || this._isShared(type, node)) return false;
+    if (type === 'array') this.micro.replaceArray(node.id, spec);
+    else if (type === 'matrix') this.micro.setMatrixContents(node.id, value.rows);
+    else {
+      const lists = node.cells.filter((c) => c.kind === 'arrayref' && c.value).map((c) => c.value);
+      this.micro.clearDict(node.id);
+      value.entries.forEach((v, key) => this._writeDictCell(node, name, key, v));
+      lists.forEach((id) => this._dropIfOrphan({ kind: 'array', id }));
+    }
+    this._refreshCollectionCursors(node.id);
+    this._touch(type, node.id);
+    return true;
+  }
+
+  /** Tira de "nome" a ligação `binding` (ponteiro/variável saem; uma
+   * coleção some se mais ninguém a enxerga, senão continua viva, sem nome,
+   * pra quem ainda aponta pra ela — "y = x" e depois "x = x + [2]"). Devolve
+   * o ponteiro-rótulo da coleção antiga quando a nova é do MESMO tipo: a
+   * seta "x" passa pra nova (ver `_createBinding`). */
+  _releaseBinding({ type, node }, kind) {
+    if (type === 'pointer') {
+      this.micro.removePointer(node.id);
+      this._dropIfOrphan(node.target);
+      return null;
+    }
+    if (type === 'variable') {
+      this.micro.removeVariable(node.id);
+      return null;
+    }
+    if (!this._isShared(type, node)) {
+      this._removeCollection(type, node);
+      return null;
+    }
+    const label = node.labelPointerId;
+    node.name = node.id; // nunca um identificador
+    if (type === kind && label) return label;
+    if (label) this.micro.removePointer(label);
+    return null;
+  }
+
+  /** Cria a ligação nova de "nome" (ver `assignName`). `labelPointerId`: o
+   * rótulo herdado da coleção antiga de mesmo tipo (ver `_releaseBinding`)
+   * — a coleção nova vai pra um lugar livre do canvas, não pra posição
+   * lembrada pro nome, que é a da antiga. */
+  _createBinding({ name, kind, value, spec, raw, labelPointerId }) {
+    const frameId = this.currentFrameId;
+    const label = labelPointerId && this.micro.pointers.has(labelPointerId) ? labelPointerId : null;
+    const layoutKey = (k) => (label ? null : microLayoutKey(k, { name, frameId }));
+    if (kind === 'variable') {
+      // tupla vira variável comum, com o texto "(1, 2)" como valor
+      const pos = this.createPosition('variable', undefined, microLayoutKey('variable', { name, frameId }));
+      const node = this.micro.addVariable(pos.x, pos.y, name, raw, frameId);
+      this._touch('variable', node.id);
+    } else if (kind === 'pointer' || kind === 'alias') {
+      // "p = Node(1)", "p = None" — ou um alias: "b = a"/"d2 = d"/"m2 = m"/
+      // "x = d[chave]" cria um PONTEIRO novo mirando a MESMA coleção, nunca
+      // copia nem renomeia (igual "p2 = p1" com nós) — vários nomes coexistem
+      // apontando pra ela, sem um roubar o nome do outro (ver
+      // `_resolveCollection`, que resolve pelos dois caminhos).
+      const pos = this.createPosition('pointer', undefined, microLayoutKey('pointer', { name, frameId }));
+      const node = this.micro.addPointer(pos.x, pos.y, name, frameId);
+      this.micro.setPointerTarget(node.id, this._pointerTarget(value));
+      this._touch('pointer', node.id);
+    } else if (kind === 'array') {
+      // lista, lista de nós, set ou deque (ver `_listSpec`) — um array de
+      // verdade, com o ponteiro-rótulo que mostra o nome. "arr = []" cria um
+      // array VAZIO de verdade (0 células), não um com uma célula fantasma —
+      // é o que faz "arr.append(x)" a partir do zero funcionar certo.
+      const pos = this.createPosition('array', spec.cells.length, layoutKey('array'));
+      const node = this.micro.addArray(pos.x, pos.y, { kind: spec.kind, orientation: 'horizontal', size: 0, name, frameId });
+      this.micro.replaceArray(node.id, spec);
+      if (label) this.micro.linkArrayLabelPointer(node.id, label);
+      else this.onArrayCreated(node);
+      this._touch('array', node.id);
+    } else if (kind === 'matrix') {
+      // "m = [[1, 2], [3, 4]]" / "m = [[0] * c for _ in range(l)]" — a
+      // matriz de verdade (grade), com ponteiro-rótulo (ver App#_createMatrixLabelPointer).
+      const size = { rows: value.rows.length, cols: value.rows[0]?.length ?? 1 };
+      const pos = this.createPosition('matrix', size, layoutKey('matrix'));
+      const node = this.micro.addMatrix(pos.x, pos.y, { name, cells: value.rows, frameId });
+      if (label) this.micro.linkMatrixLabelPointer(node.id, label);
+      else this.onMatrixCreated(node);
+      this._touch('matrix', node.id);
+    } else {
+      // "d = {...}" — a entidade dict de verdade, célula por CHAVE, na ordem
+      // do literal, pelo mesmo caminho de "d[chave] = valor" (ver
+      // `_writeDictCell`): valor, nó/None ou lista ("{'a': [1, 2]}" — a
+      // lista vira um array anônimo ligado à célula).
+      const pos = this.createPosition('dict', value.entries.size, layoutKey('dict'));
+      const node = this.micro.addDict(pos.x, pos.y, { orientation: 'horizontal', name, cells: [], frameId });
+      value.entries.forEach((v, key) => this._writeDictCell(node, name, key, v));
+      if (label) this.micro.linkDictLabelPointer(node.id, label);
+      else this.onDictCreated(node);
+      this._touch('dict', node.id);
+    }
+  }
+
   /** `storableRaw` com aviso no console quando é uma tupla que não cabe no
    * modelo (nó/lista dentro) — senão a atribuição sumiria sem explicação. */
   _storableOrWarn(value) {
@@ -1119,57 +1198,74 @@ export class MicroRuntimeAdapter {
     return raw;
   }
 
+  /** "d[chave] = valor" — canal dedicado (ver evaluator.js#assign) que
+   * escreve direto na CÉLULA do dict (ver `_writeDictCell`), em vez de
+   * reconstruir o dict inteiro. */
   assignDictKey(name, key, value) {
     const dict = this._resolveDictByName(name);
-    if (!dict) return;
+    if (dict && this._writeDictCell(dict, name, key, value)) this._touch('dict', dict.id);
+  }
+
+  /** Escreve `valor` na célula `key` do dict `dict` (criando-a se for nova —
+   * ver MicroModel#setDictCellValue/#setDictCellRef) — "d[chave] = valor" e
+   * cada par de um literal "{...}". O tipo do valor decide o tipo da CÉLULA
+   * (dict aceita mistura entre chaves). Uma lista sem nome que a célula
+   * guardava antes e ficou sem ninguém some (`_dropIfOrphan`). `false` se o
+   * valor não cabe numa célula (já avisado, se não for óbvio). */
+  _writeDictCell(dict, name, key, value) {
+    const before = dict.cells.find((c) => c.key === key);
+    const previousList = before?.kind === 'arrayref' ? before.value : null;
+    const written = this._writeDictCellValue(dict, name, key, value);
+    if (written && previousList) this._dropIfOrphan({ kind: 'array', id: previousList });
+    return written;
+  }
+
+  _writeDictCellValue(dict, name, key, value) {
     if (value.kind === 'struct' || value.kind === 'none') {
       this.micro.setDictCellRef(dict.id, key, value.kind === 'struct' ? value.id : null);
-    } else if (value.kind === 'scalar' || value.kind === 'bool' || value.kind === 'string' || value.kind === 'tuple') {
+      return true;
+    }
+    if (value.kind === 'scalar' || value.kind === 'bool' || value.kind === 'string' || value.kind === 'tuple') {
       const raw = this._storableOrWarn(value);
-      if (raw === undefined) return;
+      if (raw === undefined) return false;
       this.micro.setDictCellValue(dict.id, key, raw);
-    } else if (value.kind === 'arrayref') {
+      return true;
+    }
+    if (value.kind === 'arrayref') {
       // "d[chave] = nome" — nome já é um array vivo no modelo (ver
       // evaluator.js#ArrayRefValue); liga a célula a ELE, não copia — mesmo
       // "por referência" que uma lista Python de verdade tem (duas chaves
       // podem apontar pro MESMO array, igual dois ponteiros pro mesmo struct).
       const arr = this._resolveArrayByName(value.name);
-      if (!arr) return;
+      if (!arr) return false;
       this.micro.setDictCellArrayRef(dict.id, key, arr.id);
-    } else if (value.kind === 'array') {
-      // "d[chave] = [1, 2, 3]" — literal: cria um array NOVO (sem ponteiro-
-      // rótulo próprio — ele só é alcançável através da célula do dict,
-      // mesmo espírito anônimo de "Node(valor)" criar um struct sem nome).
-      const pos = this.createPosition('array', value.elements.length, microLayoutKey('array-in-dict', { dictName: name, key }));
-      const node = this.micro.addArray(pos.x, pos.y, {
-        kind: 'value',
-        orientation: 'horizontal',
-        size: value.elements.length,
-        name: `${name}["${key}"]`, // só bookkeeping interno — nunca exibido nem endereçável pelo código (não é um identificador válido)
-      });
-      value.elements.forEach((v, i) => this.micro.setArrayCellValue(node.id, i, v));
-      this.micro.setDictCellArrayRef(dict.id, key, node.id);
-      this._touch('array', node.id);
-    } else if (value.kind === 'nodelist') {
-      // "d[chave] = [no1, no2]" — mesma ideia, lista de referências anônima
-      const node = this._newNodeList(value.items, `${name}["${key}"]`, microLayoutKey('array-in-dict', { dictName: name, key }));
-      this.micro.setDictCellArrayRef(dict.id, key, node.id);
-      this._touch('array', node.id);
-    } else {
-      return;
+      return true;
     }
-    this._touch('dict', dict.id);
-  }
-
-  /** Lista de referências NOVA com os nós/None de um 'nodelist' (ver
-   * evaluator.js) — "fila = [raiz]", "d[k] = [a, b]". Avisa se passar do
-   * tamanho máximo (só os primeiros aparecem). */
-  _newNodeList(items, name, layoutKey, frameId) {
-    if (items.length > MAX_ARRAY_SIZE) this.warn(`Lista com mais de ${MAX_ARRAY_SIZE} itens — só os ${MAX_ARRAY_SIZE} primeiros aparecem.`);
-    const pos = this.createPosition('array', items.length, layoutKey);
-    const node = this.micro.addArray(pos.x, pos.y, { kind: 'ref', orientation: 'horizontal', size: items.length, name, ...(frameId ? { frameId } : {}) });
-    items.slice(0, MAX_ARRAY_SIZE).forEach((v, i) => this.micro.setArrayCellRef(node.id, i, v.kind === 'struct' ? v.id : null));
-    return node;
+    const spec = this._listSpec(value);
+    if (spec === null) return false;
+    if (spec) {
+      // "d[chave] = [1, 2, 3]" / "[no1, no2]" / "set()" / "deque()" — uma
+      // lista NOVA, sem ponteiro-rótulo próprio: só é alcançável pela célula
+      // do dict, mesmo espírito anônimo de "Node(valor)" criar um struct sem
+      // nome.
+      // Nasce no frame do dict (some junto com ele, ver `releaseDeadArrays`);
+      // posição lembrada só pra dict global (um por chamada empilharia).
+      const frameId = dict.frameId ?? 'global';
+      const pos = this.createPosition('array', spec.cells.length, frameId === 'global' ? microLayoutKey('array-in-dict', { dictName: name, key }) : null);
+      const node = this.micro.addArray(pos.x, pos.y, {
+        kind: spec.kind,
+        orientation: 'horizontal',
+        size: 0,
+        name: `${name}["${key}"]`, // só bookkeeping interno — nunca exibido nem endereçável pelo código (não é um identificador válido)
+        frameId,
+      });
+      this.micro.replaceArray(node.id, spec);
+      this.micro.setDictCellArrayRef(dict.id, key, node.id);
+      this._touch('array', node.id);
+      return true;
+    }
+    this.warn(`${name}[${typeof key === 'string' ? `'${key}'` : String(key)}]: um dict só guarda número, texto, bool, tupla, nó, None ou lista — dict dentro de dict e lista de listas ainda não são suportados.`);
+    return false;
   }
 
   /** "structValue.attr = valor" — só prev/next (struct 'list') ou left/right

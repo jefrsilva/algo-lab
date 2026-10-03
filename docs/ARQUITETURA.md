@@ -275,7 +275,8 @@ pointermove (App#_onMicroPointerMoveWindow) → atualiza rascunhos (_microDragPo
 pointerup (App#_onMicroPointerUpWindow) → confirma: move o elemento (e grava microLayout/stepLayout),
    liga o ponteiro (App#_resolveMicroDropTarget → MicroModel#setPointerTarget/setField), cria a
    área/gráfico/label, seleciona…
-dblclick (App#_onMicroDblClick)        → edição in place (dado, célula, nome, texto, eixo)
+dblclick (App#_onMicroDblClick)        → edição in place (dado, célula, nome, texto, eixo);
+                                         numa divisória entre células de array → _splitMicroArray
 contextmenu (App#_onMicroContextMenu)  → popups de configurações (label, coleção via ponteiro-rótulo, gráfico)
 wheel (App#_onMicroWheel)              → zoom
 ```
@@ -400,6 +401,7 @@ Dividido em duas metades:
    - layouts: `arrayLayout`, `dictLayout`, `matrixLayout`, `matrixCellRect`, `chartLayout`;
    - portas e pinos: `structPrevPort`, `structNextPort`, `structNeighborPort`, `structDataRect`, `pointerPort`, `variableValueRect`;
    - puxadores: `arrayHandleRect`, `dictHandleRect`, `matrixHandleRect` (a aba fora da caixa, que serve de alvo de ligação pra coleção inteira e de alça de arraste) e `boxWithHandle`;
+   - divisórias entre células de array: `arrayDividers` (faixa de `ARRAY_DIVIDER_HIT` px, cursor de "dividir"; duplo clique ali cria, abaixo, dois arrays anônimos com as células antes/depois do corte — `App#_splitMicroArray`);
    - anotações: `areaHandles`, `CHART_FUNCTIONS`, `chartNMax`, `chartYMax`.
 2. **A classe `MicroCanvasView`**: `constructor(container)` cria o `<svg>`, os `<defs>` (setas, padrão do grid) e as camadas; `render({...})` recebe as listas já posicionadas; `setViewport`, `screenToWorld`, `getSize`. Os `_render<Tipo>` fazem o diff por id. Não tem lógica de interação nenhuma.
 

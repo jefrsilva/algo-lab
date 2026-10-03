@@ -598,22 +598,39 @@ describe('organizar uma árvore por níveis', () => {
   });
 });
 
-describe('ferramenta Ligar nós de grafo', () => {
+describe('ferramenta Ligar nós', () => {
   const svg = () => $('.micro-canvas');
   /** Ponteiro no ponto (x, y) do MUNDO (ver "alinhar e distribuir"). */
   function evento(alvo, tipo, x, y, opts = {}) {
     const { tx, ty } = app.microViewport;
     alvo.dispatchEvent(new MouseEvent(tipo, { clientX: x + tx, clientY: y + ty, button: 0, bubbles: true, ...opts }));
   }
+  const meio = (n) => ({ x: n.x + 20, y: n.y + 20 });
   /** Arraste do meio de `de` até o meio de `para` (nós ou pontos soltos). */
   function arrastar(de, para, opts = {}) {
-    const meio = (n) => ({ x: n.x + 20, y: n.y + 20 });
     const a = meio(de);
     const b = meio(para);
     evento(svg(), 'pointerdown', a.x, a.y, opts);
     evento(window, 'pointermove', (a.x + b.x) / 2, (a.y + b.y) / 2, opts);
     evento(window, 'pointermove', b.x, b.y, opts);
     evento(window, 'pointerup', b.x, b.y, opts);
+  }
+  /** Clique (sem arraste) no ponto do mundo — com a ferramenta, o gesto
+   * padrão: um clique na origem e outro no destino. */
+  function clicarEm(x, y, opts = {}) {
+    evento(svg(), 'pointerdown', x, y, opts);
+    evento(window, 'pointerup', x, y, opts);
+  }
+  /** Mouse andando sobre o canvas sem botão pressionado. */
+  const pairar = (x, y) => evento(svg(), 'pointermove', x, y, { buttons: 0 });
+  /** Clique na metade esquerda/direita de um nó. */
+  const naEsquerda = (n) => ({ x: n.x + 15, y: n.y + 28 });
+  const naDireita = (n) => ({ x: n.x + STRUCT_W - 15, y: n.y + 28 });
+  function botaoDireito(x, y) {
+    const { tx, ty } = app.microViewport;
+    const ev = new MouseEvent('contextmenu', { clientX: x + tx, clientY: y + ty, button: 2, bubbles: true, cancelable: true });
+    svg().dispatchEvent(ev);
+    return ev;
   }
   /** Dois nós de grafo, como GraphNode(v) — com a lista de vizinhos longe. */
   function doisNos() {
@@ -628,7 +645,16 @@ describe('ferramenta Ligar nós de grafo', () => {
     app._renderMicroOnly();
     return [a, b];
   }
+  /** Dois nós do tipo `tipo` ('list' = Node, 'tree' = TreeNode), soltos. */
+  function doisStructs(tipo) {
+    const a = app.micro.addStruct(0, 0, 1, tipo);
+    const b = app.micro.addStruct(300, 0, 2, tipo);
+    app._renderMicroOnly();
+    return [a, b];
+  }
   const vizinhos = (s) => app.micro.arrays.get(s.neighborsArrayId).cells;
+  const destaque = () => $('.link-source-shape');
+  const destaqueVisivel = () => destaque() && destaque().getAttribute('display') !== 'none';
 
   test('5/L escolhe a ferramenta, e o botão aparece na barra', () => {
     tecla(document.body, '5');
@@ -641,32 +667,71 @@ describe('ferramenta Ligar nós de grafo', () => {
     expect($('.mode-btn.active').title).toMatch(/\(5 \/ L\)$/);
   });
 
-  test('arrastar de A até B liga A→B; repetir desliga', () => {
+  test('clicar em A e depois em B liga A→B; repetir desliga', () => {
     const [a, b] = doisNos();
     tecla(document.body, 'l');
-    arrastar(a, b);
+    clicarEm(meio(a).x, meio(a).y);
+    expect(app._microLinkDraft).toMatchObject({ fromId: a.id, field: null, pending: true });
+    clicarEm(meio(b).x, meio(b).y);
     expect(vizinhos(a)).toEqual([b.id]);
     expect(vizinhos(b)).toEqual([]);
-    expect(app._microGraphLinkDraft).toBeNull();
+    expect(app._microLinkDraft).toBeNull();
+    expect(app.microMode).toBe('link'); // a ferramenta continua escolhida
     expect({ x: a.x, y: a.y }).toEqual({ x: 0, y: 0 }); // o nó não se move
-    arrastar(a, b);
+    clicarEm(meio(a).x, meio(a).y);
+    clicarEm(meio(b).x, meio(b).y);
     expect(vizinhos(a)).toEqual([]);
   });
 
-  test('a seta de rascunho acompanha o arraste e some ao trocar de ferramenta', () => {
+  test('arrastar sem Shift na ferramenta não liga ao soltar — espera o clique no destino', () => {
     const [a, b] = doisNos();
     tecla(document.body, 'l');
-    evento(svg(), 'pointerdown', a.x + 20, a.y + 20);
-    evento(window, 'pointermove', b.x + 20, b.y + 20);
+    arrastar(a, b);
+    expect(vizinhos(a)).toEqual([]);
+    expect(app._microLinkDraft?.pending).toBe(true);
+    clicarEm(meio(b).x, meio(b).y);
+    expect(vizinhos(a)).toEqual([b.id]);
+  });
+
+  test('Shift + arrastar de A até B na ferramenta liga ao soltar; repetir desliga', () => {
+    const [a, b] = doisNos();
+    tecla(document.body, 'l');
+    arrastar(a, b, { shiftKey: true });
+    expect(vizinhos(a)).toEqual([b.id]);
+    expect(app._microLinkDraft).toBeNull();
+    expect({ x: a.x, y: a.y }).toEqual({ x: 0, y: 0 });
+    arrastar(a, b, { shiftKey: true });
+    expect(vizinhos(a)).toEqual([]);
+  });
+
+  test('a seta de rascunho segue o mouse com a ligação pendente e some ao trocar de ferramenta', () => {
+    const [a, b] = doisNos();
+    tecla(document.body, 'l');
+    clicarEm(meio(a).x, meio(a).y);
+    pairar(b.x + 20, b.y + 20);
     const linha = $('.preview-edge-line');
     expect(linha.getAttribute('display')).toBeNull();
     expect(linha.getAttribute('x2')).toBe(String(b.x + 20));
     expect(linha.classList.contains('invalid')).toBe(false);
-    evento(window, 'pointermove', 150, 300);
+    pairar(150, 300);
     expect(linha.classList.contains('invalid')).toBe(true);
     tecla(document.body, 'v');
     expect(linha.getAttribute('display')).toBe('none');
-    evento(window, 'pointerup', b.x + 20, b.y + 20);
+    expect(app._microLinkDraft).toBeNull();
+  });
+
+  test('a seta de rascunho acompanha o Shift + arraste', () => {
+    const [a, b] = doisNos();
+    tecla(document.body, 'l');
+    evento(svg(), 'pointerdown', a.x + 20, a.y + 20, { shiftKey: true });
+    evento(window, 'pointermove', b.x + 20, b.y + 20, { shiftKey: true });
+    const linha = $('.preview-edge-line');
+    expect(linha.getAttribute('display')).toBeNull();
+    expect(linha.getAttribute('x2')).toBe(String(b.x + 20));
+    evento(window, 'pointermove', 150, 300, { shiftKey: true });
+    expect(linha.classList.contains('invalid')).toBe(true);
+    evento(window, 'pointerup', 150, 300, { shiftKey: true });
+    expect(linha.getAttribute('display')).toBe('none');
     expect(vizinhos(a)).toEqual([]);
   });
 
@@ -687,8 +752,8 @@ describe('ferramenta Ligar nós de grafo', () => {
   test('soltar no vazio ou no próprio nó não muda nada', () => {
     const [a] = doisNos();
     tecla(document.body, 'l');
-    arrastar(a, { x: 150, y: 250 });
-    arrastar(a, { x: a.x + 15, y: a.y + 10 });
+    arrastar(a, { x: 150, y: 250 }, { shiftKey: true });
+    arrastar(a, { x: a.x + 15, y: a.y + 10 }, { shiftKey: true });
     expect(vizinhos(a)).toEqual([]);
     expect({ x: a.x, y: a.y }).toEqual({ x: 0, y: 0 });
   });
@@ -698,7 +763,8 @@ describe('ferramenta Ligar nós de grafo', () => {
     tecla(document.body, 'a', { ctrlKey: true });
     expect(app.microSimplifiedNodes).toBe(true);
     tecla(document.body, 'l');
-    arrastar(b, a);
+    clicarEm(meio(b).x, meio(b).y);
+    clicarEm(meio(a).x, meio(a).y);
     expect(vizinhos(b)).toEqual([a.id]);
     expect(vizinhos(a)).toEqual([]);
   });
@@ -708,7 +774,8 @@ describe('ferramenta Ligar nós de grafo', () => {
     const velho = app.micro.addStruct(0, 150, 7, 'graph');
     app._renderMicroOnly();
     tecla(document.body, 'l');
-    arrastar(velho, b);
+    clicarEm(meio(velho).x, meio(velho).y);
+    clicarEm(meio(b).x, meio(b).y);
     expect(velho.neighborsArrayId).not.toBeNull();
     expect(vizinhos(velho)).toEqual([b.id]);
   });
@@ -716,7 +783,8 @@ describe('ferramenta Ligar nós de grafo', () => {
   test('a ligação feita pela ferramenta sobrevive a salvar e carregar', async () => {
     const [a, b] = doisNos();
     tecla(document.body, 'l');
-    arrastar(a, b);
+    clicarEm(meio(a).x, meio(a).y);
+    clicarEm(meio(b).x, meio(b).y);
     let blob = null;
     vi.spyOn(URL, 'createObjectURL').mockImplementation((bl) => {
       blob = bl;
@@ -732,6 +800,167 @@ describe('ferramenta Ligar nós de grafo', () => {
     const a2 = app.micro.structs.get(a.id);
     expect(app.micro.arrays.get(a2.neighborsArrayId).cells).toEqual([b.id]);
     expect(app.micro.arrays.get(app.micro.structs.get(b.id).neighborsArrayId).cells).toEqual([]);
+  });
+
+  test('Node: a metade esquerda liga o prev, a direita o next; repetir desliga', () => {
+    const [a, b] = doisStructs('list');
+    tecla(document.body, 'l');
+    clicarEm(naDireita(a).x, naDireita(a).y);
+    expect(app._microLinkDraft).toMatchObject({ fromId: a.id, field: 'next', pending: true });
+    clicarEm(meio(b).x, meio(b).y);
+    expect(a.next).toBe(b.id);
+    expect(a.prev).toBeNull();
+    clicarEm(naEsquerda(b).x, naEsquerda(b).y);
+    clicarEm(meio(a).x, meio(a).y);
+    expect(b.prev).toBe(a.id);
+    expect(b.next).toBeNull();
+    clicarEm(naDireita(a).x, naDireita(a).y);
+    clicarEm(meio(b).x, meio(b).y);
+    expect(a.next).toBeNull();
+  });
+
+  test('TreeNode: left pela metade esquerda, right pela direita (também no modo simplificado)', () => {
+    const [a, b] = doisStructs('tree');
+    const c = app.micro.addStruct(0, 200, 3, 'tree');
+    tecla(document.body, 'a', { ctrlKey: true });
+    tecla(document.body, 'l');
+    clicarEm(naEsquerda(a).x, naEsquerda(a).y);
+    clicarEm(meio(c).x, meio(c).y);
+    clicarEm(naDireita(a).x, naDireita(a).y);
+    clicarEm(meio(b).x, meio(b).y);
+    expect(a.prev).toBe(c.id); // left (prev físico)
+    expect(a.next).toBe(b.id); // right (next físico)
+  });
+
+  test('Shift + arrastar de um Node liga pelo ponteiro da metade onde começou', () => {
+    const [a, b] = doisStructs('list');
+    tecla(document.body, 'l');
+    const de = naEsquerda(b);
+    evento(svg(), 'pointerdown', de.x, de.y, { shiftKey: true });
+    evento(window, 'pointermove', 100, 30, { shiftKey: true });
+    evento(window, 'pointermove', a.x + 60, a.y + 30, { shiftKey: true });
+    evento(window, 'pointerup', a.x + 60, a.y + 30, { shiftKey: true });
+    expect(b.prev).toBe(a.id);
+    expect(b.next).toBeNull();
+    // no modo Selecionar também
+    tecla(document.body, 'v');
+    const de2 = naDireita(a);
+    evento(svg(), 'pointerdown', de2.x, de2.y, { shiftKey: true });
+    evento(window, 'pointermove', 200, 30, { shiftKey: true });
+    evento(window, 'pointermove', b.x + 60, b.y + 30, { shiftKey: true });
+    evento(window, 'pointerup', b.x + 60, b.y + 30, { shiftKey: true });
+    expect(a.next).toBe(b.id);
+    expect({ x: a.x, y: a.y }).toEqual({ x: 0, y: 0 });
+  });
+
+  test('só liga nós do mesmo tipo', () => {
+    const [a] = doisStructs('list');
+    const t = app.micro.addStruct(0, 200, 9, 'tree');
+    const [g] = doisNos();
+    g.x = 600;
+    app._renderMicroOnly();
+    tecla(document.body, 'l');
+    clicarEm(naDireita(a).x, naDireita(a).y);
+    clicarEm(meio(t).x, meio(t).y);
+    clicarEm(meio(g).x, meio(g).y);
+    expect(a.next).toBeNull();
+    expect(app._microLinkDraft?.pending).toBe(true); // continua esperando um destino válido
+  });
+
+  test('Tab alterna o ponteiro da ligação pendente (prev ↔ next)', () => {
+    const [a, b] = doisStructs('list');
+    tecla(document.body, 'l');
+    clicarEm(naEsquerda(a).x, naEsquerda(a).y);
+    expect(app._microLinkDraft.field).toBe('prev');
+    const ev = tecla(svg(), 'Tab');
+    expect(ev.defaultPrevented).toBe(true);
+    expect(app._microLinkDraft.field).toBe('next');
+    expect(destaque().dataset.field).toBe('next');
+    expect(document.activeElement).not.toBe(app.codeEditor.textarea); // não pulou pro código
+    tecla(svg(), 'Tab');
+    expect(app._microLinkDraft.field).toBe('prev');
+    tecla(svg(), 'Tab');
+    clicarEm(meio(b).x, meio(b).y);
+    expect(a.next).toBe(b.id);
+    expect(a.prev).toBeNull();
+  });
+
+  test('clicar de novo no nó de origem recomeça pela metade clicada', () => {
+    const [a, b] = doisStructs('list');
+    tecla(document.body, 'l');
+    clicarEm(naEsquerda(a).x, naEsquerda(a).y);
+    clicarEm(naDireita(a).x, naDireita(a).y);
+    expect(app._microLinkDraft).toMatchObject({ fromId: a.id, field: 'next', pending: true });
+    clicarEm(meio(b).x, meio(b).y);
+    expect(a.next).toBe(b.id);
+  });
+
+  test('o hover destaca a metade do nó sob o mouse', () => {
+    const [a, b] = doisStructs('list');
+    pairar(naEsquerda(a).x, naEsquerda(a).y);
+    expect(destaqueVisivel()).toBeFalsy(); // fora da ferramenta, nada
+    tecla(document.body, 'l');
+    pairar(naEsquerda(a).x, naEsquerda(a).y);
+    expect(destaqueVisivel()).toBe(true);
+    expect(destaque().dataset.field).toBe('prev');
+    pairar(naDireita(b).x, naDireita(b).y);
+    expect(destaque().dataset.field).toBe('next');
+    expect(app._microLinkHover).toEqual({ id: b.id, field: 'next' });
+    pairar(150, 300);
+    expect(destaqueVisivel()).toBe(false);
+    // com a ligação pendente, o destaque fica no campo de origem
+    clicarEm(naEsquerda(a).x, naEsquerda(a).y);
+    pairar(naDireita(b).x, naDireita(b).y);
+    expect(destaqueVisivel()).toBe(true);
+    expect(destaque().dataset.field).toBe('prev');
+    expect(destaque().getAttribute('d')).toMatch(/^M 34 0 /); // célula prev de `a`
+  });
+
+  test('clicar em espaço vazio volta pra ferramenta Selecionar', () => {
+    const [a] = doisStructs('list');
+    tecla(document.body, 'l');
+    clicarEm(150, 300);
+    expect(app.microMode).toBe('select');
+    // com a ligação pendente também — e ela é descartada
+    tecla(document.body, 'l');
+    clicarEm(naDireita(a).x, naDireita(a).y);
+    clicarEm(150, 300);
+    expect(app.microMode).toBe('select');
+    expect(app._microLinkDraft).toBeNull();
+    expect(a.next).toBeNull();
+  });
+
+  test('clicar num elemento que não é nó não troca de ferramenta', () => {
+    escreverCodigo('nums = [1, 2, 3]');
+    ctrlEnterNaLinha(0);
+    const arr = [...app.micro.arrays.values()].find((n) => n.name === 'nums');
+    const c = arrayLayout(arr).cells[1];
+    tecla(document.body, 'l');
+    clicarEm(arr.x + c.x + c.w / 2, arr.y + c.y + c.h / 2);
+    expect(app.microMode).toBe('link');
+  });
+
+  test('botão direito cancela a ligação pendente e mantém a ferramenta', () => {
+    const [a, b] = doisStructs('list');
+    tecla(document.body, 'l');
+    clicarEm(naDireita(a).x, naDireita(a).y);
+    const ev = botaoDireito(150, 300);
+    expect(ev.defaultPrevented).toBe(true);
+    expect(app._microLinkDraft).toBeNull();
+    expect(app.microMode).toBe('link');
+    expect($('.preview-edge-line').getAttribute('display')).toBe('none');
+    clicarEm(meio(b).x, meio(b).y); // agora é só o começo de outra ligação
+    expect(a.next).toBeNull();
+    expect(app._microLinkDraft).toMatchObject({ fromId: b.id, pending: true });
+  });
+
+  test('Esc cancela a ligação pendente', () => {
+    const [a] = doisStructs('list');
+    tecla(document.body, 'l');
+    clicarEm(naDireita(a).x, naDireita(a).y);
+    tecla(svg(), 'Escape');
+    expect(app._microLinkDraft).toBeNull();
+    expect(app.microMode).toBe('link');
   });
 
   test('Shift + arrasto numa célula de lista continua criando o cursor de leitura', () => {

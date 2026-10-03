@@ -598,6 +598,36 @@ export function structNeighborPort(node, anchor) {
   return structCirclePort(node, anchor, STRUCT_CIRCLE_R);
 }
 
+/** Contorno (atributo `d` de um <path>, em coordenadas do mundo) do campo
+ * de `node` que a ferramenta "Ligar nós" vai usar (ver App#_microLinkFieldAt):
+ * 'prev' (prev/left) ou 'next' (next/right) — a célula daquele lado no modo
+ * detalhado, a metade do círculo no simplificado — ou `null` num nó de grafo,
+ * que liga pela lista "neighbors": a célula "nbrs" (detalhado) ou o círculo
+ * todo (simplificado). Os cantos externos acompanham o arredondamento da
+ * caixa (rx 8), pra o destaque não vazar dela. */
+export function structLinkFieldPath(node, field, simplified) {
+  if (simplified) {
+    const cx = node.x + STRUCT_W / 2;
+    const cy = node.y + STRUCT_H / 2;
+    const r = STRUCT_CIRCLE_R;
+    if (field == null) return `M ${cx} ${cy - r} A ${r} ${r} 0 0 1 ${cx} ${cy + r} A ${r} ${r} 0 0 1 ${cx} ${cy - r} Z`;
+    // metade esquerda (prev/left) desce pelo arco anti-horário, a direita pelo horário
+    return `M ${cx} ${cy - r} A ${r} ${r} 0 0 ${field === 'prev' ? 0 : 1} ${cx} ${cy + r} Z`;
+  }
+  const R = 8;
+  const top = node.y;
+  const bottom = node.y + STRUCT_H;
+  if (field === 'prev') {
+    const left = node.x;
+    const right = node.x + STRUCT_PREV_W;
+    return `M ${right} ${top} L ${left + R} ${top} Q ${left} ${top} ${left} ${top + R} L ${left} ${bottom - R} Q ${left} ${bottom} ${left + R} ${bottom} L ${right} ${bottom} Z`;
+  }
+  // 'next' e "nbrs" do grafo ocupam a mesma célula da direita
+  const left = node.x + STRUCT_PREV_W + STRUCT_DATA_W;
+  const right = node.x + STRUCT_W;
+  return `M ${left} ${top} L ${right - R} ${top} Q ${right} ${top} ${right} ${top + R} L ${right} ${bottom - R} Q ${right} ${bottom} ${right - R} ${bottom} L ${left} ${bottom} Z`;
+}
+
 /** Retângulo clicável/editável do valor `data` — a célula do meio no modo
  * detalhado com prev/next ('list'/'tree'), a célula da ESQUERDA (mais larga,
  * sem célula prev/left antes dela) no modo detalhado 'graph', ou a caixa
@@ -1065,6 +1095,8 @@ export class MicroCanvasView {
     this.dictsLayer = svgEl('g', { class: 'dicts-layer' });
     this.matricesLayer = svgEl('g', { class: 'matrices-layer' });
     this.structsLayer = svgEl('g', { class: 'structs-layer' });
+    // destaque do campo da ferramenta "Ligar nós" (ver `_renderLinkSource`)
+    this.linkSourceLayer = svgEl('g', { class: 'link-source-layer' });
     this.pointersLayer = svgEl('g', { class: 'pointers-layer' });
     this.variablesLayer = svgEl('g', { class: 'variables-layer' });
     this.labelsLayer = svgEl('g', { class: 'labels-layer' });
@@ -1078,6 +1110,7 @@ export class MicroCanvasView {
     this.viewport.appendChild(this.dictsLayer);
     this.viewport.appendChild(this.matricesLayer);
     this.viewport.appendChild(this.structsLayer);
+    this.viewport.appendChild(this.linkSourceLayer);
     this.viewport.appendChild(this.pointersLayer);
     this.viewport.appendChild(this.variablesLayer);
     this.viewport.appendChild(this.labelsLayer);
@@ -1162,6 +1195,8 @@ export class MicroCanvasView {
    * @param edges [{id,x1,y1,targetKind:'struct'|'arrayCell',targetId?,targetArrayId?,targetIndex?,fromStructId?}]
    *   o ponto de chegada (endpoint na borda do alvo) é calculado aqui a partir da posição atual dos nós.
    * @param previewEdge {x1,y1,x2,y2,valid}|null linha tracejada durante um arraste de ligação
+   * @param linkSource {x,y,type,field}|null struct e campo ('prev'|'next'|null pra grafo) que a
+   *   ferramenta "Ligar nós" usa — sob o mouse ou da ligação em andamento, ver `_renderLinkSource`
    * @param labels [{id,x,y,text,color,fontSize,selected,dragging}] labels de texto soltas (modo "Texto")
    * @param selectionRect {x0,y0,x1,y1}|null retângulo de seleção em área em andamento (modo Selecionar)
    * @param areas [{id,x,y,width,height,color,selected,dragging}] áreas hachuradas (modo "Área")
@@ -1190,6 +1225,7 @@ export class MicroCanvasView {
     charts = [],
     edges,
     previewEdge = null,
+    linkSource = null,
     selectionRect = null,
     simplifiedNodes = false,
     fullNames = false,
@@ -1214,6 +1250,7 @@ export class MicroCanvasView {
     this._renderLabels(labels);
     this._renderEdges(edges, structById, arrayById, dictById, simplifiedNodes, matrixById);
     this._renderPreviewEdge(previewEdge);
+    this._renderLinkSource(linkSource, simplifiedNodes);
     this._renderSelectionRect(selectionRect);
 
     const selected =
@@ -1289,6 +1326,24 @@ export class MicroCanvasView {
     this._previewEl.setAttribute('x2', previewEdge.x2);
     this._previewEl.setAttribute('y2', previewEdge.y2);
     this._previewEl.classList.toggle('invalid', previewEdge.valid === false);
+  }
+
+  /** Destaque do campo de origem da ferramenta "Ligar nós" — a metade do
+   * nó sob o mouse (qual ponteiro um clique ali usaria) ou o campo da ligação
+   * em andamento (que Tab alterna). Mesmo padrão de `_renderPreviewEdge`: um
+   * único elemento reaproveitado, escondido quando não há o que mostrar. */
+  _renderLinkSource(linkSource, simplified) {
+    if (!this._linkSourceEl) {
+      this._linkSourceEl = svgEl('path', { class: 'link-source-shape' });
+      this.linkSourceLayer.appendChild(this._linkSourceEl);
+    }
+    if (!linkSource) {
+      this._linkSourceEl.setAttribute('display', 'none');
+      return;
+    }
+    this._linkSourceEl.removeAttribute('display');
+    this._linkSourceEl.setAttribute('d', structLinkFieldPath(linkSource, linkSource.field, simplified));
+    this._linkSourceEl.dataset.field = linkSource.field ?? 'neighbors';
   }
 
   /** Retângulo tracejado do arraste de seleção em área (modo Selecionar,

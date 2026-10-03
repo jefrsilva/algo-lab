@@ -5,7 +5,7 @@ description: Adiciona um novo modo/ferramenta à barra inferior do canvas (como 
 
 # Nova ferramenta (modo da barra inferior)
 
-Fonte da verdade: receita **8.7** de `docs/ARQUITETURA.md` (e 8.10 para o atalho). Gabarito: o modo `chart` ou `area` — `grep -n "'chart'" src/app/App.js`; para uma ferramenta que age sobre um elemento existente (em vez de criar um), o modo `link` (`grep -n "graph-link" src/app/App.js`).
+Fonte da verdade: receita **8.7** de `docs/ARQUITETURA.md` (e 8.10 para o atalho). Gabarito: o modo `chart` ou `area` — `grep -n "'chart'" src/app/App.js`; para uma ferramenta que age sobre um elemento existente (em vez de criar um), o modo `link` (`grep -n "_onMicroLinkPointerDown\|link-drag" src/app/App.js`).
 
 ## Passos
 

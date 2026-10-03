@@ -22,7 +22,7 @@ Automated tests live in `tests/` (Vitest; see [tests/README.md](tests/README.md)
 
 ## Project skills
 
-`.claude/skills/` holds skills (pt-BR) for the recurring tasks, built from the recipes in section 8 of `docs/ARQUITETURA.md`: `novo-builtin-dsl`, `nova-sintaxe-dsl`, `novo-elemento-modelo`, `novo-elemento-anotacao`, `nova-ferramenta`, `nova-quick-action`, `nova-configuracao`, `novo-popup`, `novo-campo-projeto`, plus `verificar-mudanca` (`npm test` + build + headless DSL runs + Playwright smoke test with screenshot) and `sincronizar-docs`. When a recipe changes, update the matching skill too.
+`.claude/skills/` holds skills (pt-BR) for the recurring tasks, built from the recipes in section 8 of `docs/ARQUITETURA.md`: `novo-builtin-dsl`, `nova-sintaxe-dsl`, `novo-elemento-modelo`, `novo-elemento-anotacao`, `nova-ferramenta`, `nova-quick-action`, `nova-configuracao`, `novo-popup`, `novo-campo-projeto`, plus `verificar-mudanca` (`npm test` + build + headless DSL runs + Playwright smoke test with screenshot), `sincronizar-docs` and `triar-issues` (lists the open GitHub issues, bugs first, investigates each in the code and opens one parallel task per issue with a self-contained prompt). When a recipe changes, update the matching skill too.
 
 ## Deploy
 

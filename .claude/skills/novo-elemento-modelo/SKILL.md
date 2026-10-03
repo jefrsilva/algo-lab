@@ -18,7 +18,7 @@ Se o elemento **não** passa pelo interpretador nem pelos snapshots (só desenho
    Para um tipo de nó, use `'tree'`/`'graph'` como gabarito (`grep -rn "'tree'" src`).
 2. Crie uma lista de tarefas a partir do checklist da receita 8.5 (modelo e persistência → execução → render → App → docs) e marque cada item ao concluir. Não pule camadas: um item esquecido costuma aparecer só ao voltar um passo, salvar/carregar ou apagar.
 3. Implemente camada por camada, verificando cada uma antes de seguir:
-   - **Modelo + execução**: `node scripts/run-dsl.mjs prog.py --model` já mostra o elemento no JSON, antes de existir qualquer desenho.
+   - **Modelo + execução**: `node scripts/run-dsl.mjs prog.py --model` já mostra o elemento no JSON, antes de existir qualquer desenho. Fixe isso em testes: CRUD/`toJSON`/`loadFrom` em `tests/core/MicroModel.test.js`, snapshot por passo em `tests/app/MicroProgramRunner.test.js`, código que cria o elemento em `tests/dsl/execucao.test.js`.
    - **Render + App**: smoke no navegador (skill `verificar-mudanca`) e abra o screenshot.
 
 ## Pontos que costumam ser esquecidos

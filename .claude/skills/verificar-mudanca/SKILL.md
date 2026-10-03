@@ -1,19 +1,22 @@
 ---
 name: verificar-mudanca
-description: Verifica uma mudança neste projeto (que não tem testes automatizados) — roda programas da DSL sem navegador com scripts/run-dsl.mjs, faz smoke test no navegador com Playwright (screenshot + console) e confere o build. Use depois de qualquer alteração em src/, antes de commitar, ou quando pedirem para testar/verificar/conferir algo no app.
+description: Verifica uma mudança neste projeto — roda a suíte de testes (npm test), confere o build, roda programas da DSL sem navegador com scripts/run-dsl.mjs e faz smoke test no navegador com Playwright (screenshot + console). Use depois de qualquer alteração em src/, antes de commitar, ou quando pedirem para testar/verificar/conferir algo no app.
 ---
 
 # Verificar uma mudança
 
-O projeto não tem suíte de testes, linter nem type checker. O roteiro de referência é a seção **10. Como verificar uma mudança** de `docs/ARQUITETURA.md`. Esta skill o torna executável. Rode **todos** os passos que se aplicam e relate o resultado com fidelidade (inclusive o que não deu pra verificar).
+O projeto tem uma suíte de testes automatizados em `tests/` (Vitest — ver `tests/README.md`), mas não tem linter nem type checker, e os testes não enxergam o desenho. O roteiro de referência é a seção **10. Como verificar uma mudança** de `docs/ARQUITETURA.md`. Esta skill o torna executável. Rode **todos** os passos que se aplicam e relate o resultado com fidelidade (inclusive o que não deu pra verificar).
 
-## 1. Build (sempre)
+## 1. Testes e build (sempre)
 
 ```bash
+npm test
 npm run build
 ```
 
-Precisa terminar sem erros. Um import quebrado ou erro de sintaxe aparece aqui.
+Os dois precisam terminar sem erros (é o que o CI roda). Um teste de `tests/dsl/bugs-conhecidos.test.js` "falhando" quer dizer que um bug conhecido foi corrigido: troque `test.fails` por `test`.
+
+**Acrescente testes pro que você mudou** — onde cada tipo vai está em `tests/README.md` (built-in/sintaxe da DSL → caso em `tests/dsl/casos.js` com a saída do Python; modelo → `tests/core/`; reprodução → `tests/app/`; fluxo da interface → `tests/ui/App.test.js`). Os testes descartáveis dos passos abaixo (programas no scratchpad, scripts Playwright pontuais) servem pra explorar; o que vale manter vira teste em `tests/`.
 
 ## 2. Linguagem (mexeu em `src/interpreter/`, `MicroRuntimeAdapter`, `MicroModel` ou `MicroProgramRunner`)
 
@@ -26,7 +29,7 @@ node scripts/run-dsl.mjs programa.py --model    # + estado final do MicroModel e
 printf 'x = [3, 1]\nprint(sorted(x))\n' | node scripts/run-dsl.mjs -
 ```
 
-Escreva os programas de teste no scratchpad (não no repo). Cubra, no mínimo:
+Escreva os programas exploratórios no scratchpad (não no repo) e, no fim, passe os casos que valem a pena pra `tests/dsl/`. Cubra, no mínimo:
 
 - o caso feliz, comparando com o que o **Python real** imprimiria (`python3 -c ...` ajuda a conferir);
 - um caso de erro (nome inexistente, índice fora da lista, tipo errado) — deve gerar aviso `⚠` legível em pt-BR ou falhar em silêncio, nunca uma exceção JS;

@@ -35,4 +35,4 @@ Fonte da verdade: receitas **8.1** e **8.2** de `docs/ARQUITETURA.md` — leia-a
 
 ## Verificação
 
-Use a skill `verificar-mudanca`: `npm run build` + `node scripts/run-dsl.mjs` com caso feliz (comparado ao Python real), caso de erro, uso dentro de função recursiva e `--model` se o método muta o modelo. Se mexeu no realce, um smoke no navegador.
+Acrescente um caso em `tests/dsl/casos.js` (programa + saída do Python real) e, pra avisos `⚠`, um em `tests/dsl/execucao.test.js`. Use a skill `verificar-mudanca`: `npm test`, `npm run build` + `node scripts/run-dsl.mjs` com caso feliz (comparado ao Python real), caso de erro, uso dentro de função recursiva e `--model` se o método muta o modelo. Se mexeu no realce, um smoke no navegador.

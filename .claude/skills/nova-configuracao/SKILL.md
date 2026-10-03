@@ -29,4 +29,5 @@ Use `e.code` (tecla física) quando houver Alt (no macOS Alt+C vira "ç"). Atalh
 ## Fechamento
 
 - Docs: `CLAUDE.md` lista as configurações e atalhos do `SettingsDialog` (skill `sincronizar-docs`).
+- Testes: normalização/persistência em `tests/app/settings.test.js`; atalho em `tests/ui/App.test.js` (`tecla(document.body, ...)`).
 - Verificação (skill `verificar-mudanca`): script Playwright pontual — abrir Configurações pelo ☰, mudar a opção, conferir o efeito; usar o atalho e ver a janela refletir; recarregar a página e ver o valor mantido; "Restaurar padrões"; atalho com foco no editor de código (não deve disparar, se for de canvas).

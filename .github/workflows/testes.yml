@@ -1,0 +1,27 @@
+# Roda os testes automatizados (tests/) e o build a cada push e pull request.
+# O deploy continua sendo feito pelo Cloudflare Pages (integração Git) — este
+# workflow só verifica.
+name: Testes
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  testes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      # python3 já vem no runner: tests/dsl/python.test.js confere o gabarito
+      # dos programas contra o Python real
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: npm ci
+      - run: npm test
+      - run: npm run build

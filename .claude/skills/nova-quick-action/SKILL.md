@@ -24,4 +24,5 @@ Fonte da verdade: receita **8.8** de `docs/ARQUITETURA.md`. Veja os comandos exi
 ## Fechamento
 
 - Docs: o `CLAUDE.md` descreve os comandos da paleta (skill `sincronizar-docs`).
+- Testes: em `tests/ui/App.test.js` (seção "ações rápidas"), abrir com Ctrl+Espaço, digitar a abreviação, Enter e conferir o elemento criado.
 - Verificação (skill `verificar-mudanca`): script Playwright pontual — `Control+Space`, digitar a abreviação, Enter, digitar o nome, Enter, screenshot; repetir com Esc (a criação some); abrir pelo menu ☰ (lista completa); tentar durante a Simulação (deve aparecer desabilitado, se for elemento do modelo).

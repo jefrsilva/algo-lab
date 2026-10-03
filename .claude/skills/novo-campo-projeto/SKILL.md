@@ -21,4 +21,4 @@ Fonte da verdade: receita **8.14** de `docs/ARQUITETURA.md` (e 6.5, fluxo de sal
 
 ## Verificação
 
-Skill `verificar-mudanca`. No navegador: criar o estado, salvar, recarregar, carregar e conferir. Também carregar um projeto **sem** o campo (salvo antes da mudança, ou JSON editado removendo-o) e um com valor inválido — nenhum dos dois pode quebrar o carregamento. Para campos do modelo, `node scripts/run-dsl.mjs --model` mostra o `toJSON`.
+Testes: acrescente o campo ao "salvar e carregar projeto" de `tests/ui/App.test.js` e, se for do modelo, à ida e volta e ao "arquivo incompleto" de `tests/core/MicroModel.test.js`. Skill `verificar-mudanca`. No navegador: criar o estado, salvar, recarregar, carregar e conferir. Também carregar um projeto **sem** o campo (salvo antes da mudança, ou JSON editado removendo-o) e um com valor inválido — nenhum dos dois pode quebrar o carregamento. Para campos do modelo, `node scripts/run-dsl.mjs --model` mostra o `toJSON`.

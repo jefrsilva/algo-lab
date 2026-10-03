@@ -1,0 +1,609 @@
+# Arquitetura e referência de código
+
+Guia de onboarding pra quem vai contribuir com o **Visualizador de Estruturas de Dados & Algoritmos**. Ele explica como o sistema é organizado, o que cada módulo e cada arquivo faz, como os dados circulam entre eles e **onde mexer** pra fazer as tarefas mais comuns (novo built-in da linguagem, novo elemento visual, nova ferramenta da barra, nova configuração etc.).
+
+> O documento descreve o código como está hoje. Se você mudar algo estrutural (um fluxo, uma interface entre módulos, uma convenção), atualize também este arquivo e o `CLAUDE.md`.
+
+---
+
+## Sumário
+
+1. [Visão geral](#1-visão-geral)
+2. [Como rodar](#2-como-rodar)
+3. [Mapa do repositório](#3-mapa-do-repositório)
+4. [Arquitetura em camadas](#4-arquitetura-em-camadas)
+5. [Conceitos centrais](#5-conceitos-centrais)
+6. [Fluxos de ponta a ponta](#6-fluxos-de-ponta-a-ponta)
+7. [Referência por arquivo](#7-referência-por-arquivo)
+8. [Receitas: onde mexer pra tarefas comuns](#8-receitas-onde-mexer-pra-tarefas-comuns)
+9. [Convenções e armadilhas](#9-convenções-e-armadilhas)
+10. [Como verificar uma mudança](#10-como-verificar-uma-mudança)
+
+---
+
+## 1. Visão geral
+
+A ferramenta roda inteira no navegador (não tem backend) e serve pra **visualizar o modelo de memória** de programas que manipulam ponteiros e coleções: nós de lista, árvore e grafo, ponteiros, listas, sets, deques, dicionários, matrizes e variáveis escalares, desenhados num canvas SVG com pan e zoom.
+
+Há duas formas de povoar o canvas, e elas convivem:
+
+- **À mão**, no canvas: criar elementos (Ctrl+Espaço → `new pointer`, `new node`…), arrastar pra ligar ponteiros, editar valores com duplo clique.
+- **Por código**, numa linguagem pequena com cara de Python (a "DSL") escrita no painel à direita. São dois modos:
+  - **Sandbox** (interno: `'manual'`): Ctrl+Enter executa só a linha do cursor contra o modelo atual.
+  - **Simulação** (interno: `'run'`): o programa inteiro (com `if`/`while`/`for`/`def`/recursão) é executado de uma vez, e o resultado vira uma reprodução passo a passo (play, pause, voltar e avançar), com árvore de chamadas e console de `print`.
+
+Além dos elementos do modelo, o canvas tem **elementos de anotação**, que só existem no canvas e não fazem parte da execução: labels de texto, áreas hachuradas e gráficos de complexidade Big-O.
+
+**Stack:** JavaScript puro com ES modules, sem framework. O DOM é montado à mão (`document.createElement`) e o SVG com um helper (`svgEl`). O Vite é a única dependência de desenvolvimento; as de runtime são só duas fontes (`@fontsource/*`). Comentários e textos da interface ficam em **português (pt-BR)**, e isso vale também pra código novo.
+
+---
+
+## 2. Como rodar
+
+```bash
+npm install
+npm run dev       # servidor Vite em http://localhost:5173
+npm run build     # build de produção em dist/
+npm run preview   # serve o build de produção localmente
+```
+
+- O repositório **não tem** suíte de testes, linter nem checagem de tipos. Pra verificar uma mudança, rode o app e exercite a funcionalidade no navegador (ver [seção 10](#10-como-verificar-uma-mudança)).
+- `.claude/launch.json` tem configurações prontas de dev server (`algo-visualizer`, porta 5173, e `algo-visualizer-5174`).
+- **Deploy:** Cloudflare Pages via integração Git (não há workflow no repositório). O build é `npm run build`, a saída fica em `dist/` e a versão do Node está fixada em `.node-version`. `public/_headers` vai pra `dist/` e define cache longo pros arquivos com hash em `/assets/*`. O app é servido na raiz do domínio, então `vite.config.js` não define `base`; se um dia for pra um subcaminho (ex.: GitHub Pages), é preciso definir.
+
+---
+
+## 3. Mapa do repositório
+
+```
+index.html                  página única; aplica o tema salvo antes do 1º paint e carrega os CSS
+vite.config.js              config mínima do Vite (porta 5173, saída em dist/)
+public/_headers             cabeçalhos de cache do Cloudflare Pages
+src/
+  main.js                   ponto de entrada: importa as fontes, aplica o tema, faz `new App(root)`
+  app/                      orquestração (estado de topo e "cola" entre as camadas)
+    App.js                  a classe App: monta a UI, guarda todo o estado de topo, trata gestos e teclado, renderiza
+    MicroRuntimeAdapter.js  implementa a interface Environment do interpretador em cima do MicroModel
+    MicroProgramRunner.js   motor da Simulação: roda o programa, tira snapshots, controla a reprodução
+    microLayoutKey.js       chave estável (por nome) pra lembrar a posição dos elementos entre execuções
+    settings.js             preferências do usuário (localStorage, um objeto só)
+    theme.js                tema escuro/claro (data-theme no <html>)
+  core/
+    id.js                   nextId(prefix): gerador único de ids
+    micro/MicroModel.js     o modelo de dados (structs, ponteiros, arrays, dicts, matrizes, variáveis)
+  interpreter/              a linguagem: puro, não conhece o MicroModel nem o DOM
+    lexer.js                tokeniza UMA linha
+    parser.js               recursive descent: uma linha vira um nó de AST
+    blockParser.js          programa inteiro: blocos por indentação, if/while/for/def
+    ast.js                  construtores dos nós de AST (objetos planos)
+    interpreter.js          runProgram: generator que executa e faz `yield` de um passo por ação
+    evaluator.js            evaluate/assign: semântica das expressões e atribuições, valores tipados, built-ins
+    format.js               mini-linguagem de formatação de f-string ({x:>8.2f})
+    pyset.js                tabela hash de set idêntica ao CPython 3.11 (ordem dos elementos)
+    pytuple.js              tupla imutável e "internada" (guardável no modelo, usável como chave)
+  render/
+    MicroCanvasView.js      renderizador SVG + constantes de geometria + funções de layout e de "portas"
+    svgUtils.js             svgEl(tag, attrs)
+  ui/                       widgets de interface independentes, instanciados e ligados pelo App
+    CodeEditor.js  CallTree.js  PlaybackControls.js  ConsoleWindow.js  ModeToolbar.js
+    QuickActionPalette.js  AppMenu.js  SettingsDialog.js  Dialog.js  CanvasTitle.js
+    NodePopup.js  ArraySettingsPopup.js  LabelSettingsPopup.js  ChartSettingsPopup.js
+    InlineValueEditor.js  fitPopup.js
+  styles/
+    variables.css           tokens de cor e tipografia (tema escuro + override do claro)
+    main.css                layout base da página
+    canvas.css              tudo que é desenhado no SVG (nós, setas, destaques, cores manuais)
+    controls.css            botões, popups, menu, diálogos, barra de modos, quick actions
+    codeEditor.css          painel de código, divisórias, barra de reprodução, árvore de chamadas, console
+```
+
+Tamanho aproximado (linhas): `App.js` ~4500, `MicroCanvasView.js` ~2300, `evaluator.js` ~2050, `MicroRuntimeAdapter.js` ~1200, `CodeEditor.js` ~900, `MicroModel.js` ~740. Os demais têm poucas centenas de linhas ou menos.
+
+---
+
+## 4. Arquitetura em camadas
+
+```mermaid
+flowchart TB
+  subgraph UI["Interface (src/ui) — widgets independentes"]
+    CE[CodeEditor]
+    PC[PlaybackControls]
+    CT[CallTree]
+    CW[ConsoleWindow]
+    POP[Popups / InlineValueEditor / QuickActionPalette / SettingsDialog]
+  end
+
+  subgraph APP["Orquestração (src/app)"]
+    A[App.js<br/>estado de topo, gestos, teclado, render]
+    R[MicroProgramRunner<br/>passos + snapshots]
+    AD[MicroRuntimeAdapter<br/>Environment sobre o modelo]
+    S[settings.js / theme.js]
+  end
+
+  subgraph INT["Linguagem (src/interpreter) — puro"]
+    BP[blockParser] --> P[parser] --> L[lexer]
+    I[interpreter.runProgram] --> E[evaluator]
+  end
+
+  subgraph CORE["Modelo (src/core)"]
+    M[MicroModel]
+  end
+
+  subgraph REN["Render (src/render)"]
+    V[MicroCanvasView<br/>SVG sem lógica de interação]
+  end
+
+  CE -- "linha (AST) / programa (texto)" --> A
+  A --> R
+  R --> BP
+  R --> I
+  A -- "Sandbox: evaluate/assign" --> E
+  I --> E
+  E -- "interface Environment" --> AD
+  AD --> M
+  A -- "edição manual" --> M
+  A -- "estado já posicionado" --> V
+  A --> UI
+```
+
+As regras de dependência que mantêm isso de pé:
+
+| Camada | Pode importar | Não pode conhecer |
+|---|---|---|
+| `interpreter/` | só arquivos de `interpreter/` | `MicroModel`, DOM, SVG, `App` |
+| `core/` | `core/id.js` e `interpreter/pytuple.js` (pra reviver tuplas no `loadFrom`) | renderização, interpretador, DOM |
+| `render/` | `svgUtils.js` | o modelo como classe, o `App`, eventos. Recebe objetos simples já posicionados |
+| `ui/` | `fitPopup.js`, `settings.js`, constantes de `render/`, parser (no `CodeEditor`) | o `MicroModel` (comunica por callbacks) |
+| `app/` | tudo | — |
+
+A peça que desacopla a linguagem do modelo é a **interface `Environment`** (duck typing, documentada no topo de `evaluator.js`). O avaliador só chama métodos como `resolveName`, `assignName`, `getAttr`, `getIndex`, `arrayAppend`… e quem os implementa sobre o `MicroModel` é o `MicroRuntimeAdapter`.
+
+---
+
+## 5. Conceitos centrais
+
+### 5.1 O modelo (`MicroModel`)
+
+São seis `Map`s indexados por id. Nenhum elemento sabe se desenhar.
+
+| Map | Forma (campos principais) | Observações |
+|---|---|---|
+| `structs` | `{id, x, y, data, type:'list'\|'tree'\|'graph', next, prev, neighborsArrayId}` | `type` só muda os **nomes** dos campos expostos (`next/prev` ↔ `left/right`). Fisicamente sempre são `next`/`prev`. Um nó `graph` guarda os vizinhos num array `kind:'ref'` à parte (`neighborsArrayId`). |
+| `pointers` | `{id, x, y, label, target, frameId}` | `target`: `null` ou `{kind:'struct', id}` \| `{kind:'arrayCell', arrayId, index}` \| `{kind:'array', id}` \| `{kind:'dictCell', dictId, key}` \| `{kind:'dict', id}` \| `{kind:'matrixCell', matrixId, row, col}` \| `{kind:'matrix', id}`. |
+| `arrays` | `{id, x, y, kind:'value'\|'ref', orientation, cells, name, frameId, labelPointerId?, isSet?, hashTable?, isDeque?, maxlen?}` | Listas, sets e deques são arrays (sets e deques são marcados com uma flag). Até `MAX_ARRAY_SIZE` (24) células. |
+| `dicts` | `{id, x, y, orientation, cells: {key, kind:'value'\|'ref'\|'arrayref', value}[], name, labelPointerId?}` | O `kind` é **por célula** (um dict pode misturar valores e nós). |
+| `matrices` | `{id, x, y, name, cells: valor[][], labelPointerId?}` | Grade retangular só de valores. |
+| `variables` | `{id, x, y, name, value, frameId}` | `value`: `number`, `string`, `boolean` ou `PyTuple`. |
+
+Pontos importantes:
+
+- **Heap × frames.** Structs, arrays, dicts e matrizes são o "heap" compartilhado e aparecem em qualquer aba. Ponteiros e variáveis têm `frameId` (`'global'` ou o id de uma chamada), e só os do frame em exibição (mais os globais) são desenhados. O `frameId` de um array diz só a qual frame pertence o **nome** dele.
+- **Ponteiro-rótulo.** Arrays, dicts e matrizes não têm barra de título. O nome aparece num ponteiro dedicado (`isArrayLabel`/`isDictLabel`/`isMatrixLabel`) que aponta pra coleção inteira. O botão direito nesse ponteiro abre o popup de configurações da coleção.
+- **Cursor de leitura.** Ler `nums[i]` no código cria (ou move) um ponteiro especial com `readCursorKey = "nums[i]"`, que aponta pra célula lida e é recalculado quando `i` muda (`MicroRuntimeAdapter#_showReadCursor` e `_refreshDependentCursors`). Cursores são excluídos do `toJSON` e reaparecem quando o código roda de novo.
+- **Integridade referencial.** Os métodos `remove*` anulam referências pendentes (ponteiros e células que apontavam pro elemento removido). Sempre use a API do `MicroModel` em vez de mexer nos `Map`s direto.
+- **Serialização.** `toJSON()`/`loadFrom()` preservam os ids, já que as referências são por id, e toleram arquivos malformados ou de outras versões.
+
+### 5.2 Valores tipados (avaliador)
+
+Dentro do interpretador, todo valor é `{kind, ...}`: `scalar`, `string`, `bool`, `none`, `struct` (referência por id), `tuple`, `dict` (um `Map` vivo), `array`/`nodelist`/`set`/`deque`/`matrix` (literais de vida curta que viram elementos do modelo ao serem atribuídos), `arrayref`/`matrixref`/`matrixrow` (referências a coleções vivas no modelo), `range`, `iter`, `pairs`. A lista completa e comentada fica no topo de `evaluator.js`.
+
+`evaluate` devolve **`undefined`** quando algo não resolve (nome desconhecido, índice inválido, chamada não suportada). É o mecanismo de "ignora a linha": no Sandbox, a linha pisca vermelha; na Simulação, o passo é contado e nada muda. Avisos legíveis vão pro console via `env.warn(...)`.
+
+### 5.3 A interface `Environment`
+
+É o contrato entre `evaluator.js`/`interpreter.js` e o mundo. Os métodos essenciais são `resolveName`, `assignName`, `getAttr`, `assignAttr`, `getIndex`, `assignIndex`, `getLength`, `createStruct`, `arrayAppend`, `arrayPop`, mais opcionais pra cada recurso (`iterateArray`, `print`, `matrixInfo`, `getMatrixCell`, `isSet`, `setAdd`, `isDeque`, `dequeSetItems`, `assignDictKey`, `warn`, `hashSeed`…) e os de recursão (`pushFrame`, `popFrame`, `currentFrameId`, `stableRef`, `releaseDeadArrays`). O avaliador testa a presença dos opcionais (`env.warn?.(...)`).
+
+**Regra prática:** se você adicionar um recurso à linguagem que precise ler ou escrever o modelo, ele entra como um método novo na interface, implementado em `MicroRuntimeAdapter`.
+
+### 5.4 Passos, snapshots e reprodução
+
+`runProgram` é um **generator**. Cada `yield` é um passo `{line, kind, activeFrameId, callTree}`, com `kind` sendo `'assign'`, `'expr'`, `'test-true'`/`'test-false'`, `'for-bind'`, `'return'`, `'break'`, `'continue-stmt'` ou `'limit'`. O `MicroProgramRunner` consome o generator **inteiro** no "Rodar" e, depois de cada passo, guarda:
+
+- `touched`: os elementos lidos ou escritos naquele passo (pro destaque);
+- `snapshot`: cópia dos dados **lógicos** do modelo, sem `x`/`y` e sem orientação;
+- `output`: as linhas de `print` até ali.
+
+Navegar entre passos **restaura um snapshot**, ou seja, troca os `Map`s do `MicroModel`. As posições ficam fora dos snapshots (`positions`, e `stepLayout` com quadros-chave por passo), assim o usuário pode arrastar elementos durante a reprodução sem que voltar um passo "puxe" tudo de volta.
+
+Há duas guardas: `MAX_STEPS = 2000` (loop infinito) e `MAX_CALL_DEPTH = 200` (recursão sem caso base).
+
+### 5.5 Identidade estável × id
+
+Ids (`nextId`) nunca se repetem: cada "Rodar" recria os elementos com ids novos. Tudo que precisa sobreviver entre execuções usa uma **chave estável**:
+
+- `App#microLayout`: posição escolhida pelo usuário, por chave de `microLayoutKey.js` (`pointer:global:head`, `array:nums`, `cursor:nums[i]`…). Nunca é limpo entre execuções, só ao criar ou carregar um projeto.
+- `MicroProgramRunner#stepLayout`: quadros-chave de posição por passo, com chave do tipo `array:call:leftHalf#2`.
+- `App#microWindows`: janelas deslizantes, por chave de cursor (`nums[l]`).
+
+Já `App#microColors` (cor manual) é por **id**, e funciona porque os snapshots preservam os ids dentro de uma execução.
+
+### 5.6 Elementos do modelo × elementos de anotação
+
+| | Elementos do modelo | Elementos de anotação |
+|---|---|---|
+| Onde ficam | `MicroModel` | `App#microLabels`, `App#microAreas`, `App#microCharts` |
+| Afetados pela reprodução | sim (snapshots) | não |
+| Acessíveis pelo código | sim | não |
+| Criáveis durante a Simulação | não (sumiriam no próximo passo) | sim |
+| Salvos no projeto | `project.micro` | `project.labels/areas/charts` |
+
+---
+
+## 6. Fluxos de ponta a ponta
+
+### 6.1 Sandbox: Ctrl+Enter numa linha
+
+```
+CodeEditor#_handleGenerateFromLine
+  ├─ "if/elif/while cond:" → parseExpression → App#_evaluateCondition (escreve "> True"/"> False" no console)
+  └─ demais → parseStatement(linha) → App#_executeStatement(ast)
+        evaluate(ast.value, microRuntime) + assign(ast.target, valor, microRuntime)
+          └─ MicroRuntimeAdapter muta o MicroModel e registra `touched`; cada toque chama onChange → render
+        App#_applyMicroTouchHighlight(touched) → App#_renderMicroOnly()
+  └─ flashLine verde (ok) / vermelho (erro de sintaxe ou exceção)
+```
+
+No Sandbox não há `def`, `if` com bloco nem loops: é uma linha por vez.
+
+### 6.2 Simulação: "▶ Rodar"
+
+```
+CodeEditor (modo 'run') → onRun(código) → App#_runMicroProgram
+  → MicroProgramRunner#run(source, microRuntime)
+       parseProgram(source)               (erro → runner.error → barra mostra "Erro de sintaxe (linha N)")
+       for (step of runProgram(program, functions, env)):
+           snapshot + touched + output    (um registro por passo)
+       _restore(steps[0])
+  → onChange → App#_renderMicroOnly → _renderMicroRunBar (PlaybackControls + linha em execução no editor)
+
+PlaybackControls / Ctrl+, / Ctrl+.  → MicroProgramRunner#goToStep(i) → _restore(snapshot) → onSelect(touched) + onChange
+```
+
+Durante `runProgram`, uma chamada a uma função do usuário passa por `callFunction`: `env.pushFrame(label)`, bind dos parâmetros via `env.assignName`, `yield* execBlock(corpo)`, `env.popFrame()` e `env.releaseDeadArrays(...)`, que remove as listas locais que não foram devolvidas. A árvore de chamadas (`callTree`) só cresce e vai junto em cada passo. O `App` usa `activeFrameId` pra decidir quais ponteiros e variáveis mostrar, e o `CallTree` permite trocar a aba manualmente (`App#manualFrameId`).
+
+### 6.3 Interação no canvas (gestos)
+
+Todo o tratamento de entrada fica no `App`. O hit testing é feito **contra o modelo**, não contra o DOM: as funções `_findMicro*At(worldPt)` usam as mesmas funções de geometria que o renderizador (`arrayLayout`, `pointerWidth`, `structNextPort`…).
+
+```
+pointerdown (App#_onMicroPointerDown)
+   decide o tipo do gesto e grava this._microPointer = { hit: 'pan' | 'text-canvas' | 'area-create'
+     | 'chart-create' | 'area-resize' | 'port' | 'node' | 'areaselect' | ... , downScreen, worldPtDown, ... }
+   e registra pointermove/pointerup na window
+pointermove (App#_onMicroPointerMoveWindow) → atualiza rascunhos (_microDragPos, _microAreaDraft,
+   _microChartDraft, _microPortDrag, _microSelectionPreview) → render
+pointerup (App#_onMicroPointerUpWindow) → confirma: move o elemento (e grava microLayout/stepLayout),
+   liga o ponteiro (App#_resolveMicroDropTarget → MicroModel#setPointerTarget/setField), cria a
+   área/gráfico/label, seleciona…
+dblclick (App#_onMicroDblClick)        → edição in place (dado, célula, nome, texto, eixo)
+contextmenu (App#_onMicroContextMenu)  → popups de configurações (label, coleção via ponteiro-rótulo, gráfico)
+wheel (App#_onMicroWheel)              → zoom
+```
+
+Pan: botão do meio, ou botão direito com Espaço pressionado. Clique simples só seleciona; toda edição in place abre com duplo clique; Delete/Backspace remove.
+
+### 6.4 Render
+
+`App#_renderMicroOnly()` é **o** render. Ele é chamado depois de praticamente qualquer mudança e:
+
+1. renderiza a `ModeToolbar`;
+2. calcula o frame ativo, os destaques (seleção, `touched` do passo, alvos "linkados" dos ponteiros destacados, janelas deslizantes) e o que está fora de escopo (fica esmaecido);
+3. monta arrays de objetos simples de render, um por tipo de elemento, já com posição (incluindo arraste em andamento), flags (`selected`, `dragging`, `cursor`, `linked*`…) e âncoras de setas;
+4. monta a lista de `edges` (setas) com origem e alvo;
+5. chama `this.microView.render({...})`;
+6. atualiza o `CodeEditor` (nomes conhecidos), o `CallTree`, a barra de reprodução (`_renderMicroRunBar`) e o console (`_renderMicroConsole`);
+7. registra `_microInertIds` (o que não está desenhado ou está esmaecido não recebe clique, ver `_microPickable`).
+
+`MicroCanvasView#render` faz um **diff por id**: cada `_render<Tipo>` mantém um `Map<id, <g>>`, remove os que sumiram, cria os novos e atualiza atributos e classes dos existentes. As camadas SVG, de trás pra frente, são: grid → áreas → gráficos → setas → arrays → dicts → matrizes → structs → ponteiros → variáveis → labels → alças de redimensionamento.
+
+### 6.5 Salvar e carregar projeto
+
+`App#_saveProject` baixa um `.json` `{format:'algo-visualizer-project', version:1, title, code, micro: MicroModel#toJSON(), labels, areas, charts, windows, colors, layout, stepLayout}`. `App#_loadProject` → `_readProjectFile` (valida) → `_applyLoadedProject` (pede confirmação se houver conteúdo, repõe tudo e reenquadra a vista).
+
+### 6.6 Configurações
+
+Preferências de tela (não do projeto) ficam num único objeto do localStorage (`algo-visualizer:settings`), gerenciado por `settings.js` (`getSetting`/`setSetting` com validação). **Toda** mudança passa por `App#_applySetting(key, value)`, seja vinda da janela `SettingsDialog`, seja de um atalho (G, N, C, Alt+C, Ctrl+A, Ctrl+H).
+
+---
+
+## 7. Referência por arquivo
+
+### 7.1 Entrada e infraestrutura
+
+| Arquivo | Responsabilidade |
+|---|---|
+| `index.html` | Página única. Um script inline aplica `data-theme="light"` antes do primeiro paint, pra evitar o flash do tema escuro. Carrega os 5 CSS e `src/main.js`. |
+| `src/main.js` | Importa as fontes embarcadas (Atkinson Hyperlegible Next na interface, JetBrains Mono no código e no canvas), aplica o tema salvo e faz `new App(document.getElementById('app'))`. |
+| `src/core/id.js` | `nextId(prefix)` → `"prefix-<contador>-<aleatório>"`. É o **único** gerador de ids. |
+| `src/render/svgUtils.js` | `svgEl(tag, attrs)` cria um elemento SVG com namespace e ignora atributos `null`/`undefined`. |
+
+### 7.2 `src/app/`
+
+**`App.js`**: o orquestrador, monolítico de propósito. Lê-se por seção (procure os comentários `// ---- ... ----`), não de ponta a ponta.
+
+| Seção / métodos | O que faz |
+|---|---|
+| Constantes de topo | `MICRO_MODES` (barra de ferramentas), paletas (`AREA_COLORS`, `TEXT_COLORS`, `ELEMENT_COLORS`), padrões de gráfico e label. |
+| `constructor` | Todo o estado de topo: `micro`, viewport, modo, seleção (`microSelectedId` + `microSelectedIds`), anotações (`microLabels/Areas/Charts`), `microColors`, `microWindows`, `microLayout`, destaques de execução, `manualFrameId`, estado de gestos (`_microPointer`, `_microDrag*`…). |
+| `_buildLayout` | Cria o DOM (canvas, painel de código, árvore de chamadas, divisórias) e instancia **todos** os widgets, ligando os callbacks. Também cria o `MicroRuntimeAdapter` e o `MicroProgramRunner`. |
+| `_onKeyDown` / `_onKeyUp` | Todos os atalhos globais (Tab → código, Ctrl+,/. passos, Ctrl+H, Ctrl+Espaço, Ctrl+A, Delete, Alt+dígito cor, Enter, Alt+C, 1-4/V/T/R/B modos, G, N, C). A ordem dos `if` importa: alguns valem mesmo digitando, outros não (`isTyping`). |
+| Configurações | `_settingsValues`, `_applySetting`, `_resetSettings`. |
+| Cores | `_paletteIndexFromKey`, `_applyMicroPaletteColor`. |
+| Viewport | `_resetMicroViewport`, `_fitMicroViewport`, `_onMicroWheel`, `_microWorldToScreen`… |
+| Projeto | `_newProject`, `_saveProject`, `_loadProject`, `_readProjectFile`, `_applyLoadedProject`. |
+| Criação e posicionamento | `_microCreatePosition(kind, size, layoutKey)` (posição lembrada ou primeira posição livre perto do centro), `_microOccupiedRects`, `_findFreeMicroPosition`, `_create{Array,Dict,Matrix}LabelPointer`. |
+| Execução | `_executeStatement`, `_evaluateCondition`, `_runMicroProgram`, `_onCodeEditorModeChange`, `_applyMicroTouchHighlight`, `_onSelectCallFrame`, `_microOutOfScopeIds`. |
+| Popups de edição | `_openMicroDataPopup`, `_openMicroVariablePopup`, `_openMicro{Array,Dict,Matrix}CellPopup`, `_openMicro{Array,Dict,Matrix}SettingsPopup`, `_openMicroLabelSettingsPopup`, `_openMicroChartSettingsPopup`. |
+| Elementos por id | `_microNodeMaps`, `_microFindById`, `_microRemoveById`, `_deleteMicroSelection`, `_microSetNodePos`, `_microNodePos`, `_microFindIdsInRect`, `_microLayoutKeyForLiveNode`. |
+| Hit testing | `_microPickable`, `_findMicro{Struct,Pointer,Variable,Array,ArrayCell,Dict,DictCell,Matrix,MatrixCell,Label,Area,Chart}At`, `_findMicroPortAt`, `_resolveMicroDropTarget`. |
+| Áreas e gráficos | `_snapMicroArea`, `_microAreaRectFromDrag`, `_microAreaResizedRect`, `_createMicroArea`, `_createMicroChart`. |
+| Seleção múltipla e janelas | `_toggleMicroSelection`, `_quickNewSlidingWindow`, `_microWindowPartner`, `_microWindowRange`. |
+| Quick actions | `_openQuickActions` (lista de comandos) e `_quickNew*` (um por comando), `_editMicroNameInPlace`, `_quickDiscard`. |
+| Cursores por gesto | `_findMicroCursorCellAt`, `_createMicroIndexCursor`, `_startMicroIndexCursorDrag`. |
+| Setas | `_pointerAnchor`, `_structFieldAnchor`, `_computeStructPairOffsets` (de que lado da caixa sai o pino). |
+| Gestos | `_onMicroPointerDown`, `_onMicroPointerMoveWindow`, `_onMicroPointerUpWindow`, `_onMicroContextMenu`, `_onMicroDblClick`, renomeações in place. |
+| Render | `_renderMicroOnly`, `_renderMicroRunBar`, `_renderMicroConsole`, `renderAll`. |
+
+**`MicroRuntimeAdapter.js`**: implementa o `Environment` sobre o `MicroModel`. É o único lugar que traduz valor tipado ↔ entidade do modelo.
+
+- Construtor: `new MicroRuntimeAdapter(micro, {createPosition, onChange, onArrayCreated, onDictCreated, onMatrixCreated})`. Não sabe nada de canvas; pede a posição pra quem o criou e avisa mudanças por `onChange`.
+- Estado: `touched` (toques desde a última leitura), `frameStack` (pilha de frames, sempre com `'global'` na base), `output` (linhas de `print`), semente de hash de set.
+- Resolução de nomes por frame: `_findInFrame`, `_findPointer`, `_findVariable`, `_findArray`, `_findDict`, `_findMatrix`. O frame atual tem prioridade e o global serve de fallback.
+- `assignName(name, value)`: o grande despacho por `value.kind`, que decide se o nome vira variável, ponteiro, nova lista/set/deque/dict/matriz ou se reaponta um ponteiro existente.
+- Cursores de leitura: `getIndex` → `_showReadCursor`; `getMatrixCell` → `_showMatrixCursor`; `adoptReadCursor`; `_refreshDependentCursors`/`_recomputeCursor`.
+- Listas: `arrayAppend`, `arrayInsert`, `arrayPop`, `assignIndex`, `_fitArrayKind` (uma lista vazia adota o tipo, valor ou nó, do primeiro item).
+- Sets: `setAdd`/`setRemove`/`setPop`/`_writeSet`, sempre substituindo `hashTable` por um objeto novo (os snapshots compartilham o antigo).
+- Deques: `isDeque`, `dequeMaxlen`, `dequeSetItems`.
+- Recursão: `pushFrame`, `popFrame`, `stableRef` (troca a referência por nome por uma por id ao cruzar a fronteira da chamada), `releaseDeadArrays`.
+
+**`MicroProgramRunner.js`**: motor da Simulação. API: `run(source, env)`, `stop()`, `goToStep(i)`, `togglePlay()`, `setSpeed(speed)`, `hasSteps`, `steps`, `stepIndex`, `error`, `updatePosition(id, x, y)` (chamado pelo App ao arrastar), `updateOrientation`, `exportStepLayout`/`importStepLayout`/`clearStepLayout`. Internos: `_snapshot`, `_restore`, `_capturePositions`, `_assignKeys`, `_positionAt`.
+
+**`microLayoutKey.js`**: `microLayoutKey(kind, {name, frameId, cursorKey, dictName, key})` devolve a chave estável ou `null`. Structs anônimos e arrays criados dentro de chamadas ficam sem chave de propósito, porque vários nasceriam na mesma posição; o comentário do arquivo explica.
+
+**`settings.js`**: `SETTINGS_DEFAULTS`, `VALIDATORS`, `getSetting`, `setSetting` e migração das chaves antigas do localStorage (`readLegacy`).
+
+**`theme.js`**: `getSavedTheme`, `getTheme`, `applyTheme` (troca sem as transições CSS, com a classe `theme-switching`).
+
+### 7.3 `src/core/micro/MicroModel.js`
+
+CRUD dos seis `Map`s, com consistência de referências:
+
+- **Criação:** `addStruct`, `addPointer`, `addArray`, `addDict`, `addMatrix`, `addVariable`.
+- **Ligações:** `setField(structId, 'next'|'prev', targetId)`, `setPointerTarget(pointerId, target)`, `setArrayCellRef`, `setDictCellRef`, `setDictCellArrayRef`, `setStructNeighborsArray`, `link{Array,Dict,Matrix}LabelPointer`.
+- **Valores:** `setData`, `setArrayCellValue`, `setDictCellValue`, `setMatrixCellValue`, `setVariableValue`, `setArrayContents`, `setSetContents`.
+- **Forma:** `resizeArray`, `insertArrayCell`, `removeArrayCell`, `growArray`/`shrinkArray`, `resizeMatrix`, `set/toggle{Array,Dict}Orientation`.
+- **Nomes:** `rename{Array,Dict,Matrix,Variable}`, `renamePointer` (renomear uma coleção renomeia também o ponteiro-rótulo).
+- **Remoção:** `remove{Struct,Pointer,Array,Dict,Matrix,Variable}` (anulam referências pendentes).
+- **Serialização:** `clear`, `toJSON`, `loadFrom`.
+
+### 7.4 `src/interpreter/`
+
+| Arquivo | Responsabilidade | API |
+|---|---|---|
+| `lexer.js` | Tokeniza **uma linha** (números, strings com escapes, f-strings com campos aninhados, identificadores, palavras-chave, operadores, incluindo os compostos `+=`…). | `tokenize(source)`, `TokenType`, `LexError` |
+| `parser.js` | Recursive descent com a precedência do Python (`or` → `and` → `not` → comparações → `+ -` → `* / // %` → unário → `**` → pós-fixo → primário). Reconhece atribuição simples, composta (desenrolada em `a = a op b`), múltipla (`a, b = b, a`), encadeada (`a = b = x`), statement de expressão (só chamadas e leituras `nums[i]`) e `import`. | `parseStatement(linha)`, `parseExpression(texto)`, `parseParams(texto)`, `ParseError`. Todos devolvem `{ok, ast}` ou `{ok:false, error}` |
+| `blockParser.js` | Programa inteiro: remove comentários, agrupa por indentação, reconhece `if/elif/else`, `while`, `for x in …`/`for i, v in …`, `def` (só no nível 0), `return`, `break`, `continue`, e delega o resto a `parseStatement`. Separa as `def` num mapa `functions`. | `parseProgram(source)` → `{ok, functions, program}` (nunca lança) |
+| `ast.js` | Construtores de nós de AST como objetos planos `{type, ...}`. Statements de bloco carregam `line` (índice 0-based). | `Assign`, `TupleAssign`, `ChainAssign`, `ExprStmt`, `Name`, `Call`, `BinOp`, `Compare`, `If`, `While`, `For`, `FunctionDef`, `Return`… |
+| `interpreter.js` | Executa o programa como generator. Protocolo de sinais entre blocos: `continue`, `break`, `continue-loop`, `return`, `abort`. Chamadas de usuário (inclusive aninhadas em expressões, via `evalExpr`/`resolveUserCalls`) são executadas com `yield*`, o que permite pausar dentro delas. Também mantém a `callTree` e os valores "em espera" (`held`) que a coleta de listas não pode apagar. | `runProgram(program, functions, env)` |
+| `evaluator.js` | A semântica: `evaluate(node, env)` (um `switch` por `node.type`; o caso `'Call'` concentra os built-ins e métodos), `assign`/`assignChain`, `evalBinOp`, `valuesEqual`, `truthy`, `iterableItems`, formatação de `print` e `repr`, métodos de string (`callStringMethod`), de deque (`callDequeMethod`), helpers de cursor (`exprLabel`, `exprDependencies`). | `evaluate`, `assign`, `assignChain`, `truthy`, `iterableItems`, `loopValues`, construtores de valor (`Scalar`, `StructRef`, `NoneValue`…) |
+| `format.js` | Especificador de formato de f-string (`[[fill]align][sign][#][0][width][,_][.prec][type]`). | `formatWithSpec`, `formatTextWithSpec`, `FormatError` |
+| `pyset.js` | Tabela hash de set fiel ao CPython 3.11 (sondagem, dummies, crescimento, `pop` com "dedo"), com `_Py_HashDouble` pra números e `tuplehash` pra tuplas. Funções puras sobre `{mask, fill, used, finger, slots}`. | `pyHash`, `buildSetLiteral`, `buildFromItems`, `tableInsert`, `tableDiscard`, `tablePop`, `tableValues`, `serializeTable`/`deserializeTable`… |
+| `pytuple.js` | `PyTuple`: tupla imutável e internada (tuplas iguais são o mesmo objeto JS), por isso funciona como chave de `Map` e com `===`. `toJSON` produz `{tuple: [...]}`, e `reviveRaw` faz o caminho de volta. | `PyTuple`, `makeTuple`, `reviveRaw` |
+
+### 7.5 `src/render/MicroCanvasView.js`
+
+Dividido em duas metades:
+
+1. **Geometria e layout (funções e constantes exportadas)**, usadas tanto pelo render quanto pelo hit testing do App. Ficam aqui pra que desenho e clique nunca divirjam:
+   - constantes: `STRUCT_W/H`, `PTR_W/H`, `VAR_W/H`, `ARRAY_CELL`, `DICT_CELL_W/H`, `MATRIX_CELL`, `PORT_R`, `GRID_SIZE`…
+   - larguras dinâmicas: `displayName`, `pointerWidth`, `variableWidth`, `labelSize`;
+   - layouts: `arrayLayout`, `dictLayout`, `matrixLayout`, `matrixCellRect`, `chartLayout`;
+   - portas e pinos: `structPrevPort`, `structNextPort`, `structNeighborPort`, `structDataRect`, `pointerPort`, `variableValueRect`;
+   - puxadores: `arrayHandleRect`, `dictHandleRect`, `matrixHandleRect` (a aba fora da caixa, que serve de alvo de ligação pra coleção inteira e de alça de arraste) e `boxWithHandle`;
+   - anotações: `areaHandles`, `CHART_FUNCTIONS`, `chartNMax`, `chartYMax`.
+2. **A classe `MicroCanvasView`**: `constructor(container)` cria o `<svg>`, os `<defs>` (setas, padrão do grid) e as camadas; `render({...})` recebe as listas já posicionadas; `setViewport`, `screenToWorld`, `getSize`. Os `_render<Tipo>` fazem o diff por id. Não tem lógica de interação nenhuma.
+
+### 7.6 `src/ui/`
+
+Cada widget é uma classe independente, sem classe base. Recebe um container e callbacks no construtor, expõe `open`/`close`/`isOpen` (popups) ou `render(estado)` (painéis) e não conhece o modelo.
+
+| Arquivo | O que é | Ligado no App em |
+|---|---|---|
+| `CodeEditor.js` | Editor próprio: `<textarea>` + camada de realce sincronizada, gutter de números, linha marcada ("breakpoint" de aula, Ctrl+Setas), indentação inteligente, tamanho de fonte. Modos Sandbox/Simulação. Clique num nome destaca o elemento correspondente (`onSelectName`); botão direito em `nums[i]` liga ou desliga o cursor (`onToggleCursor`) e num nome oculta ou mostra o ponteiro (`onTogglePointer`). A validação acontece no Ctrl+Enter (`_handleGenerateFromLine`, com flash verde ou vermelho). | `_buildLayout` (`this.codeEditor`) |
+| `CallTree.js` | Árvore de chamadas da Simulação. Modos `full`/`compact`/`hidden`. Clique troca a aba exibida. | `this.callTree` |
+| `PlaybackControls.js` | Barra de passo, play/pause e velocidade. | `this.microPlayback` |
+| `ConsoleWindow.js` | Console de `print`, encaixado sob o canvas ou flutuante (arrastável e redimensionável). Persiste o modo e a geometria nas configurações. | `this.microConsole` |
+| `ModeToolbar.js` | Barra de modos do canvas (ícones em `ICONS`, lista de modos vinda de `MICRO_MODES`). Sem estado. | `this.microModeToolbar` |
+| `QuickActionPalette.js` | Caixa Ctrl+Espaço: casamento abreviado (`scoreName`), sugestão em cinza, ↑/↓/Tab/Enter/Esc. Os comandos vêm de quem abre. | `this.microQuickActions` |
+| `AppMenu.js` | Menu hambúrguer (`items`, `onSelect(id)`). | `this.appMenu` |
+| `SettingsDialog.js` | Janela modal de configurações. A estrutura fica em `SECTIONS` (tipos `choice`, `toggle`, `stepper`…). Não aplica nada, só chama `onChange(key, value)`. | `this.settingsDialog` |
+| `Dialog.js` | `confirm`/`alert` modais baseados em Promise (substituem os nativos). | `this.dialog` |
+| `CanvasTitle.js` | Título editável no topo do canvas. | `this.microCanvasTitle` |
+| `NodePopup.js` | Popup pra digitar o valor de um nó. | `this.microPopup` |
+| `ArraySettingsPopup.js` | Configurações de array, dict ou matriz (nome, tamanho, orientação, remover). Três instâncias. | `this.micro{Array,Dict,Matrix}SettingsPopup` |
+| `LabelSettingsPopup.js` | Texto, cor e tamanho de uma label. | `this.microLabelSettingsPopup` |
+| `ChartSettingsPopup.js` | Funções exibidas, escala e títulos dos eixos de um gráfico Big-O (aplica a cada mudança). | `this.microChartSettingsPopup` |
+| `InlineValueEditor.js` | Editor in place sobre o canvas (valor ou nome). `parseEditedValue` converte texto em número, string ou bool. | `this.microInlineEditor` |
+| `fitPopup.js` | `fitPopupInContainer(el, container, x, y, {anchor})` mantém o popup inteiro dentro do canvas. | usado pelos popups |
+
+### 7.7 `src/styles/`
+
+- `variables.css`: **tokens**. Há uma cor por significado: `--sel` (selecionado), `--target` (alvo do selecionado), `--exec` (em execução), `--cursor` (cursor de leitura), `--danger`. O tema claro só redefine tokens em `:root[data-theme='light']`; tons translúcidos usam `color-mix()`. Pra mudar uma cor, mude o token, não a regra.
+- `canvas.css`: classes dos elementos SVG (`.struct-node`, `.pointer-node`, `.array-node`, `.node-halo`, `.selected`, `.linked`, `.micro-colored` com `--node-color`…).
+- `controls.css`: botões, popups (`.array-settings-*`, reaproveitado por todos os popups de configurações), menu, diálogos, toolbar, quick actions.
+- `codeEditor.css`: painel de código, divisórias, barra de reprodução, árvore de chamadas, console.
+- `main.css`: reset e layout de página.
+
+---
+
+## 8. Receitas: onde mexer pra tarefas comuns
+
+> As receitas listam **todos** os pontos de contato conhecidos. Antes de começar, use `grep` pra achar um recurso parecido que já existe (ex.: `matrix` pra um elemento novo, `'sorted'` pra um built-in novo) e siga o mesmo caminho por todas as camadas.
+
+### 8.1 Novo built-in da linguagem (função global, ex.: `abs(x)`)
+
+1. **`evaluator.js`**, `evaluate` → `case 'Call'` → bloco `if (node.callee.type === 'Name')`: adicione `if (fname === 'abs' && node.args.length === 1) { ... }` perto dos outros (`len`, `sum`, `min/max`, `sorted`…). Avalie os argumentos com `evaluate(arg, env)`, devolva um valor tipado (`Scalar(...)`) ou `undefined` (com `env.warn?.(...)` pra um erro legível).
+2. Se precisar ler ou escrever o modelo, crie um método novo na **interface `Environment`**: documente no comentário do topo de `evaluator.js` e implemente em **`MicroRuntimeAdapter`**. Lembre de chamar `this._touch(kind, id)` em tudo que for lido ou escrito, pro destaque funcionar.
+3. Pra o nome aparecer realçado no editor, inclua-o em `KEYWORDS` em **`CodeEditor.js`**, se fizer sentido.
+4. Atualize a lista de built-ins no comentário do topo de `evaluator.js` e a descrição da DSL no `CLAUDE.md`.
+
+Nenhuma mudança no lexer ou no parser é necessária: qualquer `nome(args)` já vira um nó `Call`.
+
+### 8.2 Novo método de lista, string, dict, set ou deque (ex.: `lista.reverse()`)
+
+- **String:** `callStringMethod` em `evaluator.js`.
+- **Deque:** `callDequeMethod` em `evaluator.js`. Ele usa as primitivas de lista do adapter mais `dequeSetItems`.
+- **Lista, set, dict:** o bloco de métodos (`method === 'append'`, `'pop'`, `'get'`, `'keys'`…) dentro de `case 'Call'` com callee `Attribute`. A mutação do modelo sai por métodos do `Environment` (`arrayAppend`, `arrayInsert`, `arrayPop`, `setAdd`…). Se precisar de uma operação nova, crie-a no adapter, usando a API do `MicroModel`.
+- Uma operação que reescreve o conteúdo inteiro de um array deve usar `MicroModel#setArrayContents` (ou `setSetContents` pra set), que cria objetos novos, assim os snapshots não são corrompidos.
+
+### 8.3 Nova sintaxe ou novo statement
+
+- **Operador novo:** token em `lexer.js` (`TokenType`, `SINGLE_CHAR` ou o trecho de dois caracteres) → nível de precedência certo em `parser.js` (`parseAdd`, `parseMul`, `parseCompareOp`…) → `evalBinOp`/`evaluate` em `evaluator.js`. Se o operador puder aparecer num índice de cursor, revise também `exprLabel`/`exprDependencies`.
+- **Statement de uma linha (ex.: `pass`, `del x`):** em `parser.js#parseStatement`, ou em `blockParser.js#parseBlock` se for uma palavra-chave sozinha (veja como `break`/`continue` são reconhecidos). Crie o construtor em `ast.js`, trate em `interpreter.js#execStmt` (com `yield* tick({line, kind})` pra virar passo) e, se fizer sentido no Sandbox, em `App#_executeStatement`.
+- **Statement de bloco (ex.: `try:`):** reconheça o cabeçalho em `blockParser.js#parseBlock` usando `parseIndentedBody`, crie o nó em `ast.js` e implemente em `interpreter.js#execStmt` respeitando o protocolo de sinais (repasse `abort`, `return`, `break` e `continue-loop` pra cima, a menos que o statement os consuma).
+- **Realce:** se a palavra for nova, adicione-a a `KEYWORDS` em `CodeEditor.js`.
+
+### 8.4 Novo tipo de nó de estrutura (ex.: nó com 3 filhos)
+
+Os tipos de struct são `'list'`, `'tree'` e `'graph'`, todos no mesmo `Map` `structs`.
+
+1. `MicroModel#addStruct`, `toJSON`, `loadFrom`: aceitar o novo `type` (hoje há uma normalização `type === 'tree' ? ... : 'list'` repetida nos três lugares).
+2. `evaluator.js`, `case 'Call'`: um construtor (`if (fname === 'TernaryNode' ...)`) que chama `env.createStruct(valor, 'ternary')`.
+3. `MicroRuntimeAdapter#createStruct`, `_structFieldForAttr`, `getAttr`/`assignAttr`: mapear os nomes de campo pros campos físicos.
+4. `MicroCanvasView`: geometria e portas dos campos novos e a variante em `_renderStructs` (incluindo o modo simplificado).
+5. `App`: `_findMicroPortAt`/`_microPortWorldPos` (arrastar pinos), montagem de structs e edges em `_renderMicroOnly`, quick action (`new … node` em `_openQuickActions` + `_quickNewNode`).
+
+### 8.5 Novo elemento visual do modelo (ex.: "pilha" com desenho próprio)
+
+Esse é o caso mais extenso. Siga a **matriz** (`matrices`) como modelo, porque é o elemento mais recente e passa por todas as camadas. Checklist:
+
+**Modelo e persistência**
+- [ ] `MicroModel`: novo `Map` no construtor, `add*`, setters, `rename*`, `remove*` (anulando referências que apontem pra ele, ex.: `target` de ponteiros), `clear`, `toJSON`, `loadFrom`.
+- [ ] Se puder ser alvo de ponteiro, crie novos `target.kind` (`{kind:'x', id}` / `{kind:'xCell', ...}`) e trate-os em `setPointerTarget` e em todas as remoções.
+
+**Execução**
+- [ ] `MicroProgramRunner`: incluir o `Map` novo em `_snapshot` (cópia profunda das partes mutáveis), `_restore`, `_capturePositions` e `_assignKeys`.
+- [ ] `MicroRuntimeAdapter`: `_find*`/`_resolve*ByName`, ramo em `resolveName` (devolvendo um valor tipado novo, ex.: `{kind:'xref', name}`), ramo em `assignName` (criação a partir de um literal), callback `onXCreated` se ele tiver ponteiro-rótulo, `releaseDeadArrays` se puder ser local de uma chamada.
+- [ ] `evaluator.js`: o novo `kind` de valor (documentar no topo), suporte em `len`, `print` (`formatPrintValue`), `==`, `for`, `in`, conforme o caso.
+- [ ] `microLayoutKey.js`: um `case` pro novo `kind`, se ele tiver nome estável.
+
+**Render**
+- [ ] `MicroCanvasView`: constantes de geometria, `xLayout(node)` exportado (e `xHandleRect`, se ele tiver puxador), camada (`this.xLayer`, inserida na ordem certa), `this.xEls`, `_renderX` com diff por id, inclusão em `render({... xs = []})`, `_applyColors`/`_applyDimming` e no pulso de seleção.
+- [ ] Setas que chegam nele: `_renderEdges` (ponto de chegada) e o `targetKind` correspondente.
+- [ ] `canvas.css`: classes do novo elemento usando os tokens (`--node-fill`, `--sel`…) e suporte a `.micro-colored`.
+
+**App**
+- [ ] `_microNodeMaps`, `_microRemoveById`, `_isMicroModelElement`, `_microSetNodePos`/`_microNodePos`, `_microFindIdsInRect`, `_microOccupiedRects`, `_microCreatePosition` (um `kind` novo), `_fitMicroViewport`/`_hasMicroContent`.
+- [ ] Hit testing: `_findMicroXAt` (e `_findMicroXCellAt`), adicionado na ordem de prioridade em `_onMicroPointerDown`, `_onMicroDblClick`, `_onMicroContextMenu` e `_resolveMicroDropTarget`.
+- [ ] `_renderMicroOnly`: montar a lista de render (filtros de frame e de visibilidade, `selected`, `linked`…), destaques de ponteiros que apontam pra ele, edges e passagem pra `microView.render`.
+- [ ] `_applyMicroTouchHighlight`/`_selectMicroElement`/`_syncCodeEditorSelection`, se ele tiver nome no código.
+- [ ] Edição: popup ou editor in place no duplo clique; popup de configurações no botão direito (reaproveite `ArraySettingsPopup` se couber).
+- [ ] Quick action `new x` em `_openQuickActions` + `_quickNewX`.
+- [ ] Se for uma coleção nomeada: `_createXLabelPointer` + `MicroModel#linkXLabelPointer` + flag `isXLabel` no ponteiro (e no `toJSON`/`loadFrom` dos ponteiros).
+
+**Docs**
+- [ ] Atualizar este arquivo e o `CLAUDE.md`.
+
+### 8.6 Novo elemento de anotação (só canvas, como label, área ou gráfico)
+
+Mais simples, porque não passa pelo interpretador nem pelos snapshots. Use o **gráfico** (`microCharts`) como referência:
+
+1. `App` constructor: `this.microXs = new Map()` (comente a forma do objeto).
+2. `_microNodeMaps`, `_microRemoveById`, `_microFindIdsInRect`, `_microSetNodePos`, `_fitMicroViewport`.
+3. Criação: um modo de ferramenta (receita 8.7) e/ou uma quick action (receita 8.8).
+4. Hit testing `_findMicroXAt`, na posição certa da prioridade (anotações costumam ficar atrás dos elementos do modelo).
+5. Render: geometria e `_renderX` em `MicroCanvasView`, camada própria, campo novo em `render({...})`, montagem da lista em `_renderMicroOnly`.
+6. Persistência: `_saveProject` (`project.xs`), `_applyLoadedProject` (com validação dos campos), `_newProject` (limpar).
+7. Se for redimensionável, reaproveite as alças das áreas (`_microResizableById`, `areaHandles`).
+
+### 8.7 Nova ferramenta (modo da barra inferior)
+
+1. **`App.js` → `MICRO_MODES`**: `{ id: 'x', label: 'Descrição', shortcut: '5 / K' }`.
+2. **`ModeToolbar.js` → `ICONS`**: um SVG 24×24 com `stroke="currentColor"` com a mesma chave `x`.
+3. **Atalho**: no final de `App#_onKeyDown` (`else if (key === '5' || key === 'k') this._setMicroMode('x')`). Confira se a tecla já está em uso.
+4. **Gesto**:
+   - `_onMicroPointerDown`: um ramo `if (this.microMode === 'x') { this._microPointer = { ..., hit: 'x-create', worldPtDown: worldPt }; ... }` no começo, junto aos de `text`/`area`/`chart`;
+   - `_onMicroPointerMoveWindow`: atualizar um rascunho (`this._microXDraft`);
+   - `_onMicroPointerUpWindow`: confirmar (criar o elemento) e limpar o rascunho;
+   - `_setMicroMode`: zerar o rascunho ao trocar de modo;
+   - `_renderMicroOnly`: desenhar o rascunho, se houver.
+5. **Cursor**: o `App` grava `microContainer.dataset.mode`, então dá pra trocar o cursor do mouse em `canvas.css` com `[data-mode='x']`.
+6. Se o modo tiver cor (como `text`/`area`), trate em `_applyMicroPaletteColor` e passe o `swatch` em `microModeToolbar.render`.
+
+### 8.8 Nova quick action (comando do Ctrl+Espaço)
+
+Em `App#_openQuickActions`, adicione ao array `commands`:
+
+- elementos do **modelo**: `model('new x', ['alias'], 'descrição', () => this._quickNewX())`. O helper `model` desabilita o comando durante a Simulação;
+- outros: `{ name, aliases, description, disabled: null | 'motivo', run }`.
+
+Implemente `_quickNewX` seguindo `_quickNewCollection`/`_quickNewNode`: posição com `_microCreatePosition`, criação no `MicroModel`, seleção, render e edição in place do nome (`_editMicroNameInPlace`) ou do dado (`_openMicroDataPopup`). Use `_quickDiscard` no cancelamento (Esc desfaz a criação). A busca e o ranking ficam por conta da `QuickActionPalette`.
+
+### 8.9 Nova configuração (preferência do usuário)
+
+1. **`settings.js`**: chave em `SETTINGS_DEFAULTS` + validador em `VALIDATORS`. Nada de chaves soltas no localStorage.
+2. **`SettingsDialog.js` → `SECTIONS`**: item `{ key, label, type: 'choice' | 'toggle' | 'stepper', ... }` (se o tipo de campo não existir, implemente-o no `open()` do diálogo).
+3. **`App#_applySetting`**: um `case` que aplica o efeito na tela e grava com `setSetting`.
+4. Ler o valor inicial no `constructor`/`_buildLayout` com `getSetting`.
+5. Atalho opcional em `_onKeyDown`, que chama `this._applySetting(key, valor)` (nunca `setSetting` direto, senão a janela não atualiza).
+
+Não crie toggles novos no menu ☰: preferências ficam na janela de Configurações.
+
+### 8.10 Novo atalho de teclado
+
+Tudo fica em `App#_onKeyDown`. Escolha o lugar certo na sequência:
+
+- atalhos que valem **mesmo digitando** no editor (Ctrl+H, Ctrl+,/., Ctrl+Espaço) vêm **antes** do teste `isTyping`;
+- atalhos de canvas vêm depois;
+- teclas sem modificador ficam no `if/else` do final.
+
+Use `e.code` (tecla física) quando houver Alt, porque no macOS Alt+C produz "ç". Mencione o atalho no `label` do modo, no item de configuração (`shortcut`) ou no `title` do botão correspondente.
+
+### 8.11 Novo popup de configurações
+
+Copie o padrão de `LabelSettingsPopup`/`ChartSettingsPopup`: classe com `constructor(container)`, `open(screenX, screenY, node, {onChange|onSave, onRemove, returnFocusTo})`, `close()`, `get isOpen()`. Posicione com `fitPopupInContainer` e reaproveite as classes CSS `.array-settings-*`. No `App`: instancie em `_buildLayout`, abra a partir de `_onMicroContextMenu` e **acrescente o `isOpen` dele no guard do começo de `_onMicroPointerDown`**, senão cliques no canvas atravessam o popup.
+
+### 8.12 Nova curva no gráfico Big-O
+
+Adicione `{ id, label, color, f: (n) => ..., from }` a `CHART_FUNCTIONS` em `MicroCanvasView.js`, na ordem de crescimento. O popup (`ChartSettingsPopup`), o modo automático do eixo Y e a validação do `loadFrom` (`_applyLoadedProject` filtra por `CHART_FUNCTIONS`) usam essa lista automaticamente.
+
+### 8.13 Cores e tema
+
+- Uma cor nova de significado vai como token em `variables.css`, nos dois temas.
+- As paletas Alt+1…Alt+0 são `AREA_COLORS`/`TEXT_COLORS`/`ELEMENT_COLORS`, no topo de `App.js`.
+- Cor manual de elementos do modelo: `App#microColors` → `MicroCanvasView#_applyColors` → `.micro-colored` em `canvas.css`.
+
+### 8.14 Novo campo no arquivo de projeto
+
+Inclua em `_saveProject`, leia com validação defensiva em `_applyLoadedProject` (o arquivo pode ser antigo ou ter sido editado à mão) e limpe em `_newProject`. Se o campo pertencer ao modelo, ele entra em `MicroModel#toJSON`/`loadFrom`. Tuplas usam `{tuple: [...]}` e passam por `reviveRaw`.
+
+---
+
+## 9. Convenções e armadilhas
+
+- **Idioma:** comentários, mensagens e UI em pt-BR. Os comentários explicam o **porquê**, e o código existente é bem comentado; leia antes de mudar.
+- **`App.js` é grande de propósito.** Não tente ler o arquivo inteiro; use `grep` pelo método ou pela seção. Mantenha código novo na seção temática correspondente.
+- **Toda mutação vem seguida de render.** Mudou estado no `App`? Chame `this._renderMicroOnly()`. O adapter já chama `onChange` a cada toque.
+- **Nunca mute objetos compartilhados com snapshots.** `hashTable` de set, células de dict e linhas de matriz devem ser **substituídas**, não alteradas in place, senão o "passado" da reprodução muda junto.
+- **Posição não faz parte da lógica.** Não coloque `x`/`y`/orientação em snapshots; use `MicroProgramRunner#updatePosition`/`microLayout`.
+- **Ids não são estáveis entre execuções.** Pra lembrar algo entre corridas, use uma chave estável (`microLayoutKey`, chave de cursor).
+- **Geometria num lugar só.** Qualquer medida usada no desenho **e** no clique fica em `MicroCanvasView.js` (exportada). As larguras de texto são estimadas pela contagem de caracteres (fonte mono), sem medir o DOM.
+- **Hit testing contra o modelo**, filtrado por `_microPickable` (o que não está desenhado ou está esmaecido não recebe clique).
+- **O interpretador é puro.** Nada de importar `MicroModel` ou DOM dentro de `src/interpreter/`.
+- **Falhar em silêncio, avisar quando ajuda.** Expressões que não resolvem devolvem `undefined`; se o motivo não for óbvio, use `env.warn(...)` com uma mensagem em pt-BR.
+- **Elementos do modelo não podem ser criados durante a Simulação** (somem no próximo passo restaurado). As anotações podem.
+- **Limites:** arrays e dicts têm até 24 células (`MAX_ARRAY_SIZE`/`MAX_DICT_SIZE`); a execução, 2000 passos e profundidade 200; list comprehensions, 100000 itens.
+- **Preferências** só em `settings.js` + `_applySetting`.
+- **Popups e diálogos:** use `Dialog` (nunca `window.confirm`/`alert`) e `fitPopupInContainer`.
+
+---
+
+## 10. Como verificar uma mudança
+
+Sem testes automatizados, o roteiro mínimo é rodar `npm run dev`, abrir http://localhost:5173 e, conforme o que você mexeu:
+
+- **Linguagem:** testar a construção no **Sandbox** (Ctrl+Enter linha a linha, observando o flash verde ou vermelho, o destaque e o console) e na **Simulação** (Rodar, avançar e voltar passos com Ctrl+,/Ctrl+., conferir a linha destacada, os cursores e o console por passo). Inclua um caso de erro (nome inexistente, índice fora da lista) e um caso dentro de uma função recursiva.
+- **Elemento visual:** criar à mão (Ctrl+Espaço) e por código; selecionar, arrastar, apagar (Delete), editar (duplo clique), botão direito; ligar um ponteiro por arraste; alternar Ctrl+A (nós simplificados), N (nomes completos) e o tema claro/escuro; dar zoom e pan.
+- **Reprodução:** arrastar um elemento no meio da reprodução, voltar e avançar passos, rodar de novo e conferir que as posições foram lembradas.
+- **Persistência:** salvar o projeto, recarregar a página, carregar o arquivo e conferir que tudo voltou (inclusive cores, janelas deslizantes e anotações).
+- **Build:** `npm run build` deve terminar sem erros.

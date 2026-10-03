@@ -1,4 +1,4 @@
-// Leitura do gráfico Big-O com Shift + mouse (issue #11): a função pura
+// Leitura do gráfico Big-O com o mouse sobre ele (issues #11 e #17): a função pura
 // `chartReadout` (projeção do cursor no eixo n, arredondamento e escolha da
 // curva) e a posição dos textos (`chartReadoutLabels`). O render e o gesto
 // no App ficam em tests/ui/App.test.js.

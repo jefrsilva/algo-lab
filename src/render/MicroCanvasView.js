@@ -330,7 +330,7 @@ export function chartLayout(chart) {
   };
 }
 
-/** Leitura de um gráfico sob o cursor (Shift + mouse parado sobre ele, ver
+/** Leitura de um gráfico sob o cursor (mouse sobre ele, sem botão, ver
  * App#_updateMicroChartReadout): `localPt` em coordenadas LOCAIS do gráfico
  * é projetado no eixo n e arredondado pro inteiro mais próximo (em
  * [0, floor(nMax)]); entre as funções marcadas, vale a de menor distância
@@ -1402,7 +1402,7 @@ export class MicroCanvasView {
           label.textContent = fn.label;
           el.appendChild(label);
         });
-        // leitura do Shift + mouse (ver chartReadout): criada uma vez, escondida sem leitura
+        // leitura do mouse sobre o gráfico (ver chartReadout): criada uma vez, escondida sem leitura
         const readout = svgEl('g', { class: 'chart-readout', display: 'none' });
         readout.appendChild(svgEl('line', { class: 'chart-readout-guide' }));
         readout.appendChild(svgEl('circle', { class: 'chart-readout-dot', r: 4.5 }));
@@ -1498,7 +1498,7 @@ export class MicroCanvasView {
         vText.setAttribute('x', pos.value.x);
         vText.setAttribute('y', pos.value.y);
         vText.setAttribute('text-anchor', pos.value.anchor);
-        vText.setAttribute('fill', r.color);
+        // f(n) na cor de texto do tema (canvas.css), não na da curva — destaca o valor
         vText.textContent = pos.value.text;
       }
     });

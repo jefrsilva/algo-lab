@@ -1,4 +1,5 @@
 import { svgEl } from './svgUtils.js';
+import { ARRAY_CELL_H } from '../core/micro/MicroModel.js';
 
 // ---- geometria dos nós de estrutura (caixa prev | data | next) ----
 export const STRUCT_W = 138;
@@ -60,7 +61,7 @@ export function variableWidth(node, fullNames) {
 // o array não tem mais barra de título própria — o nome aparece num ponteiro
 // dedicado que aponta pra ele (ver App#_createArrayLabelPointer), então o
 // topo do array já começa nas células/índices.
-export const ARRAY_CELL = 44;
+export const ARRAY_CELL = ARRAY_CELL_H;
 export const ARRAY_INDEX_H = 16; // horizontal: espaço acima das células para o índice
 export const ARRAY_INDEX_W = 22; // vertical: espaço à esquerda das células para o índice
 // set (array com `isSet`): folga entre as "pílulas" e a borda da caixa — nas

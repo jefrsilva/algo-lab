@@ -1,14 +1,18 @@
 // Reprodução da Simulação: snapshots por passo, navegação, autoplay e as
 // posições escolhidas pelo usuário (que NÃO fazem parte do snapshot).
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { MicroModel } from '../../src/core/micro/MicroModel.js';
+import { ARRAY_CELL_H, MicroModel } from '../../src/core/micro/MicroModel.js';
 import { MicroRuntimeAdapter } from '../../src/app/MicroRuntimeAdapter.js';
 import { MicroProgramRunner } from '../../src/app/MicroProgramRunner.js';
 import { linhas } from '../helpers/runDsl.js';
 
 function novo({ onChange, onSelect } = {}) {
   const micro = new MicroModel();
-  const env = new MicroRuntimeAdapter(micro, { createPosition: () => ({ x: 100, y: 200 }) });
+  const env = new MicroRuntimeAdapter(micro, {
+    createPosition: () => ({ x: 100, y: 200 }),
+    // rótulo com o nome 50 acima do array, como App#_createArrayLabelPointer
+    onArrayCreated: (node) => micro.linkArrayLabelPointer(node.id, micro.addPointer(node.x, node.y - 50, node.name).id),
+  });
   const runner = new MicroProgramRunner(micro, { onChange, onSelect });
   return { micro, env, runner };
 }
@@ -164,6 +168,87 @@ describe('posições (layout do usuário)', () => {
     runner.updateOrientation(id, 'vertical');
     runner.goToStep(2);
     expect(micro.arrays.get(id).orientation).toBe('vertical');
+  });
+});
+
+describe('array em pilha: cresce pra cima com a base parada', () => {
+  const PILHA = linhas('pilha = [1]', 'pilha.append(2)', 'pilha.append(3)', 'pilha.pop()');
+  const base = (arr) => arr.y + ARRAY_CELL_H * Math.max(1, arr.cells.length);
+
+  /** Roda PILHA, vai pro passo `passo` e vira pilha ali (como o popup faz). */
+  function emPilhaNoPasso(passo) {
+    const { micro, env, runner } = novo();
+    runner.run(PILHA, env);
+    runner.goToStep(passo);
+    const id = [...micro.arrays.values()][0].id;
+    micro.setArrayOrientation(id, 'stack');
+    runner.updateOrientation(id, 'stack');
+    return { micro, runner, arr: () => micro.arrays.get(id), id };
+  }
+
+  test('a base é a mesma em todos os passos; o topo sobe e desce', () => {
+    const { runner, arr } = emPilhaNoPasso(0);
+    expect(arr().y).toBe(200); // virar pilha não move a caixa
+    expect(base(arr())).toBe(200 + ARRAY_CELL_H);
+    const tops = [0, 1, 2, 3].map((i) => {
+      runner.goToStep(i);
+      expect(base(arr())).toBe(200 + ARRAY_CELL_H);
+      return arr().y;
+    });
+    expect(tops).toEqual([200, 200 - ARRAY_CELL_H, 200 - 2 * ARRAY_CELL_H, 200 - ARRAY_CELL_H]);
+  });
+
+  test('virar pilha no meio da reprodução não move a caixa do passo atual', () => {
+    const { runner, arr } = emPilhaNoPasso(2);
+    expect(arr().y).toBe(200);
+    runner.goToStep(0);
+    expect(base(arr())).toBe(200 + 3 * ARRAY_CELL_H);
+    // e voltar pra vertical também não: o topo volta a ficar parado
+    runner.goToStep(1);
+    const topo = arr().y;
+    runner.updateOrientation(arr().id, 'vertical');
+    runner.goToStep(1);
+    expect(arr().y).toBe(topo);
+    runner.goToStep(2);
+    expect(arr().y).toBe(topo);
+  });
+
+  test('arrastar uma pilha na reprodução grava a base', () => {
+    const { runner, arr, id } = emPilhaNoPasso(0);
+    runner.goToStep(2);
+    arr().y = 50;
+    runner.updatePosition(id, arr().x, 50);
+    runner.goToStep(3);
+    expect(base(arr())).toBe(50 + 3 * ARRAY_CELL_H);
+    runner.goToStep(1); // antes do arraste: onde estava
+    expect(base(arr())).toBe(200 + ARRAY_CELL_H);
+  });
+
+  test('o rótulo com o nome, acima da pilha, anda junto com o topo', () => {
+    const { micro, runner, arr } = emPilhaNoPasso(2);
+    const rotulo = () => micro.pointers.get(arr().labelPointerId);
+    [0, 1, 2, 3].forEach((i) => {
+      runner.goToStep(i);
+      expect(rotulo().y).toBe(arr().y - 50);
+    });
+    // levado pra baixo da pilha, fica parado dali em diante
+    runner.goToStep(2);
+    const y = arr().y + 200;
+    runner.updatePosition(rotulo().id, 0, y);
+    runner.goToStep(3);
+    expect(rotulo().y).toBe(y);
+  });
+
+  test('pilha que já existia antes de rodar cresce pra cima durante a execução', () => {
+    const { micro, env, runner } = novo();
+    runner.run('pilha = [1]', env);
+    const arr0 = [...micro.arrays.values()][0];
+    micro.setArrayOrientation(arr0.id, 'stack');
+    runner.run(linhas('pilha.append(2)', 'pilha.append(3)'), env);
+    runner.goToStep(1);
+    const arr = micro.arrays.get(arr0.id);
+    expect(arr.cells).toEqual([1, 2, 3]);
+    expect(base(arr)).toBe(200 + ARRAY_CELL_H);
   });
 });
 

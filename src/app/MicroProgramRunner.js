@@ -1,5 +1,6 @@
 import { parseProgram } from '../interpreter/blockParser.js';
 import { runProgram } from '../interpreter/interpreter.js';
+import { isStackArray, ridesStackTop, stackHeight } from '../core/micro/MicroModel.js';
 
 const AUTOPLAY_BASE_MS = 700;
 
@@ -42,6 +43,16 @@ const AUTOPLAY_BASE_MS = 700;
  * mudam a cada "Rodar"), então rodar o mesmo programa de novo já reproduz
  * as posições ajustadas. `this.positions` continua sendo a posição "de
  * nascimento" de cada elemento nesta execução, usada antes do 1º quadro-chave.
+ *
+ * Array em pilha (`orientation: 'stack'`) cresce pra cima com a BASE parada
+ * (ver MicroModel#_keepStackBase), então a posição guardada dele — em
+ * `this.positions` e nos quadros-chave — é a da base: `{x, y, bottom: true}`,
+ * com `y` = borda de baixo da caixa. `_restore` tira dela a altura que a
+ * pilha tem no passo restaurado (ver `_stackTop`); trocar a orientação de/pra
+ * pilha converte o que já estava guardado (ver `updateOrientation`). O
+ * rótulo com o nome, quando está acima da pilha (ver
+ * MicroModel.js#ridesStackTop), anda junto com o topo: a posição dele
+ * também é guardada relativa à base, do mesmo jeito.
 
  * O programa (com if/while/for — ver blockParser.js/interpreter.js) é
  * compilado e rodado de uma vez contra o modelo real, capturando um snapshot
@@ -167,8 +178,12 @@ export class MicroProgramRunner {
   updatePosition(id, x, y) {
     if (!this.positions.has(id)) return;
     const key = this.stableKeys.get(id);
+    // pilha (e rótulo que anda com o topo dela): guarda relativo à base (ver
+    // `bottom` no comentário da classe)
+    const stack = this._stackOf(id, { y }, this.micro);
+    const anchor = stack ? { x, y: y + stackHeight(stack.cells.length), bottom: true } : { x, y };
     if (this.stepIndex < 0 || !key) {
-      this.positions.set(id, { x, y });
+      this.positions.set(id, anchor);
       return;
     }
     let frames = this.stepLayout.get(key);
@@ -180,15 +195,15 @@ export class MicroProgramRunner {
       frames = [];
       const born = this.createdAt.get(id) ?? 0;
       const base = this.positions.get(id);
-      if (born < this.stepIndex) frames.push({ step: born, x: base.x, y: base.y });
+      if (born < this.stepIndex) frames.push({ step: born, ...base });
       this.stepLayout.set(key, frames);
     }
     const existing = frames.find((f) => f.step === this.stepIndex);
     if (existing) {
-      existing.x = x;
-      existing.y = y;
+      delete existing.bottom;
+      Object.assign(existing, anchor);
     } else {
-      frames.push({ step: this.stepIndex, x, y });
+      frames.push({ step: this.stepIndex, ...anchor });
       frames.sort((a, b) => a.step - b.step);
     }
   }
@@ -203,16 +218,77 @@ export class MicroProgramRunner {
         if (f.step > stepIndex) break;
         found = f;
       }
-      if (found) return { x: found.x, y: found.y };
+      if (found) return { x: found.x, y: found.y, ...(found.bottom ? { bottom: true } : {}) };
     }
     return this.positions.get(id);
+  }
+
+  /** A pilha cuja base ancora a posição do elemento `id` (`n` = ele, ao
+   * menos com `y`), no estado `state` (o MicroModel ou um snapshot): o
+   * próprio array, se é uma pilha, ou o array de um rótulo que anda com o
+   * topo dela. `orientation`, se dada, substitui a do array. */
+  _stackOf(id, n, state, orientation) {
+    const withOrientation = (arr) => (arr && orientation ? { ...arr, orientation } : arr);
+    const arr = withOrientation(state.arrays.get(id));
+    if (arr) return isStackArray(arr) ? arr : null;
+    const pointer = state.pointers.get(id);
+    if (!pointer?.isArrayLabel) return null;
+    const owner = withOrientation(state.arrays.get(pointer.labelArrayId));
+    return ridesStackTop({ ...pointer, y: n.y }, owner) ? owner : null;
+  }
+
+  /** `y` de um elemento a partir da posição guardada — que, pra uma pilha e
+   * pro rótulo que anda com ela (`bottom`), é relativa à base: tira a altura
+   * da pilha no passo restaurado (`arrays`, as do snapshot). */
+  _stackTop(pos, n, arrays) {
+    if (!pos.bottom) return pos.y;
+    const arr = n.cells ? n : arrays.get(n.labelArrayId);
+    return pos.y - stackHeight(arr?.cells.length ?? 0);
+  }
+
+  /** Quantas células o array `id` tinha no passo `step` (no passo atual, o
+   * próprio modelo). */
+  _arrayLenAt(id, step) {
+    if (!id) return 0;
+    if (step === this.stepIndex) return this.micro.arrays.get(id)?.cells.length ?? 0;
+    return this.steps[step]?.snapshot.arrays.get(id)?.cells.length ?? this.micro.arrays.get(id)?.cells.length ?? 0;
   }
 
   /** Chamado por quem troca a orientação de um array pelo popup de
    * configurações (App#_openMicroArraySettingsPopup) — mesma lógica de
    * `updatePosition`, só que pra orientação em vez de x/y. */
   updateOrientation(id, orientation) {
-    if (this.orientations.has(id)) this.orientations.set(id, orientation);
+    if (!this.orientations.has(id)) return;
+    this.orientations.set(id, orientation);
+    // de/pra pilha: a posição guardada passa a ser a base (ou volta a ser o
+    // topo). Cada uma é convertida pela altura do passo a partir do qual
+    // vale — e a que vale AGORA, pela altura atual, pra caixa não pular.
+    const arr = this.micro.arrays.get(id);
+    if (!arr) return;
+    this._convertAnchors(id, id, !!this._stackOf(id, arr, this.micro, orientation));
+    const label = this.micro.pointers.get(arr.labelPointerId);
+    if (label) this._convertAnchors(label.id, id, !!this._stackOf(label.id, label, this.micro, orientation));
+  }
+
+  /** Converte as posições guardadas de `id` (a de nascimento e os
+   * quadros-chave) pra relativas à base da pilha `arrayId` (`toBottom`) ou de
+   * volta pro topo. */
+  _convertAnchors(id, arrayId, toBottom) {
+    const frames = this.stepLayout.get(this.stableKeys.get(id)) ?? [];
+    const current = frames.filter((f) => f.step <= this.stepIndex).at(-1) ?? this.positions.get(id);
+    const convert = (entry, step) => {
+      if (!entry || !!entry.bottom === toBottom) return;
+      const h = stackHeight(this._arrayLenAt(arrayId, entry === current ? this.stepIndex : step));
+      if (toBottom) {
+        entry.y += h;
+        entry.bottom = true;
+      } else {
+        entry.y -= h;
+        delete entry.bottom;
+      }
+    };
+    convert(this.positions.get(id), this.createdAt.get(id) ?? 0);
+    frames.forEach((f) => convert(f, f.step));
   }
 
   goToStep(i) {
@@ -294,7 +370,10 @@ export class MicroProgramRunner {
   _capturePositions() {
     const note = (map) => {
       map.forEach((n, id) => {
-        if (!this.positions.has(id)) this.positions.set(id, { x: n.x, y: n.y });
+        if (this.positions.has(id)) return;
+        // pilha e rótulo que anda com ela: relativo à base (ver comentário da classe)
+        const stack = this._stackOf(id, n, this.micro);
+        this.positions.set(id, stack ? { x: n.x, y: n.y + stackHeight(stack.cells.length), bottom: true } : { x: n.x, y: n.y });
       });
     };
     note(this.micro.structs);
@@ -344,7 +423,7 @@ export class MicroProgramRunner {
   _restore(snapshot, stepIndex) {
     const withPos = (id, n) => {
       const pos = this._positionAt(id, stepIndex);
-      return { ...n, x: pos ? pos.x : 0, y: pos ? pos.y : 0 };
+      return { ...n, x: pos ? pos.x : 0, y: pos ? this._stackTop(pos, n, snapshot.arrays) : 0 };
     };
     const withArrayPrefs = (id, n) => ({
       ...withPos(id, n),

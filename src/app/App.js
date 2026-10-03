@@ -1522,9 +1522,11 @@ export class App {
       showStack: !node.isSet,
       onSave: ({ name, size, orientation }) => {
         this.micro.renameArray(node.id, name);
-        if (size !== undefined) this.micro.resizeArray(node.id, size);
+        // orientação antes do tamanho: virando pilha, as células novas já
+        // entram em cima (base parada, ver MicroModel#_keepStackBase)
         this.micro.setArrayOrientation(node.id, orientation);
         this.microRunner.updateOrientation(node.id, orientation);
+        if (size !== undefined) this.micro.resizeArray(node.id, size);
         if (this.microSelectedId === node.id) this._syncCodeEditorSelection('array', node.id);
         this._renderMicroOnly();
       },

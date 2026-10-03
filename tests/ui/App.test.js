@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { desmontarApp, montarApp, tecla } from '../helpers/dom.js';
 import { linhas } from '../helpers/runDsl.js';
-import { STRUCT_W, arrayHandleRect, arrayLayout, chartLayout, dictHandleRect, matrixHandleRect } from '../../src/render/MicroCanvasView.js';
+import { ARRAY_CELL, STRUCT_W, arrayHandleRect, arrayLayout, chartLayout, dictHandleRect, matrixHandleRect } from '../../src/render/MicroCanvasView.js';
 
 let app;
 const $ = (sel) => document.querySelector(sel);
@@ -1175,6 +1175,28 @@ describe('popup de configurações da lista (botão direito no puxador)', () => 
     // reabrir mostra a Pilha marcada
     botaoDireitoNoPuxador(pilha);
     expect(botaoOrientacao('Pilha').classList.contains('active')).toBe(true);
+  });
+
+  test('pilha no Sandbox: append/pop e Tamanho mexem no topo, a base fica parada', () => {
+    const pilha = criarNoSandbox('pilha = [1, 2]');
+    const base = () => pilha.y + arrayLayout(pilha).height;
+    botaoDireitoNoPuxador(pilha);
+    botaoOrientacao('Pilha').click();
+    campo('Tamanho').value = '3'; // virar pilha e crescer de uma vez: cresce pra cima
+    const antes = pilha.y + 2 * ARRAY_CELL; // virar pilha com 2 células não move o topo
+    salvar();
+    expect(base()).toBe(antes);
+    escreverCodigo(linhas('pilha = [1, 2]', 'pilha.append(3)', 'pilha.pop()'));
+    const rotulo = app.micro.pointers.get(pilha.labelPointerId);
+    const folga = pilha.y - rotulo.y; // o rótulo nasce acima e anda com o topo
+    ctrlEnterNaLinha(1);
+    expect(pilha.cells).toEqual([1, 2, 0, 3]);
+    expect(base()).toBe(antes);
+    expect(pilha.y - rotulo.y).toBe(folga);
+    ctrlEnterNaLinha(2);
+    ctrlEnterNaLinha(2);
+    expect(pilha.cells).toEqual([1, 2]);
+    expect(base()).toBe(antes);
   });
 
   test('set não oferece a orientação Pilha', () => {

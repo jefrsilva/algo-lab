@@ -1,7 +1,7 @@
 // MicroModel: CRUD dos elementos, consistência de referências ao apagar e
 // serialização (salvar/carregar projeto).
 import { beforeEach, describe, expect, test } from 'vitest';
-import { MAX_ARRAY_SIZE, MAX_DICT_SIZE, MicroModel } from '../../src/core/micro/MicroModel.js';
+import { ARRAY_CELL_H, MAX_ARRAY_SIZE, MAX_DICT_SIZE, MicroModel } from '../../src/core/micro/MicroModel.js';
 import { makeTuple } from '../../src/interpreter/pytuple.js';
 
 let m;
@@ -241,6 +241,46 @@ describe('arrays', () => {
     const s = m.addArray(0, 0, { isSet: true });
     m.setArrayOrientation(s.id, 'stack');
     expect(s.orientation).toBe('horizontal');
+  });
+
+  test('pilha cresce pra cima: a base fica parada', () => {
+    const arr = m.addArray(0, 100, { orientation: 'stack', size: 2 });
+    const base = () => arr.y + ARRAY_CELL_H * Math.max(1, arr.cells.length);
+    expect(base()).toBe(100 + 2 * ARRAY_CELL_H);
+    const passos = [
+      () => m.growArray(arr.id),
+      () => m.insertArrayCell(arr.id, 0, 7),
+      () => m.removeArrayCell(arr.id, 1),
+      () => m.shrinkArray(arr.id),
+      () => m.resizeArray(arr.id, 6),
+      () => m.setArrayContents(arr.id, 'value', []),
+      () => m.setArrayContents(arr.id, 'value', [1, 2, 3]),
+    ];
+    passos.forEach((passo) => {
+      passo();
+      expect(base()).toBe(100 + 2 * ARRAY_CELL_H);
+    });
+    expect(arr.y).toBe(100 - ARRAY_CELL_H);
+  });
+
+  test('o rótulo acima da pilha sobe e desce com o topo; em outro lugar, fica', () => {
+    const arr = m.addArray(0, 100, { orientation: 'stack', size: 1 });
+    const rot = m.addPointer(0, 50, 'arr');
+    m.linkArrayLabelPointer(arr.id, rot.id);
+    m.growArray(arr.id);
+    expect(rot.y).toBe(50 - ARRAY_CELL_H);
+    m.shrinkArray(arr.id);
+    expect(rot.y).toBe(50);
+    rot.y = 200; // abaixo da base
+    m.growArray(arr.id);
+    expect(rot.y).toBe(200);
+  });
+
+  test('lista vertical/horizontal continua crescendo pra baixo/direita', () => {
+    const v = m.addArray(0, 100, { orientation: 'vertical', size: 2 });
+    m.growArray(v.id);
+    m.removeArrayCell(v.id, 0);
+    expect(v.y).toBe(100);
   });
 
   test('a pilha sobrevive a salvar e carregar', () => {

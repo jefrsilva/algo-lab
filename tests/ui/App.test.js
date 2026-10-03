@@ -444,3 +444,43 @@ describe('alinhar e distribuir a seleção', () => {
     expect(b.x).toBe(0);
   });
 });
+
+describe('pan com a barra de espaço', () => {
+  const svg = () => $('.micro-canvas');
+  const container = () => $('.micro-container');
+  function evento(alvo, tipo, x, y, opts = {}) {
+    alvo.dispatchEvent(new MouseEvent(tipo, { clientX: x, clientY: y, button: 0, bubbles: true, ...opts }));
+  }
+
+  test('Espaço pressionado troca o cursor pela mão e o botão esquerdo move o canvas', () => {
+    const no = app.micro.addStruct(0, 0, 1);
+    app._renderMicroOnly();
+    const { tx, ty } = app.microViewport;
+    const pos = { x: no.x, y: no.y };
+
+    tecla(window, ' ', { code: 'Space' });
+    expect(container().classList.contains('space-pan')).toBe(true);
+
+    // arrasta com o botão esquerdo começando EM CIMA do nó: move o canvas, não o nó
+    evento(svg(), 'pointerdown', no.x + tx + 10, no.y + ty + 10);
+    expect(container().classList.contains('panning')).toBe(true);
+    evento(window, 'pointermove', no.x + tx + 60, no.y + ty + 40);
+    evento(window, 'pointerup', no.x + tx + 60, no.y + ty + 40);
+    expect(app.microViewport.tx).toBe(tx + 50);
+    expect(app.microViewport.ty).toBe(ty + 30);
+    expect({ x: no.x, y: no.y }).toEqual(pos);
+    expect(container().classList.contains('panning')).toBe(false);
+
+    window.dispatchEvent(new KeyboardEvent('keyup', { key: ' ', code: 'Space', bubbles: true }));
+    expect(container().classList.contains('space-pan')).toBe(false);
+  });
+
+  test('o botão direito com Espaço não move mais o canvas', () => {
+    const { tx, ty } = app.microViewport;
+    tecla(window, ' ', { code: 'Space' });
+    evento(svg(), 'pointerdown', 100, 100, { button: 2 });
+    evento(window, 'pointermove', 200, 200, { button: 2 });
+    evento(window, 'pointerup', 200, 200, { button: 2 });
+    expect(app.microViewport).toMatchObject({ tx, ty });
+  });
+});

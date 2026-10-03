@@ -844,3 +844,17 @@
 .array-node.linked .array-handle {
   stroke: var(--target);
 }
+
+/* pan com a barra de espaço (ver App#_setSpaceDown): enquanto ela está
+   pressionada, a mão de pan vale no canvas INTEIRO — por cima dos cursores
+   próprios de nós, puxadores, divisórias e modos — e vira a mão fechada
+   durante o arraste (botão esquerdo com Espaço, ou botão do meio). */
+.micro-container.space-pan .micro-canvas,
+.micro-container.space-pan .micro-canvas * {
+  cursor: grab !important;
+}
+
+.micro-container.panning .micro-canvas,
+.micro-container.panning .micro-canvas * {
+  cursor: grabbing !important;
+}

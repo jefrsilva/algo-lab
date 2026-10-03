@@ -217,17 +217,17 @@ export class App {
     // ordem de clique) — alinhar usa os extremos do grupo em vez do primeiro
     // selecionado, ver `_microSelectionAnchor`
     this._microAnchorlessSelection = null;
-    this._spaceDown = false; // barra de espaço — botão direito passa a mover o canvas enquanto pressionada
+    this._spaceDown = false; // barra de espaço — botão esquerdo passa a mover o canvas enquanto pressionada
 
     this._boundKeyDown = (e) => this._onKeyDown(e);
     this._boundKeyUp = (e) => this._onKeyUp(e);
     window.addEventListener('keydown', this._boundKeyDown);
     window.addEventListener('keyup', this._boundKeyUp);
     // solta a barra de espaço "presa" se a janela perder o foco no meio do
-    // pressionamento (ex: alt-tab) — sem isso o botão direito continuaria
+    // pressionamento (ex: alt-tab) — sem isso o botão esquerdo continuaria
     // movendo o canvas indefinidamente.
     window.addEventListener('blur', () => {
-      this._spaceDown = false;
+      this._setSpaceDown(false);
       this._setMicroChartReadout(null);
     });
 
@@ -506,9 +506,9 @@ export class App {
 
   /** Atalhos de teclado do modo micro (único modo alcançável pela UI, ver
    * constructor) + a barra de espaço, que vira "modificador de pan": com ela
-   * pressionada, o botão direito passa a mover o canvas em vez de abrir o
-   * popup de configurações de array/dict/label (ver _onMicroPointerDown/
-   * _onMicroContextMenu). */
+   * pressionada, o cursor vira a mão de pan e o botão esquerdo passa a mover
+   * o canvas em vez de selecionar/arrastar elementos (ver _onMicroPointerDown
+   * e `_setSpaceDown`). */
   _onKeyDown(e) {
     // janela de Configurações é modal: ela mesma trata Esc/Tab, e nenhum
     // atalho do app vale por trás dela
@@ -577,7 +577,7 @@ export class App {
     const tag = e.target?.tagName;
     const isTyping = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target?.isContentEditable;
     if (e.code === 'Space' && !isTyping) {
-      this._spaceDown = true;
+      this._setSpaceDown(true);
       e.preventDefault(); // barra de espaço não deve rolar a página
       return;
     }
@@ -834,8 +834,15 @@ export class App {
   }
 
   _onKeyUp(e) {
-    if (e.code === 'Space') this._spaceDown = false;
+    if (e.code === 'Space') this._setSpaceDown(false);
     if (e.key === 'Shift') this._setMicroChartReadout(null);
+  }
+
+  /** Barra de espaço pressionada/solta: a classe `space-pan` no container
+   * troca o cursor do canvas inteiro pela mão de pan (ver canvas.css). */
+  _setSpaceDown(down) {
+    this._spaceDown = down;
+    this.microContainer?.classList.toggle('space-pan', down);
   }
 
   // ---- modo micro: leitura de gráfico (Shift + mouse) ----
@@ -2043,6 +2050,7 @@ export class App {
     this.microMode = mode;
     this.microContainer.dataset.mode = mode;
     this._microPointer = null;
+    this.microContainer.classList.remove('panning');
     this._microSelectionPreview = null;
     this._microAreaDraft = null;
     this._microChartDraft = null;
@@ -3411,12 +3419,13 @@ export class App {
     const screenPt = this._microScreenPointFromEvent(e);
     const worldPt = this.microView.screenToWorld(screenPt.x, screenPt.y, this.microViewport);
 
-    // botão do meio, ou botão direito com a barra de espaço pressionada:
+    // botão do meio, ou botão esquerdo com a barra de espaço pressionada:
     // sempre move o canvas, não importa o modo ou o que está sob o cursor —
-    // a seleção/manipulação abaixo usa exclusivamente o botão esquerdo.
-    if (e.button === 1 || (e.button === 2 && this._spaceDown)) {
+    // a seleção/manipulação abaixo só vale com o botão esquerdo SEM o Espaço.
+    if (e.button === 1 || (e.button === 0 && this._spaceDown)) {
       e.preventDefault();
       this._microPointer = { downScreen: screenPt, lastScreen: screenPt, moved: false, hit: 'pan' };
+      this.microContainer.classList.add('panning');
       window.addEventListener('pointermove', this._microBoundMove);
       window.addEventListener('pointerup', this._microBoundUp);
       return;
@@ -3815,6 +3824,7 @@ export class App {
     this._microDragPos = null;
     this._microPortDrag = null;
     this._microGroupDragPositions = null;
+    this.microContainer.classList.remove('panning');
     window.removeEventListener('pointermove', this._microBoundMove);
     window.removeEventListener('pointerup', this._microBoundUp);
     this._renderMicroOnly();
@@ -3824,12 +3834,9 @@ export class App {
    * o ponteiro-rótulo de um array/dict (ver `_createArrayLabelPointer`/
    * `_createDictLabelPointer`), abre o popup de configurações correspondente
    * — em qualquer outro ponto, só bloqueia o menu nativo do navegador, como
-   * já fazia antes. Com a barra de espaço pressionada, o botão direito virou
-   * um jeito de mover o canvas (ver _onMicroPointerDown) — nesse caso nenhum
-   * popup deve abrir. */
+   * já fazia antes. */
   _onMicroContextMenu(e) {
     e.preventDefault();
-    if (this._spaceDown) return;
     const screenPt = this._microScreenPointFromEvent(e);
     const worldPt = this.microView.screenToWorld(screenPt.x, screenPt.y, this.microViewport);
     const labelNode = this._findMicroLabelAt(worldPt);
@@ -3935,7 +3942,8 @@ export class App {
    * Delete/Backspace (ver `_deleteMicroSelection`). Nos modos Texto/Área o
    * duplo clique é só dois cliques de criação — não edita nada. */
   _onMicroDblClick(e) {
-    if (this.microMode !== 'select') return;
+    // Espaço pressionado: os cliques são de pan, não abrem edição in place
+    if (this.microMode !== 'select' || this._spaceDown) return;
     const screenPt = this._microScreenPointFromEvent(e);
     const worldPt = this.microView.screenToWorld(screenPt.x, screenPt.y, this.microViewport);
     // mesma prioridade do hit-test de _onMicroPointerDown

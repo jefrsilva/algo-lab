@@ -297,7 +297,7 @@ pointermove no <svg>, sem arrasto      → App#_onMicroHoverMove: guarda a posi�
                                          e no início de qualquer gesto
 ```
 
-Pan: botão do meio, ou botão direito com Espaço pressionado. Clique simples só seleciona; toda edição in place abre com duplo clique; Delete/Backspace remove.
+Pan: botão do meio, ou botão esquerdo com Espaço pressionado (o cursor vira a mão de pan enquanto o Espaço está pressionado — classes `space-pan`/`panning` no container, ver `App#_setSpaceDown`). Clique simples só seleciona; toda edição in place abre com duplo clique; Delete/Backspace remove.
 
 Alinhar e distribuir: com 2+ elementos selecionados aparece, logo acima da barra de modos, a `AlignToolbar` (alinhar à esquerda/centro/direita/topo/meio/fundo; com 3+, também distribuir na horizontal/vertical — os mesmos 8 comandos estão no Ctrl+Espaço como `align …`/`distribute …`). `App#_runMicroAlignAction` monta o retângulo desenhado de cada elemento (`_microElementRect`: coleções com a aba, nó simplificado só o círculo), calcula os deslocamentos com `microAlign.js` e aplica por `_microSetNodePos`, o mesmo caminho de soltar um arraste (na reprodução, vale só pro passo atual). A referência do alinhamento é o primeiro elemento selecionado — a ordem de inserção de `microSelectedIds` é a ordem de clique/Ctrl+clique —, que não se move; numa seleção que começou por retângulo (`_selectMicroRect` marca o Set em `_microAnchorlessSelection`, e `_toggleMicroSelection` repassa a marca), vale o extremo do grupo. Distribuir deixa o mesmo espaço livre entre vizinhos, com o primeiro e o último (pelo centro) parados.
 

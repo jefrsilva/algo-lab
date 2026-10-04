@@ -72,7 +72,8 @@ export class ArraySettingsPopup {
       sizeLabel.textContent = 'Tamanho';
       sizeInput = document.createElement('input');
       sizeInput.type = 'number';
-      sizeInput.min = '1';
+      // 0 vale: uma lista vazia (`lista = []`) continua vazia ao salvar
+      sizeInput.min = '0';
       sizeInput.max = String(maxSize);
       sizeInput.className = 'array-settings-input';
       sizeInput.value = String(node.cells.length);
@@ -152,8 +153,9 @@ export class ArraySettingsPopup {
       const name = nameInput.value.trim() || node.name;
       const payload = { name, orientation };
       if (sizeInput) {
-        const rawSize = Number(sizeInput.value);
-        payload.size = Number.isFinite(rawSize) ? Math.max(1, Math.min(Math.round(rawSize), maxSize)) : node.cells.length;
+        // campo em branco mantém o tamanho atual (Number('') daria 0 e esvaziaria a lista)
+        const rawSize = sizeInput.value.trim() === '' ? NaN : Number(sizeInput.value);
+        payload.size = Number.isFinite(rawSize) ? Math.max(0, Math.min(Math.round(rawSize), maxSize)) : node.cells.length;
       }
       extraSizeInputs.forEach(({ field, input }) => {
         const raw = Number(input.value);

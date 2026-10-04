@@ -618,8 +618,8 @@ export class MicroModel {
     if (!node) return;
     // 0 é válido aqui (ver `addArray`) — é o que permite "arr.pop()" esvaziar
     // um array até o fim, célula por célula, sem travar numa última célula
-    // fantasma. Quem edita manualmente (ArraySettingsPopup) já impõe seu
-    // próprio mínimo de 1 antes de chamar isto — essa UI não muda.
+    // fantasma. O campo Tamanho do ArraySettingsPopup também aceita 0, pra
+    // uma lista vazia continuar vazia ao salvar o popup.
     const newSize = Math.max(0, Math.min(Math.round(size), MAX_ARRAY_SIZE));
     const oldSize = node.cells.length;
     if (newSize === oldSize) return;

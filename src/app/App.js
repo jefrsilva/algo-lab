@@ -3484,6 +3484,26 @@ export class App {
     return s ? { x: s.x + STRUCT_W / 2, y: s.y + STRUCT_H / 2 } : null;
   }
 
+  /** Âncora do pino "neighbors" de um nó de grafo no modo detalhado.
+   * Struct 'graph' não usa a fatia next/prev pra NADA (ver
+   * MicroModel#addStruct) — o campo "neighbors" (lista, não um único alvo)
+   * mora num array à parte (`n.neighborsArrayId`, ver
+   * MicroRuntimeAdapter#createStruct). O pino reaproveita a MESMA geometria
+   * da célula "next" (structNextPort), só que mirando o CENTRO do array em
+   * vez do centro de outro struct — por isso só na construção do node de
+   * RENDER, nunca em `model.next` de verdade (ver `_findMicroPortAt` sobre
+   * por que graph fica de fora do drag-to-link). Tem que ser o centro, como
+   * em `_structFieldAnchor`: structNextPort tira dela a altura de saída da
+   * seta, e a ponta chega nessa mesma altura (rectEdgePoint) — mirando o
+   * topo, nó e lista na mesma linha ligavam canto de cima com canto de cima. */
+  _microGraphNeighborsAnchor(n) {
+    const arr = n.neighborsArrayId ? this.micro.arrays.get(n.neighborsArrayId) : null;
+    if (!arr) return null;
+    const { pos } = this._microNodePos(arr);
+    const { width, height } = arrayLayout(arr);
+    return { x: pos.x + width / 2, y: pos.y + height / 2 };
+  }
+
   /** Quando dois nós têm uma ligação "de volta" (ex: A.next -> B e B.prev -> A,
    * o caso comum de lista duplamente ligada com vizinhos lado a lado), os dois
    * pinos naturalmente calculariam a mesma posição — pra separar isso de forma
@@ -4650,23 +4670,6 @@ export class App {
 
     const pairOffsetByOwnerField = this._computeStructPairOffsets();
 
-    // struct 'graph' não usa a fatia next/prev pra NADA (ver MicroModel#addStruct)
-    // — o campo "neighbors" (lista, não um único alvo) mora num array à parte
-    // (`n.neighborsArrayId`, ver MicroRuntimeAdapter#createStruct). O pino
-    // "neighbors" do modo detalhado (ver _renderStructs, variante 'graph')
-    // reaproveita a MESMA geometria da célula "next" (structNextPort), só que
-    // apontando pro CENTRO do array em vez de outro struct — por isso aqui
-    // (só na construção do node de RENDER, nunca em `model.next` de verdade,
-    // ver comentário de `_findMicroPortAt`/`_microPortWorldPos` sobre por que
-    // graph fica de fora do drag-to-link) populamos hasNextLink/nextAnchor
-    // com a posição do array em vez de deixar de fora.
-    const graphNeighborsAnchor = (n) => {
-      const arr = n.neighborsArrayId ? this.micro.arrays.get(n.neighborsArrayId) : null;
-      if (!arr) return null;
-      const { pos: arrPos } = this._microNodePos(arr);
-      const { width } = arrayLayout(arr);
-      return { x: arrPos.x + width / 2, y: arrPos.y };
-    };
     const structs = structModels.map((n) => {
       const pos = structPosById.get(n.id);
       // o pino "neighbors" (-> array) só existe no modo DETALHADO — no
@@ -4688,7 +4691,7 @@ export class App {
         hasPrevLink: !!n.prev,
         hasNextLink: isGraph ? !!n.neighborsArrayId : !!n.next,
         prevAnchor: n.prev ? structCenter(n.prev) : null,
-        nextAnchor: isGraph ? graphNeighborsAnchor(n) : n.next ? structCenter(n.next) : null,
+        nextAnchor: isGraph ? this._microGraphNeighborsAnchor(n) : n.next ? structCenter(n.next) : null,
         prevPairOffset: pairOffsetByOwnerField.get(`${n.id}:prev`),
         nextPairOffset: pairOffsetByOwnerField.get(`${n.id}:next`),
       };

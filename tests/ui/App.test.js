@@ -731,6 +731,47 @@ describe('organizar uma árvore por níveis', () => {
   });
 });
 
+describe('seta "neighbors" de um GraphNode (modo detalhado)', () => {
+  /** Pontas da seta do nó pra lista de vizinhos, lidas do `d` desenhado
+   * ("M x1 y1 Q cx cy x2 y2"). */
+  function pontasDaSeta(no) {
+    const d = app.microView.edgeEls.get(`${no.id}-neighbors`).getAttribute('d');
+    const [x1, y1, , , x2, y2] = d.match(/-?[\d.]+/g).map(Number);
+    return { x1, y1, x2, y2 };
+  }
+
+  test('nó e lista na mesma linha: sai do meio da altura do nó e chega no meio da lista', () => {
+    escreverCodigo('g = GraphNode(1)');
+    ctrlEnterNaLinha(0);
+    const no = [...app.micro.structs.values()][0];
+    const lista = app.micro.arrays.get(no.neighborsArrayId);
+    // topos alinhados, lista à direita — antes a seta ligava os cantos de cima
+    lista.x = no.x + STRUCT_W + 100;
+    lista.y = no.y;
+    app._renderMicroOnly();
+    const meioNo = no.y + STRUCT_H / 2;
+    const meioLista = lista.y + arrayLayout(lista).height / 2;
+    expect(app._microGraphNeighborsAnchor(no)).toEqual({ x: lista.x + arrayLayout(lista).width / 2, y: meioLista });
+    const { x1, y1, x2, y2 } = pontasDaSeta(no);
+    expect(x1).toBe(no.x + STRUCT_W);
+    // reta, na altura do meio da lista (a lista tem a faixa de índices: o
+    // meio dela fica a poucos px do meio do nó)
+    expect(y1).toBeCloseTo(meioLista);
+    expect(Math.abs(y1 - meioNo)).toBeLessThan(STRUCT_H / 4);
+    expect(y2).toBeCloseTo(y1);
+    expect(x2).toBeLessThan(lista.x);
+  });
+
+  test('lista embaixo do nó (onde ela nasce): a seta sai pela base da célula "nbrs"', () => {
+    escreverCodigo('g = GraphNode(1)');
+    ctrlEnterNaLinha(0);
+    const no = [...app.micro.structs.values()][0];
+    const { y1, y2 } = pontasDaSeta(no);
+    expect(y1).toBe(no.y + STRUCT_H);
+    expect(y2).toBeGreaterThan(y1);
+  });
+});
+
 describe('ferramenta Ligar nós', () => {
   const svg = () => $('.micro-canvas');
   /** Ponteiro no ponto (x, y) do MUNDO (ver "alinhar e distribuir"). */

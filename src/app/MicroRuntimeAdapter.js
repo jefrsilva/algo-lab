@@ -87,10 +87,14 @@ function dictCellsToMap(cells, micro, arrayRef) {
  * instancia (`createPosition`), e re-renderizar é avisado via `onChange`.
  */
 export class MicroRuntimeAdapter {
-  constructor(micro, { createPosition, onChange, onArrayCreated, onDictCreated, onMatrixCreated } = {}) {
+  constructor(micro, { createPosition, onChange, onStructCreated, onArrayCreated, onDictCreated, onMatrixCreated } = {}) {
     this.micro = micro;
     this.createPosition = createPosition || (() => ({ x: 0, y: 0 }));
     this.onChange = onChange || (() => {});
+    // chamado logo após "Node(v)"/"TreeNode(v)"/"GraphNode(v)" criar um nó
+    // (já com a lista de vizinhos, no de grafo) — o App põe a lista ao lado
+    // do nó (ver App#_microTidyOwned)
+    this.onStructCreated = onStructCreated || (() => {});
     // chamado logo após o código criar um array/dict novo (ex: "arr = [1, 2,
     // 3]"/"d = {...}") — quem instancia o adapter usa isso pra criar o
     // ponteiro-rótulo que mostra o nome no canvas (ver
@@ -432,6 +436,7 @@ export class MicroRuntimeAdapter {
       });
       this.micro.setStructNeighborsArray(node.id, arrNode.id);
     }
+    this.onStructCreated(node);
     this._touch('struct', node.id);
     return node.id;
   }

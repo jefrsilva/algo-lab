@@ -136,9 +136,12 @@ const ELEMENT_COLORS = [...AREA_COLORS.slice(0, 9), null];
 const EMPTY_SET = new Set();
 const CONSOLE_MAX_LINES = 3; // linhas de saída visíveis no console (ver _renderConsoleLines)
 const CLICK_THRESHOLD = 4;
-// distância entre um elemento recém-criado e o ponteiro dele (ver
-// `_microPointerSpotNear`) — folga pra seta, com a ponta (15), aparecer
-const MICRO_POINTER_GAP = 48;
+// distância entre um elemento recém-criado e quem aponta pra ele — o
+// ponteiro dele (ver `_microPointerSpotNear`), a lista de vizinhos de um nó
+// de grafo (ver `_microTidyOwned`), o cursor de Shift+clique numa célula
+// (ver `_createMicroIndexCursorNearCell`) — folga pra seta, com a ponta
+// (15), aparecer
+const MICRO_ARROW_GAP = 48;
 
 export class App {
   constructor(root) {
@@ -348,6 +351,7 @@ export class App {
     this.microRuntime = new MicroRuntimeAdapter(this.micro, {
       createPosition: (kind, size, layoutKey, near) => this._microCreatePosition(kind, size, layoutKey, near),
       onChange: () => this._renderMicroOnly(),
+      onStructCreated: (node) => this._microTidyOwned(node.id),
       onArrayCreated: (node, opts) => this._createArrayLabelPointer(node, opts),
       onDictCreated: (node, opts) => this._createDictLabelPointer(node, opts),
       onMatrixCreated: (node, opts) => this._createMatrixLabelPointer(node, opts),
@@ -1364,7 +1368,7 @@ export class App {
   /** Onde nasce o ponteiro de um elemento que acabou de ser criado — o
    * ponteiro-rótulo de uma lista/set/deque/dict/matriz, o "p" de "p =
    * Node(1)" —, longe o bastante dele pra seta aparecer
-   * (`MICRO_POINTER_GAP`): à ESQUERDA de coleções (onde fica o puxador em
+   * (`MICRO_ARROW_GAP`): à ESQUERDA de coleções (onde fica o puxador em
    * que a seta pousa) e de nós de grafo, ACIMA de Node/TreeNode (ver
    * `_microPointerIdealSpot`). Se esse lugar estiver ocupado:
    * - `movable` (o elemento também acabou de nascer, num lugar que ninguém
@@ -1377,7 +1381,6 @@ export class App {
   _microPointerSpotNear(elementId, label, { movable = false, layoutKey = null } = {}) {
     const w = pointerWidth({ label }, this.microFullNames);
     const side = this._microPointerSide(elementId);
-    if (movable) this._microTidyOwned(elementId);
     const ideal = this._microPointerIdealSpot(elementId, w);
     if (this._microFreeAt(ideal, w, PTR_H)) return ideal;
     if (!movable) return this._findFreeMicroPosition(ideal, w, PTR_H, side);
@@ -1394,13 +1397,13 @@ export class App {
   }
 
   /** Canto do ponteiro (largura `w`) colado no lado certo do elemento, a
-   * `MICRO_POINTER_GAP` dele: centralizado em cima, ou na altura do meio à
+   * `MICRO_ARROW_GAP` dele: centralizado em cima, ou na altura do meio à
    * esquerda. */
   _microPointerIdealSpot(elementId, w) {
     const r = this._microElementRect(elementId);
     return this._microPointerSide(elementId) === 'above'
-      ? { x: r.x + r.w / 2 - w / 2, y: r.y - MICRO_POINTER_GAP - PTR_H }
-      : { x: r.x - MICRO_POINTER_GAP - w, y: r.y + r.h / 2 - PTR_H / 2 };
+      ? { x: r.x + r.w / 2 - w / 2, y: r.y - MICRO_ARROW_GAP - PTR_H }
+      : { x: r.x - MICRO_ARROW_GAP - w, y: r.y + r.h / 2 - PTR_H / 2 };
   }
 
   /** O elemento e o que é dele e anda junto: a lista de vizinhos de um nó de
@@ -1410,16 +1413,38 @@ export class App {
     return nbrs && this.micro.arrays.has(nbrs) ? [elementId, nbrs] : [elementId];
   }
 
-  /** Nó de grafo recém-criado: a lista de vizinhos (que nasce vazia, em
-   * qualquer lugar livre) vai pra logo abaixo do nó, alinhada à direita —
-   * do lado da célula "nbrs" de onde sai a seta, e nunca à esquerda, onde
-   * fica o ponteiro. */
-  _microTidyOwned(elementId) {
+  /** Nó de grafo e a lista de vizinhos dele, lado a lado, a
+   * `MICRO_ARROW_GAP` um do outro — chamado logo que um nó de grafo nasce
+   * (código, via `onStructCreated`; "new graph node") ou ganha a lista (ver
+   * `_toggleMicroGraphNeighbor`), já que a lista em si nasce em qualquer
+   * lugar livre. A lista vai:
+   * 1. pra DIREITA do nó, centralizada na altura dele, se estiver livre —
+   *    a seta sai reta da célula "nbrs";
+   * 2. senão pra BAIXO, alinhada à direita com o nó;
+   * 3. senão, com `movable` (o nó acabou de nascer, ninguém escolheu o
+   *    lugar dele), à direita, e nó e lista vão juntos, como um bloco, pro
+   *    espaço livre mais próximo; sem `movable` o nó fica, e a lista procura
+   *    mais pra direita.
+   * Nunca à esquerda: ali fica o ponteiro do nó (ver `_microPointerSide`). */
+  _microTidyOwned(elementId, { movable = true } = {}) {
     const struct = this.micro.structs.get(elementId);
     const arr = struct && this.micro.arrays.get(struct.neighborsArrayId);
     if (!arr) return;
-    arr.x = struct.x + STRUCT_W - arrayLayout(arr).width;
-    arr.y = struct.y + STRUCT_H + MICRO_POINTER_GAP / 2;
+    const ids = [struct.id, arr.id];
+    // caixa da lista (com o puxador) relativa ao canto dela
+    const r = this._microElementRect(arr.id);
+    const off = { x: r.x - arr.x, y: r.y - arr.y };
+    const right = { x: struct.x + STRUCT_W + MICRO_ARROW_GAP, y: struct.y + STRUCT_H / 2 - r.h / 2 };
+    const below = { x: struct.x + STRUCT_W - r.w, y: struct.y + STRUCT_H + MICRO_ARROW_GAP };
+    const put = (box) => {
+      arr.x = box.x - off.x;
+      arr.y = box.y - off.y;
+    };
+    const spot = [right, below].find((box) => this._microFreeAt(box, r.w, r.h, ids));
+    if (spot) return put(spot);
+    if (!movable) return put(this._findFreeMicroPosition(right, r.w, r.h, 'right', ids));
+    put(right);
+    this._microMoveBlock(ids);
   }
 
   /** Um retângulo `width`x`height` em `pos` cabe sem encostar em nada? */
@@ -1431,8 +1456,15 @@ export class App {
    * que vai nascer em `ideal` (largura `w`) juntos, como um bloco, pro
    * espaço livre mais próximo. Devolve a posição do ponteiro. */
   _microMoveWithPointer(elementId, ideal, w) {
-    const ids = this._microOwnedIds(elementId);
-    const rects = [...ids.map((id) => this._microElementRect(id)), { x: ideal.x, y: ideal.y, w, h: PTR_H }];
+    const { dx, dy } = this._microMoveBlock(this._microOwnedIds(elementId), [{ x: ideal.x, y: ideal.y, w, h: PTR_H }]);
+    return { x: ideal.x + dx, y: ideal.y + dy };
+  }
+
+  /** Move os elementos `ids` juntos, como um bloco (o retângulo que cobre
+   * eles e `extraRects`, que ainda vão nascer), pro espaço livre mais
+   * próximo. Devolve o deslocamento aplicado. */
+  _microMoveBlock(ids, extraRects = []) {
+    const rects = [...ids.map((id) => this._microElementRect(id)), ...extraRects];
     const x0 = Math.min(...rects.map((r) => r.x));
     const y0 = Math.min(...rects.map((r) => r.y));
     const x1 = Math.max(...rects.map((r) => r.x + r.w));
@@ -1445,7 +1477,7 @@ export class App {
       n.x += dx;
       n.y += dy;
     });
-    return { x: ideal.x + dx, y: ideal.y + dy };
+    return { dx, dy };
   }
 
   /** O contrário de `_microPointerSpotNear`, pra quando o ponteiro já tem
@@ -1453,7 +1485,6 @@ export class App {
    * elemento vai pro lugar dele em relação ao ponteiro, se estiver livre —
    * rodar o programa de novo repete o par como ficou da primeira vez. */
   _microPlaceUnderPointer(elementId, pointerPos, label) {
-    this._microTidyOwned(elementId);
     const ids = this._microOwnedIds(elementId);
     const ideal = this._microPointerIdealSpot(elementId, pointerWidth({ label }, this.microFullNames));
     const dx = pointerPos.x - ideal.x;
@@ -1503,9 +1534,10 @@ export class App {
    * elemento já no canvas (fora `exceptIds`) — assim um elemento recém-criado (pelo código, via
    * "nome = 5" etc) não nasce em cima de outro. Desiste depois de algumas
    * voltas e usa `base` mesmo (raríssimo — canvas realmente lotado).
-   * `side` ('left' | 'above'): só anda pra fora daquele lado (e de lado ao
-   * longo dele), nunca na direção oposta — é o ponteiro de um elemento (ver
-   * `_microPointerSpotNear`), que não pode chegar mais perto dele. */
+   * `side` ('left' | 'right' | 'above' | 'below'): só anda pra fora daquele
+   * lado (e de lado ao longo dele), nunca na direção oposta — é algo que
+   * aponta pra um elemento (ver `MICRO_ARROW_GAP`) e não pode chegar mais
+   * perto dele. */
   _findFreeMicroPosition(base, width, height, side = null, exceptIds = []) {
     const fits = this._microFitsFn(width, height, exceptIds);
     if (fits(base.x, base.y)) return { x: base.x, y: base.y };
@@ -1519,9 +1551,10 @@ export class App {
         for (let along = -10; along <= 10; along += 1) offsets.push([out, along]);
       }
       offsets.sort((a, b) => Math.hypot(...a) - Math.hypot(...b) || Math.abs(a[1]) - Math.abs(b[1]));
+      const [ox, oy] = { left: [-1, 0], right: [1, 0], above: [0, -1], below: [0, 1] }[side];
       for (const [out, along] of offsets) {
-        const x = side === 'left' ? base.x - out * STEP : base.x + along * STEP;
-        const y = side === 'left' ? base.y + along * STEP : base.y - out * STEP;
+        const x = base.x + (ox ? ox * out : along) * STEP;
+        const y = base.y + (oy ? oy * out : along) * STEP;
         if (fits(x, y)) return { x, y };
       }
       return { x: base.x, y: base.y };
@@ -3148,26 +3181,28 @@ export class App {
   }
 
   /** Shift+clique (sem arraste) numa célula: o mesmo cursor do arraste
-   * acima, num espaço livre logo abaixo da célula (à direita, num array
-   * vertical). Um cursor que já existia fica onde estava — só é selecionado. */
+   * acima, num espaço livre abaixo da célula (à direita, num array
+   * vertical), a `MICRO_ARROW_GAP` dela. Um cursor que já existia fica onde estava — só é selecionado. */
   _createMicroIndexCursorNearCell(collectionId, cell) {
     const matrix = this.micro.matrices.get(collectionId);
     const arr = matrix ? null : this.micro.arrays.get(collectionId);
     const w = pointerWidth({ label: 'p' }, this.microFullNames);
     let desired;
+    let side = 'below';
     if (matrix) {
       const r = matrixCellRect(matrix, cell.row, cell.col);
-      desired = { x: r.x + r.width / 2 - w / 2, y: matrix.y + matrixLayout(matrix).height + 30 };
+      desired = { x: r.x + r.width / 2 - w / 2, y: matrix.y + matrixLayout(matrix).height + MICRO_ARROW_GAP };
     } else if (arr) {
       const layout = arrayLayout(arr);
       const c = layout.cells[cell.index];
       if (!c) return;
+      side = isVerticalOrientation(arr.orientation) ? 'right' : 'below';
       desired =
-        isVerticalOrientation(arr.orientation)
-          ? { x: arr.x + layout.width + 40, y: arr.y + c.y + c.h / 2 - PTR_H / 2 }
-          : { x: arr.x + c.x + c.w / 2 - w / 2, y: arr.y + layout.height + 30 };
+        side === 'right'
+          ? { x: arr.x + layout.width + MICRO_ARROW_GAP, y: arr.y + c.y + c.h / 2 - PTR_H / 2 }
+          : { x: arr.x + c.x + c.w / 2 - w / 2, y: arr.y + layout.height + MICRO_ARROW_GAP };
     } else return;
-    const pos = this._findFreeMicroPosition(desired, w, PTR_H);
+    const pos = this._findFreeMicroPosition(desired, w, PTR_H, side);
     const id = this._createMicroIndexCursor(collectionId, cell, pos.x, pos.y);
     if (id == null) return;
     this.microSelectedIds = new Set();
@@ -3230,6 +3265,7 @@ export class App {
       const arrPos = this._microCreatePosition('array', 0);
       const arr = this.micro.addArray(arrPos.x, arrPos.y, { kind: 'ref', size: 0, name: `__graph_neighbors_${node.id}` });
       this.micro.setStructNeighborsArray(node.id, arr.id);
+      this._microTidyOwned(node.id);
     }
     this._selectMicroElement('struct', node.id);
     this._renderMicroOnly();
@@ -3864,12 +3900,14 @@ export class App {
   /** Liga/desliga a aresta direcionada `fromId` → `toId` (ver
    * MicroModel#toggleStructNeighbor): entra no fim de "neighbors" ou sai
    * dele. Um nó de grafo sem lista de vizinhos (projeto antigo) ganha uma
-   * num lugar livre, como "GraphNode(v)" faria. */
+   * ao lado dele, como "GraphNode(v)" faria (ver `_microTidyOwned`). */
   _toggleMicroGraphNeighbor(fromId, toId) {
     const from = this.micro.structs.get(fromId);
     if (!from) return;
     const hasList = from.neighborsArrayId && this.micro.arrays.has(from.neighborsArrayId);
     const result = this.micro.toggleStructNeighbor(fromId, toId, hasList ? null : this._microCreatePosition('array', 0));
+    // lista nova: ao lado do nó, que fica onde o usuário o pôs
+    if (!hasList) this._microTidyOwned(fromId, { movable: false });
     if (result == null && (this.micro.arrays.get(from.neighborsArrayId)?.cells.length ?? 0) >= MAX_ARRAY_SIZE) {
       this.microRuntime.warn(`"neighbors" de um nó de grafo tem no máximo ${MAX_ARRAY_SIZE} vizinhos.`);
     }

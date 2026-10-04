@@ -33,6 +33,17 @@ describe('ganchos de criação (usados pelo App pra criar o ponteiro-rótulo)', 
     expect(onMatrixCreated).toHaveBeenCalledWith(expect.objectContaining({ name: 'm' }), { movable: true });
   });
 
+  test('onStructCreated recebe todo nó novo — o de grafo já com a lista de vizinhos', () => {
+    const vistos = [];
+    runDsl(linhas('a = Node(1)', 'nos = [GraphNode(2)]'), {
+      onStructCreated: (no) => vistos.push([no.type, !!no.neighborsArrayId]),
+    });
+    expect(vistos).toEqual([
+      ['list', false],
+      ['graph', true],
+    ]);
+  });
+
   test('elemento numa posição lembrada não é movível pra caber o rótulo', () => {
     const onArrayCreated = vi.fn();
     runDsl('nums = [1]', { onArrayCreated, createPosition: () => ({ x: 10, y: 20, remembered: true }) });

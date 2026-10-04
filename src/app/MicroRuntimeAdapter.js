@@ -87,10 +87,14 @@ function dictCellsToMap(cells, micro, arrayRef) {
  * instancia (`createPosition`), e re-renderizar é avisado via `onChange`.
  */
 export class MicroRuntimeAdapter {
-  constructor(micro, { createPosition, onChange, onArrayCreated, onDictCreated, onMatrixCreated } = {}) {
+  constructor(micro, { createPosition, onChange, onStructCreated, onArrayCreated, onDictCreated, onMatrixCreated } = {}) {
     this.micro = micro;
     this.createPosition = createPosition || (() => ({ x: 0, y: 0 }));
     this.onChange = onChange || (() => {});
+    // chamado logo após "Node(v)"/"TreeNode(v)"/"GraphNode(v)" criar um nó
+    // (já com a lista de vizinhos, no de grafo) — o App põe a lista ao lado
+    // do nó (ver App#_microTidyOwned)
+    this.onStructCreated = onStructCreated || (() => {});
     // chamado logo após o código criar um array/dict novo (ex: "arr = [1, 2,
     // 3]"/"d = {...}") — quem instancia o adapter usa isso pra criar o
     // ponteiro-rótulo que mostra o nome no canvas (ver
@@ -432,6 +436,7 @@ export class MicroRuntimeAdapter {
       });
       this.micro.setStructNeighborsArray(node.id, arrNode.id);
     }
+    this.onStructCreated(node);
     this._touch('struct', node.id);
     return node.id;
   }
@@ -1040,6 +1045,25 @@ export class MicroRuntimeAdapter {
     return { kind, id: node.id };
   }
 
+  /** Alguém (ponteiro, campo de outro nó, célula de lista/dict) já aponta
+   * pro struct `id`? Não — só logo depois de "Node(v)" criá-lo: a DSL não
+   * tem outro jeito de chegar num nó que ninguém referencia. */
+  _structReferenced(id) {
+    for (const p of this.micro.pointers.values()) {
+      if (p.target?.kind === 'struct' && p.target.id === id) return true;
+    }
+    for (const s of this.micro.structs.values()) {
+      if (s.next === id || s.prev === id) return true;
+    }
+    for (const a of this.micro.arrays.values()) {
+      if (a.kind === 'ref' && a.cells.includes(id)) return true;
+    }
+    for (const d of this.micro.dicts.values()) {
+      if (d.cells.some((c) => c.kind === 'ref' && c.value === id)) return true;
+    }
+    return false;
+  }
+
   /** "nome = valor", igual Python: "nome" passa a ser `valor`, seja lá o que
    * era antes (número, nó, lista, dict, matriz...).
    *
@@ -1150,9 +1174,14 @@ export class MicroRuntimeAdapter {
       // copia nem renomeia (igual "p2 = p1" com nós) — vários nomes coexistem
       // apontando pra ela, sem um roubar o nome do outro (ver
       // `_resolveCollection`, que resolve pelos dois caminhos).
-      const pos = this.createPosition('pointer', undefined, microLayoutKey('pointer', { name, frameId }));
+      // "p = Node(1)": o nó acabou de nascer e este é o ponteiro dele — nasce
+      // grudado nele (acima de Node/TreeNode, à esquerda de GraphNode, ver
+      // App#_microPointerSpotNear), não solto no centro da vista
+      const target = this._pointerTarget(value);
+      const near = target?.kind === 'struct' && !this._structReferenced(target.id) ? { ...target, label: name, global: frameId === 'global' } : null;
+      const pos = this.createPosition('pointer', undefined, microLayoutKey('pointer', { name, frameId }), near);
       const node = this.micro.addPointer(pos.x, pos.y, name, frameId);
-      this.micro.setPointerTarget(node.id, this._pointerTarget(value));
+      this.micro.setPointerTarget(node.id, target);
       this._touch('pointer', node.id);
     } else if (kind === 'array') {
       // lista, lista de nós, set ou deque (ver `_listSpec`) — um array de
@@ -1163,7 +1192,7 @@ export class MicroRuntimeAdapter {
       const node = this.micro.addArray(pos.x, pos.y, { kind: spec.kind, orientation: 'horizontal', size: 0, name, frameId });
       this.micro.replaceArray(node.id, spec);
       if (label) this.micro.linkArrayLabelPointer(node.id, label);
-      else this.onArrayCreated(node);
+      else this.onArrayCreated(node, { movable: !pos.remembered });
       this._touch('array', node.id);
     } else if (kind === 'matrix') {
       // "m = [[1, 2], [3, 4]]" / "m = [[0] * c for _ in range(l)]" — a
@@ -1172,7 +1201,7 @@ export class MicroRuntimeAdapter {
       const pos = this.createPosition('matrix', size, layoutKey('matrix'));
       const node = this.micro.addMatrix(pos.x, pos.y, { name, cells: value.rows, frameId });
       if (label) this.micro.linkMatrixLabelPointer(node.id, label);
-      else this.onMatrixCreated(node);
+      else this.onMatrixCreated(node, { movable: !pos.remembered });
       this._touch('matrix', node.id);
     } else {
       // "d = {...}" — a entidade dict de verdade, célula por CHAVE, na ordem
@@ -1183,7 +1212,7 @@ export class MicroRuntimeAdapter {
       const node = this.micro.addDict(pos.x, pos.y, { orientation: 'horizontal', name, cells: [], frameId });
       value.entries.forEach((v, key) => this._writeDictCell(node, name, key, v));
       if (label) this.micro.linkDictLabelPointer(node.id, label);
-      else this.onDictCreated(node);
+      else this.onDictCreated(node, { movable: !pos.remembered });
       this._touch('dict', node.id);
     }
   }

@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { desmontarApp, montarApp, tecla } from '../helpers/dom.js';
 import { linhas } from '../helpers/runDsl.js';
-import { ARRAY_CELL, STRUCT_W, arrayHandleRect, arrayLayout, chartLayout, dictHandleRect, matrixHandleRect } from '../../src/render/MicroCanvasView.js';
+import { ARRAY_CELL, PTR_H, STRUCT_H, STRUCT_W, arrayHandleRect, arrayLayout, chartLayout, dictHandleRect, matrixHandleRect, pointerWidth } from '../../src/render/MicroCanvasView.js';
 
 let app;
 const $ = (sel) => document.querySelector(sel);
@@ -208,6 +208,138 @@ describe('ações rápidas (Ctrl+Espaço)', () => {
     input.value = 'new pointer';
     input.dispatchEvent(new Event('input', { bubbles: true }));
     expect($('.quick-action-item.disabled')).not.toBeNull();
+  });
+});
+
+describe('ponteiro de um elemento recém-criado nasce longe o bastante pra seta aparecer', () => {
+  const FOLGA = 40; // a seta tem ponta de 15 — sobra haste visível
+  const ponteiroDe = (nome) => [...app.micro.pointers.values()].find((p) => p.label === nome);
+  const largura = (p) => pointerWidth(p, app.microFullNames);
+  const centroY = (p) => p.y + PTR_H / 2;
+  const centroX = (p) => p.x + largura(p) / 2;
+
+  function noSandbox(...codigo) {
+    escreverCodigo(linhas(...codigo));
+    codigo.forEach((_, i) => ctrlEnterNaLinha(i));
+  }
+
+  /** O ponteiro está à esquerda do retângulo `r` (já com o puxador), com
+   * folga, e na altura dele. */
+  function aEsquerda(p, r) {
+    expect(p.x + largura(p)).toBeLessThanOrEqual(r.x - FOLGA);
+    expect(centroY(p)).toBeGreaterThan(r.y);
+    expect(centroY(p)).toBeLessThan(r.y + r.h);
+  }
+
+  test.each([
+    ['lista', 'nums = [1, 2, 3]', 'arrays'],
+    ['set', 's = {1, 2}', 'arrays'],
+    ['deque', 'q = deque()', 'arrays'],
+    ['dict', 'd = {"a": 1}', 'dicts'],
+    ['matriz', 'm = [[1, 2], [3, 4]]', 'matrices'],
+  ])('%s do código: rótulo à esquerda, na altura da caixa', (_, codigo, mapa) => {
+    noSandbox(codigo);
+    const col = [...app.micro[mapa].values()][0];
+    aEsquerda(app.micro.pointers.get(col.labelPointerId), app._microElementRect(col.id));
+  });
+
+  test.each([['Node'], ['TreeNode']])('%s: o ponteiro nasce acima, centralizado', (tipo) => {
+    noSandbox(`p = ${tipo}(1)`);
+    const p = ponteiroDe('p');
+    const no = [...app.micro.structs.values()][0];
+    expect(p.target).toEqual({ kind: 'struct', id: no.id });
+    expect(p.y + PTR_H).toBeLessThanOrEqual(no.y - FOLGA);
+    expect(Math.abs(centroX(p) - (no.x + STRUCT_W / 2))).toBeLessThan(1);
+  });
+
+  test('vários elementos de uma vez: cada ponteiro continua do seu lado', () => {
+    noSandbox('nums = [1, 2, 3]', 'd = {"a": 1}', 'p = Node(1)', 't = TreeNode(2)');
+    [...app.micro.arrays.values(), ...app.micro.dicts.values()].forEach((col) => {
+      const rotulo = app.micro.pointers.get(col.labelPointerId);
+      expect(rotulo.x + largura(rotulo)).toBeLessThanOrEqual(app._microElementRect(col.id).x - FOLGA);
+    });
+    [...app.micro.structs.values()].forEach((no) => {
+      const p = [...app.micro.pointers.values()].find((q) => q.target?.id === no.id);
+      expect(p.y + PTR_H).toBeLessThanOrEqual(no.y - FOLGA);
+    });
+  });
+
+  test('GraphNode: o ponteiro nasce à esquerda', () => {
+    noSandbox('g = GraphNode(1)');
+    const no = [...app.micro.structs.values()][0];
+    const p = ponteiroDe('g');
+    expect(p.x + largura(p)).toBeLessThanOrEqual(no.x - FOLGA);
+    expect(Math.abs(centroY(p) - (no.y + STRUCT_H / 2))).toBeLessThan(1);
+    // a lista de vizinhos vai pro outro lado, à direita, longe do ponteiro
+    expect(app._microElementRect(no.neighborsArrayId).x).toBe(no.x + STRUCT_W + 48);
+  });
+
+  test('lugar do ponteiro ocupado: o elemento novo vai junto com ele pra um espaço livre', () => {
+    noSandbox('nums = [1, 2, 3]');
+    const nums = [...app.micro.arrays.values()][0];
+    // uma variável onde o ponteiro do próximo nó (no mesmo lugar) nasceria
+    const r = app._microElementRect(nums.id);
+    app.micro.addVariable(r.x, r.y - FOLGA - PTR_H * 2, 'x', 0);
+    noSandbox('p = Node(1)');
+    const no = [...app.micro.structs.values()][0];
+    const p = ponteiroDe('p');
+    expect(p.y + PTR_H).toBeLessThanOrEqual(no.y - FOLGA);
+    expect(Math.abs(centroX(p) - (no.x + STRUCT_W / 2))).toBeLessThan(1);
+  });
+
+  test('rodar de novo na Simulação repete o par nó + ponteiro', () => {
+    const codigo = linhas('nums = [1, 2, 3]', 'd = {"a": 1}', 'p = Node(1)');
+    const posicoes = () => {
+      botao('.playback-btn', '⏭').click();
+      const no = [...app.micro.structs.values()][0];
+      const p = ponteiroDe('p');
+      expect(p.y + PTR_H).toBeLessThanOrEqual(no.y - FOLGA);
+      expect(Math.abs(centroX(p) - (no.x + STRUCT_W / 2))).toBeLessThan(1);
+      return [no.x, no.y, p.x, p.y];
+    };
+    rodarNaSimulacao(codigo);
+    const primeira = posicoes();
+    $('.code-editor-run-btn').click();
+    expect(posicoes()).toEqual(primeira);
+  });
+
+  test('lugar ocupado: procura mais pra fora do mesmo lado, nunca mais perto', () => {
+    noSandbox('nums = [1, 2, 3]');
+    const nums = [...app.micro.arrays.values()][0];
+    const rotulo = app.micro.pointers.get(nums.labelPointerId);
+    // uma variável bem onde o rótulo nasceria
+    app.micro.addVariable(rotulo.x, rotulo.y, 'x', 0);
+    const pos = app._microPointerSpotNear(nums.id, 'nums');
+    expect(pos).not.toEqual({ x: rotulo.x, y: rotulo.y });
+    expect(pos.x + largura(rotulo)).toBeLessThanOrEqual(app._microElementRect(nums.id).x - FOLGA);
+  });
+
+  test('um alias de nó que já existe ("q = p") não é puxado pra junto do nó', () => {
+    noSandbox('p = Node(1)');
+    const perto = vi.spyOn(app, '_microPointerSpotNear');
+    noSandbox('q = p');
+    const no = [...app.micro.structs.values()][0];
+    expect(ponteiroDe('q').target).toEqual({ kind: 'struct', id: no.id });
+    expect(perto).not.toHaveBeenCalled();
+  });
+
+  test('"new array" (Ctrl+Espaço): rótulo à esquerda, e o nome digitado cresce pra esquerda', () => {
+    tecla(window, ' ', { code: 'Space', ctrlKey: true });
+    const input = $('.quick-action-input');
+    input.value = 'new array';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    tecla(input, 'Enter');
+    const arr = [...app.micro.arrays.values()][0];
+    const rotulo = app.micro.pointers.get(arr.labelPointerId);
+    aEsquerda(rotulo, app._microElementRect(arr.id));
+    const direita = rotulo.x + largura(rotulo);
+    const editor = $('.inline-value-editor');
+    editor.value = 'numeros_grandes';
+    editor.dispatchEvent(new Event('input', { bubbles: true }));
+    tecla(editor, 'Enter');
+    expect(arr.name).toBe('numeros_grandes');
+    expect(rotulo.x + largura(rotulo)).toBe(direita);
+    aEsquerda(rotulo, app._microElementRect(arr.id));
   });
 });
 
@@ -595,6 +727,151 @@ describe('organizar uma árvore por níveis', () => {
     input.value = 'layout tree vertical';
     input.dispatchEvent(new Event('input', { bubbles: true }));
     expect($('.quick-action-item.disabled')).not.toBeNull();
+  });
+});
+
+describe('seta "neighbors" de um GraphNode (modo detalhado)', () => {
+  /** Pontas da seta do nó pra lista de vizinhos, lidas do `d` desenhado
+   * ("M x1 y1 Q cx cy x2 y2"). */
+  function pontasDaSeta(no) {
+    const d = app.microView.edgeEls.get(`${no.id}-neighbors`).getAttribute('d');
+    const [x1, y1, , , x2, y2] = d.match(/-?[\d.]+/g).map(Number);
+    return { x1, y1, x2, y2 };
+  }
+
+  test('nó e lista na mesma linha (onde ela nasce): sai do meio da altura do nó e chega no meio da lista', () => {
+    escreverCodigo('g = GraphNode(1)');
+    ctrlEnterNaLinha(0);
+    const no = [...app.micro.structs.values()][0];
+    const lista = app.micro.arrays.get(no.neighborsArrayId);
+    const meioNo = no.y + STRUCT_H / 2;
+    const meioLista = lista.y + arrayLayout(lista).height / 2;
+    expect(app._microGraphNeighborsAnchor(no)).toEqual({ x: lista.x + arrayLayout(lista).width / 2, y: meioLista });
+    const { x1, y1, x2, y2 } = pontasDaSeta(no);
+    expect(x1).toBe(no.x + STRUCT_W);
+    // reta, na altura do meio da lista (centralizada na altura do nó)
+    expect(y1).toBeCloseTo(meioLista);
+    expect(y1).toBeCloseTo(meioNo);
+    expect(y2).toBeCloseTo(y1);
+    expect(x2).toBeLessThan(lista.x);
+  });
+
+  test('lista embaixo do nó: a seta sai pela base da célula "nbrs"', () => {
+    escreverCodigo('g = GraphNode(1)');
+    ctrlEnterNaLinha(0);
+    const no = [...app.micro.structs.values()][0];
+    const lista = app.micro.arrays.get(no.neighborsArrayId);
+    lista.x = no.x + STRUCT_W - arrayLayout(lista).width;
+    lista.y = no.y + STRUCT_H + 48;
+    app._renderMicroOnly();
+    const { y1, y2 } = pontasDaSeta(no);
+    expect(y1).toBe(no.y + STRUCT_H);
+    expect(y2).toBeGreaterThan(y1);
+  });
+});
+
+describe('lista de vizinhos de um GraphNode novo: ao lado do nó, com folga pra seta', () => {
+  const FOLGA = 48;
+  const caixa = (id) => app._microElementRect(id);
+
+  /** A lista está à direita do nó, a FOLGA dele, centralizada na altura. */
+  function aDireita(no) {
+    const r = caixa(no.neighborsArrayId);
+    expect(r.x).toBe(no.x + STRUCT_W + FOLGA);
+    expect(r.y + r.h / 2).toBe(no.y + STRUCT_H / 2);
+  }
+
+  /** Nó de grafo com lista de vizinhos longe dele, sem passar pelo App. */
+  function noDeGrafo(x, y) {
+    const no = app.micro.addStruct(x, y, 1, 'graph');
+    const lista = app.micro.addArray(x + 900, y + 900, { kind: 'ref', size: 0, name: `__graph_neighbors_${no.id}` });
+    app.micro.setStructNeighborsArray(no.id, lista.id);
+    return no;
+  }
+
+  test('"new graph node" (Ctrl+Espaço): a lista vem à direita', () => {
+    tecla(window, ' ', { code: 'Space', ctrlKey: true });
+    const input = $('.quick-action-input');
+    input.value = 'new graph node';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    tecla(input, 'Enter');
+    aDireita([...app.micro.structs.values()][0]);
+  });
+
+  test('pelo código, mesmo sem ponteiro ("[GraphNode(1)]"), a lista vem à direita', () => {
+    escreverCodigo('nos = [GraphNode(1)]');
+    ctrlEnterNaLinha(0);
+    aDireita([...app.micro.structs.values()][0]);
+  });
+
+  test('direita ocupada: a lista vai pra baixo, alinhada à direita com o nó', () => {
+    const no = noDeGrafo(0, 0);
+    app.micro.addVariable(STRUCT_W + FOLGA, 0, 'x', 0);
+    app._microTidyOwned(no.id);
+    const r = caixa(no.neighborsArrayId);
+    expect(r.y).toBe(STRUCT_H + FOLGA);
+    expect(r.x + r.w).toBe(STRUCT_W);
+    expect(no).toMatchObject({ x: 0, y: 0 });
+  });
+
+  test('direita e embaixo ocupadas: nó e lista vão juntos pra um espaço livre', () => {
+    const no = noDeGrafo(0, 0);
+    const lista = app.micro.arrays.get(no.neighborsArrayId);
+    app.micro.addVariable(STRUCT_W + FOLGA, 0, 'x', 0);
+    app.micro.addVariable(STRUCT_W - 60, STRUCT_H + FOLGA, 'y', 0);
+    app._microTidyOwned(no.id);
+    expect(no.x !== 0 || no.y !== 0).toBe(true);
+    aDireita(no);
+    [no.id, lista.id].forEach((id) => {
+      const r = caixa(id);
+      expect(app._microFreeAt(r, r.w, r.h, [no.id, lista.id])).toBe(true);
+    });
+  });
+
+  test('nó que o usuário já posicionou não sai do lugar: a lista procura mais pra direita', () => {
+    const no = noDeGrafo(0, 0);
+    app.micro.addVariable(STRUCT_W + FOLGA, 0, 'x', 0);
+    app.micro.addVariable(STRUCT_W - 60, STRUCT_H + FOLGA, 'y', 0);
+    app._microTidyOwned(no.id, { movable: false });
+    expect(no).toMatchObject({ x: 0, y: 0 });
+    const r = caixa(no.neighborsArrayId);
+    expect(r.x).toBeGreaterThanOrEqual(STRUCT_W + FOLGA);
+    expect(app._microFreeAt(r, r.w, r.h, [no.neighborsArrayId])).toBe(true);
+  });
+
+  test('"Ligar nós" num nó de grafo sem lista (projeto antigo): a lista nasce à direita dele', () => {
+    const a = app.micro.addStruct(0, 0, 1, 'graph');
+    const b = app.micro.addStruct(0, 600, 2, 'graph');
+    app._toggleMicroGraphNeighbor(a.id, b.id);
+    expect(app.micro.arrays.get(a.neighborsArrayId).cells).toEqual([b.id]);
+    aDireita(a);
+  });
+});
+
+describe('cursor de Shift+clique numa célula: nasce com folga pra seta', () => {
+  test.each([
+    ['lista', 'nums = [1, 2, 3]', 'arrays'],
+    ['matriz', 'm = [[1, 2], [3, 4]]', 'matrices'],
+  ])('%s: o cursor nasce a 48 px embaixo', (_, codigo, mapa) => {
+    escreverCodigo(codigo);
+    ctrlEnterNaLinha(0);
+    const col = [...app.micro[mapa].values()][0];
+    const cell = mapa === 'arrays' ? { index: 1 } : { row: 1, col: 0 };
+    app._createMicroIndexCursorNearCell(col.id, cell);
+    const cursor = app.micro.pointers.get(app.microSelectedId);
+    expect(cursor.readCursorKey).toBeTruthy();
+    const r = app._microElementRect(col.id);
+    expect(cursor.y).toBe(r.y + r.h + 48);
+  });
+
+  test('lista vertical: o cursor nasce a 48 px à direita', () => {
+    escreverCodigo('nums = [1, 2, 3]');
+    ctrlEnterNaLinha(0);
+    const nums = [...app.micro.arrays.values()][0];
+    nums.orientation = 'vertical';
+    app._createMicroIndexCursorNearCell(nums.id, { index: 1 });
+    const cursor = app.micro.pointers.get(app.microSelectedId);
+    expect(cursor.x).toBe(nums.x + arrayLayout(nums).width + 48);
   });
 });
 
@@ -1188,11 +1465,12 @@ describe('popup de configurações da lista (botão direito no puxador)', () => 
     expect(base()).toBe(antes);
     escreverCodigo(linhas('pilha = [1, 2]', 'pilha.append(3)', 'pilha.pop()'));
     const rotulo = app.micro.pointers.get(pilha.labelPointerId);
-    const folga = pilha.y - rotulo.y; // o rótulo nasce acima e anda com o topo
+    // o rótulo nasce à esquerda (não acima): não anda com o topo, fica parado
+    const rotuloY = rotulo.y;
     ctrlEnterNaLinha(1);
     expect(pilha.cells).toEqual([1, 2, 0, 3]);
     expect(base()).toBe(antes);
-    expect(pilha.y - rotulo.y).toBe(folga);
+    expect(rotulo.y).toBe(rotuloY);
     ctrlEnterNaLinha(2);
     ctrlEnterNaLinha(2);
     expect(pilha.cells).toEqual([1, 2]);

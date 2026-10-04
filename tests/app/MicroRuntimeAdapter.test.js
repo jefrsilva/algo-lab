@@ -27,9 +27,41 @@ describe('ganchos de criação (usados pelo App pra criar o ponteiro-rótulo)', 
     const onMatrixCreated = vi.fn();
     const r = runDsl(linhas('nums = [1]', 'd = {}', 'm = [[1, 2], [3, 4]]'), { onArrayCreated, onDictCreated, onMatrixCreated });
     expect(r.error).toBeNull();
-    expect(onArrayCreated).toHaveBeenCalledWith(expect.objectContaining({ name: 'nums' }));
-    expect(onDictCreated).toHaveBeenCalledWith(expect.objectContaining({ name: 'd' }));
-    expect(onMatrixCreated).toHaveBeenCalledWith(expect.objectContaining({ name: 'm' }));
+    // posição nova (não lembrada): o App pode mover o elemento junto com o rótulo
+    expect(onArrayCreated).toHaveBeenCalledWith(expect.objectContaining({ name: 'nums' }), { movable: true });
+    expect(onDictCreated).toHaveBeenCalledWith(expect.objectContaining({ name: 'd' }), { movable: true });
+    expect(onMatrixCreated).toHaveBeenCalledWith(expect.objectContaining({ name: 'm' }), { movable: true });
+  });
+
+  test('onStructCreated recebe todo nó novo — o de grafo já com a lista de vizinhos', () => {
+    const vistos = [];
+    runDsl(linhas('a = Node(1)', 'nos = [GraphNode(2)]'), {
+      onStructCreated: (no) => vistos.push([no.type, !!no.neighborsArrayId]),
+    });
+    expect(vistos).toEqual([
+      ['list', false],
+      ['graph', true],
+    ]);
+  });
+
+  test('elemento numa posição lembrada não é movível pra caber o rótulo', () => {
+    const onArrayCreated = vi.fn();
+    runDsl('nums = [1]', { onArrayCreated, createPosition: () => ({ x: 10, y: 20, remembered: true }) });
+    expect(onArrayCreated).toHaveBeenCalledWith(expect.objectContaining({ name: 'nums' }), { movable: false });
+  });
+
+  test('"p = Node(1)" pede a posição do ponteiro perto do nó novo; "q = p" não', () => {
+    const chamadas = [];
+    const createPosition = (kind, size, layoutKey, near) => {
+      chamadas.push({ kind, near });
+      return { x: 0, y: 0 };
+    };
+    const { micro } = runDsl(linhas('p = Node(1)', 'q = p', 'def f():', '    r = TreeNode(2)', 'f()'), { createPosition });
+    const no = valores(micro.structs)[0];
+    const ponteiros = chamadas.filter((c) => c.kind === 'pointer');
+    expect(ponteiros[0].near).toEqual({ kind: 'struct', id: no.id, label: 'p', global: true });
+    expect(ponteiros[1].near).toBeNull();
+    expect(ponteiros[2].near).toMatchObject({ kind: 'struct', label: 'r', global: false });
   });
 
   test('createPosition decide onde cada elemento nasce', () => {

@@ -4623,6 +4623,10 @@ export class App {
   // ---- modo micro: render ----
 
   _renderMicroOnly() {
+    // arraste de um elemento ou de um grupo: desliga a transição do traçado
+    // das setas (ver `.dragging-elements` em canvas.css), senão elas ficam
+    // atrás do elemento arrastado
+    this.microContainer.classList.toggle('dragging-elements', !!(this._microDragId || this._microGroupDragPositions));
     this.microModeToolbar.render({
       mode: this.microMode,
       swatches: { area: this.microAreaColor, text: labelCssColor(this.microLabelColor) },

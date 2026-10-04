@@ -325,6 +325,8 @@ Leitura de gráfico Big-O (mouse sobre a área de plotagem, sem tecla e sem bot�
 6. atualiza o `CodeEditor` (nomes conhecidos), o `CallTree`, a barra de reprodução (`_renderMicroRunBar`) e o console (`_renderMicroConsole`);
 7. registra `_microInertIds` (o que não está desenhado ou está esmaecido não recebe clique, ver `_microPickable`).
 
+Antes disso, o item 1 também liga/desliga a classe `dragging-elements` no `.micro-container` enquanto há um arraste de elemento ou de grupo (`_microDragId`/`_microGroupDragPositions`): o CSS tira dela a transição do traçado (`d`) das setas, que fica só para a reprodução passo a passo — com a transição durante o arraste, cada `pointermove` recomeçava a animação e a seta ficava atrás do elemento (o próprio elemento arrastado já não anima `transform`, por estar com `.dragging`).
+
 `MicroCanvasView#render` faz um **diff por id**: cada `_render<Tipo>` mantém um `Map<id, <g>>`, remove os que sumiram, cria os novos e atualiza atributos e classes dos existentes. As camadas SVG, de trás pra frente, são: grid → áreas → gráficos → setas → arrays → dicts → matrizes → structs → ponteiros → variáveis → labels → alças de redimensionamento.
 
 ### 6.5 Salvar e carregar projeto

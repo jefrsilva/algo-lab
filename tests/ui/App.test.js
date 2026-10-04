@@ -1508,3 +1508,63 @@ describe('popup de configurações da lista (botão direito no puxador)', () => 
     expect(botaoOrientacao('Pilha')).toBeUndefined();
   });
 });
+
+describe('setas acompanham o arraste sem atraso', () => {
+  const svg = () => $('.micro-canvas');
+  const container = () => $('.micro-container');
+  function evento(alvo, tipo, x, y, opts = {}) {
+    const { tx, ty } = app.microViewport;
+    alvo.dispatchEvent(new MouseEvent(tipo, { clientX: x + tx, clientY: y + ty, button: 0, buttons: 1, bubbles: true, ...opts }));
+  }
+  /** Nó em (300, 200) com um ponteiro à esquerda apontando pra ele. */
+  function noComPonteiro() {
+    const no = app.micro.addStruct(300, 200, 1);
+    const p = app.micro.addPointer(100, 200, 'p');
+    app.micro.setPointerTarget(p.id, { kind: 'struct', id: no.id });
+    app._renderMicroOnly();
+    return no;
+  }
+  const seta = () => $('.micro-edge-line').getAttribute('d');
+
+  test('durante o arraste de um nó o container marca o arraste, e a seta já está no destino', () => {
+    const no = noComPonteiro();
+    const antes = seta();
+    expect(container().classList.contains('dragging-elements')).toBe(false);
+    evento(svg(), 'pointerdown', no.x + 10, no.y + 10);
+    evento(window, 'pointermove', no.x + 60, no.y + 90);
+    expect(container().classList.contains('dragging-elements')).toBe(true);
+    expect(seta()).not.toBe(antes);
+    const durante = seta();
+    evento(window, 'pointerup', no.x + 60, no.y + 90);
+    expect(container().classList.contains('dragging-elements')).toBe(false);
+    // ao soltar o traçado não muda: nada pra animar depois do arraste
+    expect(seta()).toBe(durante);
+  });
+
+  test('arraste de grupo (seleção múltipla) também marca o arraste', () => {
+    const no = noComPonteiro();
+    const outro = app.micro.addStruct(600, 200, 2);
+    app._toggleMicroSelection(no.id);
+    app._toggleMicroSelection(outro.id);
+    app._renderMicroOnly();
+    evento(svg(), 'pointerdown', no.x + 10, no.y + 10);
+    evento(window, 'pointermove', no.x + 40, no.y + 40);
+    expect(app._microGroupDragPositions).not.toBeNull();
+    expect(container().classList.contains('dragging-elements')).toBe(true);
+    evento(window, 'pointerup', no.x + 40, no.y + 40);
+    expect(container().classList.contains('dragging-elements')).toBe(false);
+  });
+
+  test('no CSS, o arraste tira só a transição do traçado (d) das setas', () => {
+    // sem os comentários, que vão parar no texto do seletor seguinte
+    const css = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../../src/styles/canvas.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const corpo = (seletor) =>
+      [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].find(([, sel]) => sel.split(',').some((s) => s.trim() === seletor))?.[2];
+    // fora do arraste a seta desliza (reprodução passo a passo)...
+    expect(corpo('.micro-edge-line')).toMatch(/transition:[^;]*\bd 0\.35s/);
+    // ...e durante ele, não
+    const arrastando = corpo('.micro-container.dragging-elements .micro-edge-line');
+    expect(arrastando).toMatch(/transition:/);
+    expect(arrastando).not.toMatch(/\bd \d/);
+  });
+});

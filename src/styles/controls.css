@@ -190,8 +190,11 @@ select {
 }
 
 /* versão multi-linha (labels de texto): alinhada à esquerda como o render
-   (padding/line-height vêm inline, ver App#_editMicroLabelInPlace) */
+   (padding/line-height vêm inline, ver App#_editMicroLabelInPlace). Mostra o
+   markdown cru (`**`, `#`, `-`…), em mono regular — o tamanho da caixa vem de
+   labelSourceSize (labelMarkdown.js), que conta 0,6 em por caractere. */
 .inline-value-editor.multiline {
+  font-weight: 400;
   text-align: left;
   resize: none;
   overflow: hidden;
@@ -654,6 +657,15 @@ select {
 /* Seletor de cor do LabelSettingsPopup — reaproveita as demais classes
    `.array-settings-*` (ver controls.css acima), só o input de cor em si
    precisa de um tamanho próprio (input[type=color] nativo do browser). */
+/* lembrete da sintaxe markdown aceita no texto (LabelSettingsPopup) */
+.label-settings-hint {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  max-width: 260px;
+}
+
 .label-settings-color {
   width: 44px;
   height: 28px;

@@ -4,6 +4,9 @@
 import '@fontsource/atkinson-hyperlegible-next/400.css';
 import '@fontsource/atkinson-hyperlegible-next/600.css';
 import '@fontsource/atkinson-hyperlegible-next/700.css';
+// itálicos: markdown das labels de texto (*itálico*, ***negrito itálico***)
+import '@fontsource/atkinson-hyperlegible-next/400-italic.css';
+import '@fontsource/atkinson-hyperlegible-next/700-italic.css';
 import '@fontsource/jetbrains-mono/400.css';
 import '@fontsource/jetbrains-mono/400-italic.css';
 import '@fontsource/jetbrains-mono/600.css';

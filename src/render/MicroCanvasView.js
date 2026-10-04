@@ -1,5 +1,7 @@
 import { svgEl } from './svgUtils.js';
 import { ARRAY_CELL_H } from '../core/micro/MicroModel.js';
+import { labelLayout, LABEL_PAD_X, LABEL_CODE_PAD } from './labelMarkdown.js';
+import { textMeasureGeneration } from './textMeasure.js';
 
 // ---- geometria dos nós de estrutura (caixa prev | data | next) ----
 export const STRUCT_W = 138;
@@ -123,22 +125,17 @@ export function labelCssColor(color) {
 }
 
 // ---- geometria das labels de texto (modo "Texto" da barra inferior) ----
-export const LABEL_PAD_X = 14;
-export const LABEL_PAD_Y = 10;
-/** Altura de linha, em múltiplos do tamanho da fonte (labels multi-linha,
- * Shift+Enter no editor) — a mesma no render e no `<textarea>` de edição. */
-export const LABEL_LINE_HEIGHT = 1.3;
+// O texto é markdown básico (títulos, listas, negrito/itálico, `código`):
+// estrutura e geometria em labelMarkdown.js, reexportadas daqui.
+export { LABEL_PAD_X, LABEL_PAD_Y, LABEL_LINE_HEIGHT, labelLayout, labelSourceSize } from './labelMarkdown.js';
 
-/** Tamanho (aproximado, sem medir o DOM) de uma label conforme o texto e o
- * tamanho de fonte — mesma ideia das demais geometrias deste arquivo (fixas
- * ou derivadas só do conteúdo, nunca medidas via `getBBox`), usado tanto
- * pelo hit-test (App.js) quanto pelo render abaixo. Texto multi-linha
- * (`\n`): largura da linha mais longa, altura proporcional ao nº de linhas. */
+/** Tamanho de uma label já formatada (markdown) conforme o texto e o tamanho
+ * de fonte — mesma ideia das demais geometrias deste arquivo (derivadas só
+ * do conteúdo, nunca medidas via `getBBox`; a largura de cada trecho vem de
+ * `measureText`, ver textMeasure.js), usado tanto pelo hit-test (App.js)
+ * quanto pelo render abaixo. */
 export function labelSize(text, fontSize) {
-  const lines = String(text).split('\n');
-  const longest = lines.reduce((acc, l) => Math.max(acc, l.length), 0);
-  const width = Math.max(40, Math.round(longest * fontSize * 0.6) + LABEL_PAD_X * 2);
-  const height = Math.round(fontSize * LABEL_LINE_HEIGHT * lines.length) + LABEL_PAD_Y * 2;
+  const { width, height } = labelLayout(text, fontSize);
   return { width, height };
 }
 
@@ -1579,7 +1576,10 @@ export class MicroCanvasView {
   /** Labels de texto soltas no canvas (modo "Texto") — uma caixa (visível só
    * quando selecionada, ver `.label-box`) mais o texto em si, com cor/tamanho
    * próprios (`node.color`/`node.fontSize`, ajustáveis via
-   * `LabelSettingsPopup`). Geometria em `labelSize` (topo deste arquivo). */
+   * `LabelSettingsPopup`). O texto é markdown básico, formatado aqui a partir
+   * de `labelLayout` (labelMarkdown.js): um `<tspan>` posicionado por trecho
+   * (negrito/itálico/código/tamanho de título), marcadores de lista e fundos
+   * dos `código`s e blocos ``` atrás do texto (`.label-code-bg`). */
   _renderLabels(labels) {
     const ids = new Set(labels.map((n) => n.id));
     for (const [id, el] of this.labelEls) {
@@ -1593,42 +1593,85 @@ export class MicroCanvasView {
       if (!el) {
         el = svgEl('g', { class: 'label-node', 'data-id': node.id });
         const box = svgEl('rect', { class: 'label-box', rx: 6, ry: 6 });
+        const bgs = svgEl('g', { class: 'label-code-bgs' });
         const text = svgEl('text', { class: 'label-text' });
         el.appendChild(box);
+        el.appendChild(bgs);
         el.appendChild(text);
         this.labelsLayer.appendChild(el);
         this.labelEls.set(node.id, el);
       }
-      const { width, height } = labelSize(node.text, node.fontSize);
       el.setAttribute('transform', `translate(${node.x}, ${node.y})`);
       el.classList.toggle('selected', !!node.selected);
       el.classList.toggle('dragging', !!node.dragging);
       // em edição in place: o texto some por baixo do editor (ver App#_editMicroLabelInPlace)
       el.classList.toggle('editing', !!node.editing);
-      const box = el.querySelector('.label-box');
-      box.setAttribute('width', width);
-      box.setAttribute('height', height);
       const textEl = el.querySelector('.label-text');
-      textEl.setAttribute('font-size', node.fontSize);
       // via style (não atributo) pra aceitar var(); cor escolhida pelo usuário
-      // é mantida como está, só a padrão acompanha o tema.
+      // é mantida como está, só a padrão acompanha o tema. Os fundos de
+      // código herdam a cor (currentColor, ver canvas.css).
+      el.style.color = labelCssColor(node.color);
       textEl.style.fill = labelCssColor(node.color);
-      // uma <tspan> por linha, alinhadas à esquerda (mesmo alinhamento do
-      // <textarea> de edição); refeitas só quando o texto/tamanho muda.
-      const sig = `${node.fontSize}|${node.text}`;
-      if (textEl.dataset.sig !== sig) {
-        textEl.dataset.sig = sig;
-        textEl.textContent = '';
-        const lineH = node.fontSize * LABEL_LINE_HEIGHT;
-        String(node.text)
-          .split('\n')
-          .forEach((line, i) => {
-            const tspan = svgEl('tspan', { x: LABEL_PAD_X, y: LABEL_PAD_Y + lineH * (i + 0.5) });
-            // linha vazia ainda ocupa a altura dela (y explícito acima)
-            tspan.textContent = line || ' ';
-            textEl.appendChild(tspan);
-          });
+      // refeito só quando o texto/tamanho muda — ou quando as medidas de
+      // fonte mudam (fontes terminaram de carregar, ver textMeasure.js)
+      const sig = `${node.fontSize}|${textMeasureGeneration()}|${node.text}`;
+      if (textEl.dataset.sig === sig) return;
+      textEl.dataset.sig = sig;
+      const layout = labelLayout(node.text, node.fontSize);
+      const box = el.querySelector('.label-box');
+      box.setAttribute('width', layout.width);
+      box.setAttribute('height', layout.height);
+      this._fillLabelText(textEl, el.querySelector('.label-code-bgs'), layout);
+    });
+  }
+
+  /** Conteúdo formatado de uma label (ver `_renderLabels`). */
+  _fillLabelText(textEl, bgs, layout) {
+    textEl.textContent = '';
+    bgs.textContent = '';
+    layout.codeBlocks.forEach((b) => {
+      bgs.appendChild(
+        svgEl('rect', {
+          class: 'label-code-bg block',
+          x: LABEL_PAD_X,
+          y: b.y,
+          width: layout.width - LABEL_PAD_X * 2,
+          height: b.height,
+          rx: 4,
+          ry: 4,
+        }),
+      );
+    });
+    layout.lines.forEach((line) => {
+      if (line.marker) {
+        const m = svgEl('tspan', { class: 'md-marker', x: line.marker.x, y: line.y, 'font-size': line.size });
+        m.textContent = line.marker.text;
+        textEl.appendChild(m);
       }
+      line.segments.forEach((seg) => {
+        const attrs = { x: seg.x, y: line.y, 'font-size': seg.size };
+        if (seg.bold) attrs['font-weight'] = 700;
+        if (seg.italic) attrs['font-style'] = 'italic';
+        if (seg.code) attrs.class = 'md-code';
+        const t = svgEl('tspan', attrs);
+        t.textContent = seg.text;
+        textEl.appendChild(t);
+        if (seg.code && line.kind !== 'code') {
+          const pad = seg.size * LABEL_CODE_PAD;
+          const h = seg.size * 1.25;
+          bgs.appendChild(
+            svgEl('rect', {
+              class: 'label-code-bg',
+              x: seg.x - pad,
+              y: line.y - h / 2,
+              width: seg.width + pad * 2,
+              height: h,
+              rx: 3,
+              ry: 3,
+            }),
+          );
+        }
+      });
     });
   }
 

@@ -30,6 +30,7 @@ import {
   matrixLayout,
   matrixCellRect,
   labelSize,
+  labelSourceSize,
   labelCssColor,
   LABEL_PAD_X,
   LABEL_PAD_Y,
@@ -73,6 +74,7 @@ import { ConsoleWindow } from '../ui/ConsoleWindow.js';
 import { QuickActionPalette } from '../ui/QuickActionPalette.js';
 import { SettingsDialog } from '../ui/SettingsDialog.js';
 import { applyTheme } from './theme.js';
+import { onTextMeasureChange } from '../render/textMeasure.js';
 import { getSetting, setSetting, SETTINGS_DEFAULTS } from './settings.js';
 
 /** Modos da barra de ferramentas inferior do canvas (ver
@@ -345,6 +347,9 @@ export class App {
     this.microDictSettingsPopup = new ArraySettingsPopup(microContainer);
     this.microMatrixSettingsPopup = new ArraySettingsPopup(microContainer);
     this.microLabelSettingsPopup = new LabelSettingsPopup(microContainer);
+    // labels com markdown medem o texto nas fontes do app (textMeasure.js):
+    // quando uma fonte termina de carregar as medidas mudam — redesenha
+    onTextMeasureChange(() => this._renderMicroOnly());
     this.microChartSettingsPopup = new ChartSettingsPopup(microContainer);
     this.microInlineEditor = new InlineValueEditor(microContainer);
     this.microQuickActions = new QuickActionPalette(microContainer);
@@ -3379,7 +3384,9 @@ export class App {
    * texto anterior). Alt+1…Alt+0 durante a edição troca a cor da label. */
   _editMicroLabelInPlace(node, { isNew = false } = {}) {
     const scale = this.microViewport.scale;
-    const { width, height } = labelSize(node.text, node.fontSize);
+    // o editor mostra o markdown CRU (mono) — tamanho do texto digitado, não
+    // o da label formatada (ver labelSourceSize em labelMarkdown.js)
+    const { width, height } = labelSourceSize(node.text, node.fontSize);
     const rect = this._microWorldRectToScreen({ x: node.x, y: node.y, width, height });
     const fontSize = node.fontSize * scale;
     this._microEditingLabelId = node.id;
@@ -3429,11 +3436,11 @@ export class App {
           if (isNew) this.microLabels.delete(node.id);
           finish();
         },
-        // o campo cresce (largura/altura) a cada tecla, acompanhando a MESMA
-        // geometria do render de verdade (labelSize) — sem isso o texto digitado
-        // não cabia no campo, ficando ilegível (ver relato do usuário).
+        // o campo cresce (largura/altura) a cada tecla, acompanhando o texto
+        // cru digitado (labelSourceSize) — sem isso o texto digitado não
+        // cabia no campo, ficando ilegível (ver relato do usuário).
         autoGrow: (value) => {
-          const size = labelSize(value, node.fontSize);
+          const size = labelSourceSize(value, node.fontSize);
           return { width: size.width * scale, height: size.height * scale };
         },
         returnFocusTo: this.microView.svg,

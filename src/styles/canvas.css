@@ -555,11 +555,13 @@
 }
 
 .label-text {
-  /* mesma fonte/peso do editor inline usado pra digitar o texto
-     (.inline-value-editor, ver controls.css) — senão a label muda de
-     aparência entre "enquanto digitando" e "depois de confirmada". */
-  font-family: var(--font-mono);
-  font-weight: 700;
+  /* markdown das labels (ver labelMarkdown.js): texto corrido na fonte da
+     interface, regular — negrito/itálico/tamanho de título vêm como
+     atributos de cada <tspan> (MicroCanvasView#_fillLabelText). A geometria
+     é medida com estas mesmas fontes (textMeasure.js). O editor in place
+     mostra o markdown cru, em mono (.inline-value-editor.multiline). */
+  font-family: var(--font-sans);
+  font-weight: 400;
   text-anchor: start;
   dominant-baseline: middle;
   white-space: pre;
@@ -567,6 +569,22 @@
   user-select: none;
 }
 
+/* `código` e blocos ``` — monoespaçados, sobre um fundo leve na cor do texto */
+.label-text .md-code {
+  font-family: var(--font-mono);
+}
+
+.label-code-bg {
+  fill: currentColor;
+  fill-opacity: 0.12;
+  pointer-events: none;
+}
+
+.label-code-bg.block {
+  fill-opacity: 0.08;
+}
+
+.label-node.editing .label-code-bgs,
 .label-node.editing .label-text {
   visibility: hidden;
 }

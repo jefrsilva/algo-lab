@@ -1568,3 +1568,40 @@ describe('setas acompanham o arraste sem atraso', () => {
     expect(arrastando).not.toMatch(/\bd \d/);
   });
 });
+
+describe('labels de texto com markdown', () => {
+  test('o texto é desenhado formatado: título, negrito, itálico, código e listas', () => {
+    app.microLabels.set('label_md', {
+      id: 'label_md',
+      x: 0,
+      y: 0,
+      text: '# Título\nvalor **forte** e *leve* com `nums[i]`\n- item\n2. outro',
+      color: '#f0f8ff',
+      fontSize: 16,
+    });
+    app._renderMicroOnly();
+    const g = $('.label-node[data-id="label_md"]');
+    const spans = [...g.querySelectorAll('.label-text tspan')];
+    const span = (texto) => spans.find((t) => t.textContent === texto);
+    // a marcação some do desenho
+    expect(g.querySelector('.label-text').textContent).not.toMatch(/[*#`]/);
+    expect(span('Título').getAttribute('font-weight')).toBe('700');
+    expect(Number(span('Título').getAttribute('font-size'))).toBeGreaterThan(16);
+    expect(span('forte').getAttribute('font-weight')).toBe('700');
+    expect(span('leve').getAttribute('font-style')).toBe('italic');
+    expect(span('valor ').getAttribute('font-weight')).toBeNull();
+    expect(span('nums[i]').classList.contains('md-code')).toBe(true);
+    expect(g.querySelectorAll('.label-code-bg').length).toBe(1);
+    expect(span('•').classList.contains('md-marker')).toBe(true);
+    expect(span('2.').classList.contains('md-marker')).toBe(true);
+    expect(Number(span('item').getAttribute('x'))).toBeGreaterThan(Number(span('•').getAttribute('x')));
+  });
+
+  test('o editor in place mostra o markdown cru', () => {
+    const texto = '**negrito**';
+    app.microLabels.set('label_cru', { id: 'label_cru', x: 0, y: 0, text: texto, color: '#f0f8ff', fontSize: 16 });
+    app._renderMicroOnly();
+    app._editMicroLabelInPlace(app.microLabels.get('label_cru'));
+    expect($('.inline-value-editor').value).toBe(texto);
+  });
+});

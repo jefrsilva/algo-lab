@@ -36,6 +36,10 @@ export class LabelSettingsPopup {
     textInput.value = node.text;
     textRow.appendChild(textLabel);
     textRow.appendChild(textInput);
+    // o texto aceita markdown básico (ver labelMarkdown.js) — lembrete da sintaxe
+    const hint = document.createElement('div');
+    hint.className = 'label-settings-hint';
+    hint.textContent = '**negrito**  *itálico*  `código`  # título  ## subtítulo  - item  1. item';
 
     const colorRow = document.createElement('div');
     colorRow.className = 'array-settings-row';
@@ -75,6 +79,7 @@ export class LabelSettingsPopup {
     actions.appendChild(saveBtn);
 
     el.appendChild(textRow);
+    el.appendChild(hint);
     el.appendChild(colorRow);
     el.appendChild(sizeRow);
     el.appendChild(actions);

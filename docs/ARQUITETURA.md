@@ -96,6 +96,8 @@ src/
     pytuple.js              tupla imutável e "internada" (guardável no modelo, usável como chave)
   render/
     MicroCanvasView.js      renderizador SVG + constantes de geometria + funções de layout e de "portas"
+    labelMarkdown.js        markdown básico das labels de texto: parser por linha/trecho + geometria (labelLayout)
+    textMeasure.js          largura de texto nas fontes do app (OffscreenCanvas, com estimativa sem canvas)
     svgUtils.js             svgEl(tag, attrs)
   ui/                       widgets de interface independentes, instanciados e ligados pelo App
     CodeEditor.js  CallTree.js  PlaybackControls.js  ConsoleWindow.js  ModeToolbar.js  AlignToolbar.js
@@ -349,6 +351,8 @@ Preferências de tela (não do projeto) ficam num único objeto do localStorage 
 | `src/main.js` | Importa as fontes embarcadas (Atkinson Hyperlegible Next na interface, JetBrains Mono no código e no canvas), aplica o tema salvo e faz `new App(document.getElementById('app'))`. |
 | `src/core/id.js` | `nextId(prefix)` → `"prefix-<contador>-<aleatório>"`. É o **único** gerador de ids. |
 | `src/render/svgUtils.js` | `svgEl(tag, attrs)` cria um elemento SVG com namespace e ignora atributos `null`/`undefined`. |
+| `src/render/labelMarkdown.js` | Markdown básico das labels de texto (o texto fica cru em `node.text`, formatado só no desenho). Cada linha é uma linha da label: `#`/`##`/`###` títulos, `-`/`*`/`+` e `1.`/`1)` listas (2 espaços de recuo = 1 nível; números alinhados à direita), blocos entre linhas ```` ``` ```` monoespaçados; na linha, `**negrito**`, `*itálico*`/`_itálico_`, `***os dois***`, `` `código` `` e escapes `\*`. `parseLabelMarkdown`/`parseInline` dão a estrutura; `labelLayout(text, fontSize, measure?)` a geometria (um trecho posicionado por `<tspan>`, marcadores, fundos de código), usada pelo render e — via `labelSize` — pelo hit-test; `labelSourceSize` mede o texto cru (caixa do editor in place, que mostra o markdown digitado, em mono). Também define `LABEL_PAD_X/Y` e `LABEL_LINE_HEIGHT`. |
+| `src/render/textMeasure.js` | `measureText(text, {size, bold, italic, mono})`: largura de um trecho nas fontes do app, medida com `OffscreenCanvas` (cache por fonte+texto; fonte ainda não carregada pede o carregamento e não entra no cache). Sem canvas (jsdom/Node) estima por caractere. Quando as fontes terminam de carregar, zera o cache, sobe `textMeasureGeneration()` (entra na assinatura do render das labels) e avisa `onTextMeasureChange` (o `App` redesenha). |
 
 ### 7.2 `src/app/`
 
@@ -438,7 +442,7 @@ Dividido em duas metades:
 
 1. **Geometria e layout (funções e constantes exportadas)**, usadas tanto pelo render quanto pelo hit testing do App. Ficam aqui pra que desenho e clique nunca divirjam:
    - constantes: `STRUCT_W/H`, `PTR_W/H`, `VAR_W/H`, `ARRAY_CELL`, `DICT_CELL_W/H`, `MATRIX_CELL`, `PORT_R`, `GRID_SIZE`…
-   - larguras dinâmicas: `displayName`, `pointerWidth`, `variableWidth`, `labelSize`;
+   - larguras dinâmicas: `displayName`, `pointerWidth`, `variableWidth`, `labelSize` (tamanho da label já formatada, de `labelLayout` — reexportado de `labelMarkdown.js` junto com `labelSourceSize` e as constantes de label);
    - layouts: `arrayLayout`, `dictLayout`, `matrixLayout`, `matrixCellRect`, `chartLayout`;
    - portas e pinos: `structPrevPort`, `structNextPort`, `structNeighborPort`, `structDataRect`, `pointerPort`, `variableValueRect`;
    - puxadores: `arrayHandleRect`, `dictHandleRect`, `matrixHandleRect` (a aba fora da caixa, que serve de alvo de ligação pra coleção inteira, de alça de arraste e, no botão direito, abre o popup de configurações) e `boxWithHandle`;
@@ -466,7 +470,7 @@ Cada widget é uma classe independente, sem classe base. Recebe um container e c
 | `CanvasTitle.js` | Título editável no topo do canvas. | `this.microCanvasTitle` |
 | `NodePopup.js` | Popup pra digitar o valor de um nó. | `this.microPopup` |
 | `ArraySettingsPopup.js` | Configurações de array, dict ou matriz (nome, tamanho, orientação, remover), aberto pelo botão direito no puxador da coleção. Três instâncias. Lista/deque têm uma terceira orientação, "Pilha" (`showStack`). Set não tem campo de tamanho e deque com `maxlen` não passa dele (ver `App#_openMicroArraySettingsPopup`). | `this.micro{Array,Dict,Matrix}SettingsPopup` |
-| `LabelSettingsPopup.js` | Texto, cor e tamanho de uma label. | `this.microLabelSettingsPopup` |
+| `LabelSettingsPopup.js` | Texto (markdown cru, com um lembrete da sintaxe), cor e tamanho de uma label. | `this.microLabelSettingsPopup` |
 | `ChartSettingsPopup.js` | Funções exibidas, escala e títulos dos eixos de um gráfico Big-O (aplica a cada mudança). | `this.microChartSettingsPopup` |
 | `InlineValueEditor.js` | Editor in place sobre o canvas (valor ou nome). `parseEditedValue` converte texto em número, string ou bool. | `this.microInlineEditor` |
 | `fitPopup.js` | `fitPopupInContainer(el, container, x, y, {anchor})` mantém o popup inteiro dentro do canvas. | usado pelos popups |

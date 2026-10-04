@@ -1412,6 +1412,30 @@ describe('popup de configurações da lista (botão direito no puxador)', () => 
     expect(nums.cells).toEqual([1, 2, 0, 0]);
   });
 
+  test('lista vazia continua vazia ao mudar a orientação', () => {
+    const lista = criarNoSandbox('lista = []');
+    expect(lista.cells).toEqual([]);
+    botaoDireitoNoPuxador(lista);
+    expect(campo('Tamanho').value).toBe('0');
+    expect(campo('Tamanho').min).toBe('0');
+    [...popup().querySelectorAll('.array-orient-btn')].find((b) => b.textContent.includes('Vertical')).click();
+    salvar();
+    expect(lista.orientation).toBe('vertical');
+    expect(lista.cells).toEqual([]);
+  });
+
+  test('Tamanho 0 esvazia a lista; campo em branco mantém o tamanho', () => {
+    const nums = criarNoSandbox('nums = [1, 2]');
+    botaoDireitoNoPuxador(nums);
+    campo('Tamanho').value = '';
+    salvar();
+    expect(nums.cells).toEqual([1, 2]);
+    botaoDireitoNoPuxador(nums);
+    campo('Tamanho').value = '0';
+    salvar();
+    expect(nums.cells).toEqual([]);
+  });
+
   test('set não mostra o campo Tamanho e salvar não mexe nas células', () => {
     const s = criarNoSandbox('s = {3, 1, 2}');
     expect(s.isSet).toBe(true);

@@ -1807,7 +1807,7 @@ export class MicroCanvasView {
     resolved.forEach(({ edge, end, curveOffset, perp, avoidBulge, bidirectional }) => {
       let el = this.edgeEls.get(edge.id);
       if (!el) {
-        el = svgEl('path', { class: 'edge-line micro-edge-line', 'marker-end': 'url(#micro-arrowhead)' });
+        el = svgEl('path', { class: 'micro-edge-line', 'marker-end': 'url(#micro-arrowhead)' });
         this.edgesLayer.appendChild(el);
         this.edgeEls.set(edge.id, el);
       }

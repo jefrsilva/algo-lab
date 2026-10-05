@@ -628,6 +628,15 @@ export class App {
       this._openQuickActions();
       return;
     }
+    // Ctrl+Shift+Enter — passa pra Simulação e roda o programa inteiro
+    // (CodeEditor#runAll), com o foco no canvas, no editor (Sandbox ou
+    // Simulação) ou em nada. ANTES do `isTyping`, como os de cima; o
+    // CodeEditor deixa essa combinação passar (não cai no Ctrl+Enter dele).
+    if (e.key === 'Enter' && e.ctrlKey && e.shiftKey && !e.metaKey && !e.altKey && !this.microPopup.isOpen && !this.dialog.isOpen) {
+      e.preventDefault();
+      this.codeEditor.runAll();
+      return;
+    }
     const tag = e.target?.tagName;
     const isTyping = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target?.isContentEditable;
     if (e.code === 'Space' && !isTyping) {

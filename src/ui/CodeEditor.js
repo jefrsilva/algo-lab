@@ -215,8 +215,13 @@ export class CodeEditor {
     runModeBtn.type = 'button';
     runModeBtn.className = 'code-editor-mode-btn';
     runModeBtn.textContent = 'Simulação';
-    runModeBtn.title = 'Simulação: roda o programa inteiro, com reprodução passo a passo';
-    runModeBtn.addEventListener('click', () => this._setMode('run'));
+    runModeBtn.title = 'Simulação: roda o programa inteiro, com reprodução passo a passo (Ctrl+Shift+Enter já roda)';
+    // o foco vai pro código: na Simulação o próximo passo é quase sempre
+    // Ctrl+Enter (rodar) ou editar o programa
+    runModeBtn.addEventListener('click', () => {
+      this._setMode('run');
+      this.textarea.focus();
+    });
     modeToggle.appendChild(manualBtn);
     modeToggle.appendChild(runModeBtn);
     // modo + botões dele (pilha, ▶) ficam juntos num grupo que nunca quebra
@@ -621,6 +626,13 @@ export class CodeEditor {
     this.onModeChange(mode);
   }
 
+  /** Ctrl+Shift+Enter (atalho global, ver App#_onKeyDown): passa pra
+   * Simulação, se ainda não estiver nela, e roda o programa inteiro. */
+  runAll() {
+    this._setMode('run');
+    this.onRun(this.getValue());
+  }
+
   /** Botão extra na barra do topo, entre o seletor de modo e o ▶ (ex: mostrar/ocultar a
    * pilha de chamadas, ver App.js) — o editor só hospeda, quem chama cuida
    * do estado. Devolve o botão. */
@@ -651,6 +663,9 @@ export class CodeEditor {
   // ---- teclado ----
 
   _onKeyDown(e) {
+    // Ctrl+Shift+Enter fica pro listener global (App#_onKeyDown), que vale
+    // com o foco em qualquer lugar — aqui só não pode cair no Ctrl+Enter
+    if (e.ctrlKey && e.shiftKey && e.key === 'Enter') return;
     if (e.ctrlKey && e.key === 'Enter') {
       e.preventDefault();
       if (this.mode === 'run') this.onRun(this.getValue());

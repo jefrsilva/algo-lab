@@ -596,4 +596,31 @@ print(maior_lado(3), m)
 3 [[5]]
 `,
   },
+  {
+    nome: "statements em várias linhas (colchete aberto e barra invertida)",
+    codigo: `
+pairs = {
+    ")": "(",   # fecha parêntese
+    "]": "[",
+
+    "}": "{"
+}
+nums = [1, 2,
+        3]
+total = sum(nums) + \\
+    10
+def f(a,
+      b=2):
+    return (a +
+            b)
+if (total > 5 and
+        f(1) == 3):
+    print(pairs, nums, total, f(1))
+print(f"{len(pairs)} pares", "(#)")
+`,
+    saida: `
+{')': '(', ']': '[', '}': '{'} [1, 2, 3] 16 3
+3 pares (#)
+`,
+  },
 ];

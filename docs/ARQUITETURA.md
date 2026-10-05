@@ -251,6 +251,7 @@ Já `App#microColors` (cor manual) é por **id**, e funciona porque os snapshots
 
 ```
 CodeEditor#_handleGenerateFromLine
+  ├─ blockParser.js#logicalLineAt → statement inteiro da linha ativa (pode ocupar várias linhas)
   ├─ "if/elif/while cond:" → parseExpression → App#_evaluateCondition (escreve "> True"/"> False" no console)
   └─ demais → parseStatement(linha) → App#_executeStatement(ast)
         evaluate(ast.value, microRuntime) + assign(ast.target, valor, microRuntime)
@@ -259,7 +260,7 @@ CodeEditor#_handleGenerateFromLine
   └─ flashLine verde (ok) / vermelho (erro de sintaxe ou exceção)
 ```
 
-No Sandbox não há `def`, `if` com bloco nem loops: é uma linha por vez.
+No Sandbox não há `def`, `if` com bloco nem loops: é um statement por vez — que pode ocupar várias linhas físicas com colchete aberto ou `\` no fim (ex. um dict com um par por linha); com o cursor em qualquer uma delas, Ctrl+Enter roda o statement inteiro e pisca todas.
 
 ### 6.2 Simulação: "▶ Rodar"
 
@@ -428,7 +429,7 @@ CRUD dos seis `Map`s, com consistência de referências:
 |---|---|---|
 | `lexer.js` | Tokeniza **uma linha** (números, strings com escapes, f-strings com campos aninhados, identificadores, palavras-chave, operadores, incluindo os compostos `+=`…). | `tokenize(source)`, `TokenType`, `LexError` |
 | `parser.js` | Recursive descent com a precedência do Python (`or` → `and` → `not` → comparações → `+ -` → `* / // %` → unário → `**` → pós-fixo → primário). Reconhece atribuição simples, composta (desenrolada em `a = a op b`), múltipla (`a, b = b, a`), encadeada (`a = b = x`), statement de expressão (só chamadas e leituras `nums[i]`) e `import`. | `parseStatement(linha)`, `parseExpression(texto)`, `parseParams(texto)`, `ParseError`. Todos devolvem `{ok, ast}` ou `{ok:false, error}` |
-| `blockParser.js` | Programa inteiro: remove comentários, agrupa por indentação, reconhece `if/elif/else`, `while`, `for x in …`/`for i, v in …`, `def` (só no nível 0), `return`, `break`, `continue`, e delega o resto a `parseStatement`. Separa as `def` num mapa `functions`. | `parseProgram(source)` → `{ok, functions, program}` (nunca lança) |
+| `blockParser.js` | Programa inteiro: remove comentários, junta linhas de continuação como o Python (colchete `(`/`[`/`{` aberto ou `\` no fim — o statement fica com a linha onde começa; `logicalLineAt` faz o mesmo pro Ctrl+Enter do Sandbox), agrupa por indentação, reconhece `if/elif/else`, `while`, `for x in …`/`for i, v in …`, `def` (só no nível 0), `return`, `break`, `continue`, e delega o resto a `parseStatement`. Separa as `def` num mapa `functions`. | `parseProgram(source)` → `{ok, functions, program}` (nunca lança) |
 | `ast.js` | Construtores de nós de AST como objetos planos `{type, ...}`. Statements de bloco carregam `line` (índice 0-based). | `Assign`, `TupleAssign`, `ChainAssign`, `ExprStmt`, `Name`, `Call`, `BinOp`, `Compare`, `If`, `While`, `For`, `FunctionDef`, `Return`… |
 | `interpreter.js` | Executa o programa como generator. Protocolo de sinais entre blocos: `continue`, `break`, `continue-loop`, `return`, `abort`. Chamadas de usuário (inclusive aninhadas em expressões, via `evalExpr`/`resolveUserCalls`) são executadas com `yield*`, o que permite pausar dentro delas. Também mantém a `callTree` e os valores "em espera" (`held`) que a coleta de listas não pode apagar. | `runProgram(program, functions, env)` |
 | `evaluator.js` | A semântica: `evaluate(node, env)` (um `switch` por `node.type`; o caso `'Call'` concentra os built-ins e métodos), `assign`/`assignChain`, `evalBinOp`, `valuesEqual`, `truthy`, `iterableItems`, formatação de `print` e `repr`, métodos de string (`callStringMethod`), de deque (`callDequeMethod`), helpers de cursor (`exprLabel`, `exprDependencies`). | `evaluate`, `assign`, `assignChain`, `truthy`, `iterableItems`, `loopValues`, construtores de valor (`Scalar`, `StructRef`, `NoneValue`…) |

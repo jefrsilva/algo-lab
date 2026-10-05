@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { parseProgram } from '../../src/interpreter/blockParser.js';
+import { logicalLineAt, parseProgram } from '../../src/interpreter/blockParser.js';
 import { linhas } from '../helpers/runDsl.js';
 
 describe('parseProgram', () => {
@@ -56,5 +56,53 @@ describe('parseProgram', () => {
     expect(r.ok).toBe(false);
     expect(r.error.at).toBe(linha);
     expect(r.error.message).toContain(mensagem);
+  });
+
+  test('colchete aberto continua o statement nas linhas seguintes (dict com um par por linha)', () => {
+    const r = parseProgram(linhas('pairs = {', '    ")": "(",', '', '    "]": "[",  # comentário', '}', 'x = 1'));
+    expect(r.ok).toBe(true);
+    expect(r.program.map((s) => [s.type, s.line])).toEqual([
+      ['Assign', 0],
+      ['Assign', 5],
+    ]);
+    expect(r.program[0].value).toMatchObject({ type: 'DictLiteral' });
+    expect(r.program[0].value.pairs).toHaveLength(2);
+  });
+
+  test('cabeçalho de bloco e def em várias linhas; "\\" no fim junta a próxima linha', () => {
+    const r = parseProgram(
+      linhas('def f(a,', '      b=2):', '    return (a +', '            b)', 'if (x and', '        y):', '    z = 1 + \\','        2'),
+    );
+    expect(r.ok).toBe(true);
+    expect(r.functions.f.params.map((p) => p.name)).toEqual(['a', 'b']);
+    expect(r.functions.f.body.map((s) => [s.type, s.line])).toEqual([['Return', 2]]);
+    const [se] = r.program;
+    expect(se).toMatchObject({ type: 'If', line: 4 });
+    expect(se.body.map((s) => [s.type, s.line])).toEqual([['Assign', 6]]);
+  });
+
+  test('colchete dentro de string não abre continuação', () => {
+    const r = parseProgram(linhas('a = "("', 'b = f"{a}["', 'c = 1'));
+    expect(r.program.map((s) => s.line)).toEqual([0, 1, 2]);
+  });
+
+  test('colchete nunca fechado: erro na linha onde o statement começa', () => {
+    const r = parseProgram(linhas('x = 1', 'y = [1,', '     2'));
+    expect(r.ok).toBe(false);
+    expect(r.error.at).toBe(1);
+  });
+});
+
+describe('logicalLineAt', () => {
+  const fonte = linhas('x = 1', 'd = {', '    "a": 1,  # um', '}', '', 'y = 2');
+  test.each([
+    [0, 'x = 1', 0, 0],
+    [1, 'd = { "a": 1, }', 1, 3],
+    [2, 'd = { "a": 1, }', 1, 3],
+    [3, 'd = { "a": 1, }', 1, 3],
+    [4, '', 4, 4],
+    [5, 'y = 2', 5, 5],
+  ])('linha %i', (idx, content, start, end) => {
+    expect(logicalLineAt(fonte, idx)).toEqual({ content, start, end });
   });
 });

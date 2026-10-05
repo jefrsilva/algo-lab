@@ -1350,6 +1350,18 @@ export class App {
     const center = this._microViewportCenter();
     let width = VAR_W;
     let height = VAR_H;
+    const outer = near?.belowArrayId ? this.micro.arrays.get(near.belowArrayId) : null;
+    if (kind === 'array' && outer) {
+      // lista de dentro de uma lista de listas: embaixo dela, longe o
+      // bastante pra seta da célula aparecer; as seguintes vão descendo
+      const layout = arrayLayout({ cells: new Array(Math.max(1, size)).fill(0), orientation: 'horizontal' });
+      const outerLayout = arrayLayout(outer);
+      const handle = arrayHandleRect({ cells: [0], orientation: 'horizontal' });
+      const base = { x: outer.x + handle.w, y: outer.y + outerLayout.height + MICRO_ARROW_GAP };
+      const pos = this._findFreeMicroPosition(base, layout.width, layout.height, 'below');
+      if (layoutKey) this.microLayout.set(layoutKey, pos);
+      return pos;
+    }
     if (kind === 'pointer') {
       width = PTR_W;
       height = PTR_H;
@@ -1620,6 +1632,9 @@ export class App {
       const value = evaluate(ast.value, this.microRuntime);
       assign(ast.target, value, this.microRuntime);
     }
+    // "res.pop()" numa lista de listas: a lista que saiu e ninguém guardou
+    // some (na Simulação, é o interpretador que chama, a cada passo)
+    this.microRuntime.collectOrphans();
     // evaluate/assign já dispararam renders "cedo demais" pelo caminho (cada
     // leitura/escrita chama onChange na hora, via _touch) — a seleção final
     // só fica pronta agora, então precisa de um render por cima pra não ficar
@@ -1940,7 +1955,7 @@ export class App {
       }
       const a = m.arrays.get(id);
       if (a) {
-        if (a.kind === 'ref') a.cells.forEach(reach);
+        if (a.kind !== 'value') a.cells.forEach(reach); // nós ou listas de dentro
         reach(a.labelPointerId);
         continue;
       }
@@ -5146,22 +5161,23 @@ export class App {
       }
     });
     arrays.forEach((n) => {
-      if (n.kind !== 'ref') return;
+      if (n.kind === 'value') return;
       const layout = arrayLayout(n);
-      n.cells.forEach((targetStructId, i) => {
-        if (!targetStructId) return;
+      n.cells.forEach((targetId, i) => {
+        if (!targetId) return;
         const c = layout.cells[i];
-        edges.push({
+        const base = {
           id: `${n.id}-cell${i}`,
           x1: n.x + c.port.x,
           y1: n.y + c.port.y,
-          targetKind: 'struct',
-          targetId: targetStructId,
           fromStructId: null,
           selected: this._isMicroHighlighted(n.id),
           sourceKey: `arrayCell:${n.id}:${i}`,
-          targetKey: `struct:${targetStructId}`,
-        });
+        };
+        // lista de listas: a seta vai pra lista de dentro INTEIRA (o puxador
+        // dela), igual a célula 'arrayref' de um dict
+        if (n.kind === 'arrayref') edges.push({ ...base, targetKind: 'array', targetArrayId: targetId, targetKey: `array:${targetId}` });
+        else edges.push({ ...base, targetKind: 'struct', targetId, targetKey: `struct:${targetId}` });
       });
     });
     dicts.forEach((n) => {

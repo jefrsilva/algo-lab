@@ -192,6 +192,25 @@ describe('arrays', () => {
     expect(m.insertArrayCell(arr.id, 9, 1)).toBe(false);
   });
 
+  test('lista de listas (kind:"arrayref") guarda ids de arrays, e apagar uma lista de dentro deixa None', () => {
+    const outer = m.addArray(0, 0, { kind: 'arrayref', size: 2 });
+    const a = m.addArray(0, 0, { size: 1 });
+    const b = m.addArray(0, 0, { size: 2 });
+    expect(outer.cells).toEqual([null, null]);
+    m.setArrayCellArrayRef(outer.id, 0, a.id);
+    m.setArrayCellArrayRef(outer.id, 1, 'array-que-nao-existe');
+    expect(outer.cells).toEqual([a.id, null]);
+    expect(m.insertArrayCell(outer.id, 1, b.id)).toBe(true);
+    expect(m.insertArrayCell(outer.id, 0, 'array-que-nao-existe')).toBe(false);
+    m.growArray(outer.id);
+    expect(outer.cells).toEqual([a.id, b.id, null, null]);
+    m.removeArray(a.id);
+    expect(outer.cells).toEqual([null, b.id, null, null]);
+    // célula de valor não vira referência a array (nem o contrário)
+    m.setArrayCellArrayRef(b.id, 0, outer.id);
+    expect(b.cells).toEqual([0, 0]);
+  });
+
   test('insertArrayCell respeita o tamanho máximo', () => {
     const arr = m.addArray(0, 0, { size: MAX_ARRAY_SIZE });
     expect(m.insertArrayCell(arr.id, 0, 1)).toBe(false);
@@ -412,6 +431,15 @@ describe('toJSON / loadFrom', () => {
     expect(outro.arrays.get(arr.id).cells[0]).toBe(makeTuple([1, 2]));
     expect(outro.dicts.get(d.id).cells[0].key).toBe(makeTuple([0, 0]));
     expect([...outro.variables.values()][0]).toMatchObject({ value: makeTuple([3, 4]), frameId: 'frame-x' });
+  });
+
+  test('ida e volta de uma lista de listas preserva o tipo e as ligações', () => {
+    const outer = m.addArray(0, 0, { kind: 'arrayref', size: 2, name: 'res' });
+    const dentro = m.addArray(0, 60, { size: 1, name: 'res[0]' });
+    m.setArrayCellArrayRef(outer.id, 0, dentro.id);
+    const outro = new MicroModel();
+    outro.loadFrom(JSON.parse(JSON.stringify(m.toJSON())));
+    expect(outro.arrays.get(outer.id)).toMatchObject({ kind: 'arrayref', cells: [dentro.id, null] });
   });
 
   test('cursores de leitura não são salvos', () => {

@@ -55,6 +55,9 @@ export function microLayoutKey(kind, { name, frameId, cursorKey, dictName, key }
       return cursorKey ? `cursor:${cursorKey}` : null;
     case 'array-in-dict':
       return dictName && key != null ? `array-in-dict:${dictName}.${key}` : null;
+    // lista dentro de uma lista de listas global ("res[0]"), pela posição
+    case 'array-in-list':
+      return name && key != null ? `array-in-list:${name}.${key}` : null;
     default:
       return null;
   }

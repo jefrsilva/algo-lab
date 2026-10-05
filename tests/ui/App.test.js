@@ -128,6 +128,29 @@ describe('Simulação', () => {
     expect(y.target).toEqual({ kind: 'array', id: antiga.id });
   });
 
+  test('lista de listas: as listas de dentro nascem embaixo da de fora, sem sobrepor, e cada célula tem seta pra sua lista', () => {
+    rodarNaSimulacao(linhas('m = [[1], [2, 3], [4, 5, 6]]'));
+    botao('.playback-btn', '⏭').click();
+    const arrays = [...app.micro.arrays.values()];
+    const m = arrays.find((a) => a.name === 'm');
+    const dentro = m.cells.map((id) => app.micro.arrays.get(id));
+    expect(dentro.map((a) => a.cells)).toEqual([[1], [2, 3], [4, 5, 6]]);
+    const caixa = (a) => {
+      const { width, height } = arrayLayout(a);
+      return { x: a.x, y: a.y, w: width, h: height };
+    };
+    const fora = caixa(m);
+    const caixas = dentro.map(caixa);
+    caixas.forEach((c) => {
+      expect(Number.isFinite(c.x) && Number.isFinite(c.y)).toBe(true);
+      expect(c.y).toBeGreaterThanOrEqual(fora.y + fora.h);
+    });
+    const sobrepoe = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+    expect(caixas.some((a, i) => caixas.some((b, j) => i < j && sobrepoe(a, b)))).toBe(false);
+    // uma seta por célula (MicroCanvasView#_renderEdges)
+    m.cells.forEach((_, i) => expect(app.microView.edgeEls.has(`${m.id}-cell${i}`)).toBe(true));
+  });
+
   test('dict reatribuído com alias leva o rótulo; dict local tem rótulo no frame da chamada', () => {
     rodarNaSimulacao(linhas('d = {"a": 1}', 'e = d', 'd = {"b": 2}', 'def f():', '    t = {}', '    return t', 'r = f()'));
     botao('.playback-btn', '⏭').click();

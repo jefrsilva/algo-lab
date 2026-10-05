@@ -50,6 +50,18 @@ function storableRaw(v) {
  * App#_createArrayLabelPointer) — decoração, não um nome do código. */
 const isLabel = (p) => !!(p.isArrayLabel || p.isDictLabel || p.isMatrixLabel);
 
+/** Nome de coleção que o código escreve. As sem nome (lista de célula de
+ * dict ou de lista de listas, a antiga de "x = x + [2]") têm um nome que não
+ * é identificador. */
+const isIdentifier = (name) => /^[A-Za-z_]\w*$/.test(name);
+
+/** Valor tipado que é uma lista (viva ou nova) — vai numa célula de lista de
+ * listas (ver evaluator.js, 'nestedlist'). */
+const LIST_VALUE_KINDS = new Set(['arrayref', 'array', 'nodelist', 'set', 'deque', 'nestedlist', 'matrix']);
+
+/** Quantas células o conteúdo `spec` (ver MicroRuntimeAdapter#_listSpec) tem. */
+const specLength = (spec) => (spec.items ?? spec.cells).length;
+
 /** Índice negativo conta do fim ("nums[-1]" é o último), igual Python — o
  * resultado ainda pode estar fora do intervalo (quem chama confere). */
 function fromEnd(index, length) {
@@ -122,6 +134,10 @@ export class MicroRuntimeAdapter {
     // mostra tudo (modo manual) ou só até o passo atual da reprodução (modo
     // Executar, via MicroProgramRunner#run capturando um snapshot por passo).
     this.output = [];
+    // listas que saíram de uma célula de lista de listas ("res.pop()") e que
+    // podem ter ficado sem ninguém — conferidas no fim da instrução (ver
+    // `collectOrphans`), não na hora: "x = res.pop()" ainda vai guardá-las
+    this.pendingOrphans = [];
     // semente do hash de texto/nó dos sets (ver newHashSeed, pyset.js)
     this.newHashSeed();
   }
@@ -155,7 +171,8 @@ export class MicroRuntimeAdapter {
    * intermediários que quem chamou ainda vai usar, ex: o resultado da 1ª
    * chamada em "f(g(a), g(b))"), por um ponteiro de um frame ainda ATIVO
    * (incluindo o global), por uma célula de dict ou pela lista de vizinhos de
-   * um nó. O resto some — ex: no merge sort, os "leftHalf"/"rightHalf"/
+   * um nó, ou por uma célula de uma lista de listas que fica (em cadeia). O
+   * resto some — ex: no merge sort, os "leftHalf"/"rightHalf"/
    * "result" de cada chamada que não foram devolvidos pra cima. Coleção
    * criada fora de chamada (global, à mão no canvas) nunca é candidata.
    * Passos anteriores da reprodução continuam mostrando a coleção (cada passo
@@ -165,7 +182,8 @@ export class MicroRuntimeAdapter {
     const isDead = (n) => !live.has(n.frameId ?? 'global');
     const reachable = new Set();
     const keep = (v) => {
-      if (v?.kind === 'tuple') v.items.forEach(keep); // "return (lista, n)"
+      // "return (lista, n)", "return list(grupos.values())"
+      if (v?.kind === 'tuple' || v?.kind === 'nestedlist') v.items.forEach(keep);
       const node = this._collectionOf(v);
       if (node) reachable.add(node.id);
     };
@@ -194,9 +212,33 @@ export class MicroRuntimeAdapter {
     this.micro.structs.forEach((s) => {
       if (s.neighborsArrayId) reachable.add(s.neighborsArrayId);
     });
+    // listas dentro de uma lista de listas que fica — que pode estar dentro
+    // de outra, então repete até não achar mais nenhuma
+    for (let grew = true; grew; ) {
+      grew = false;
+      this.micro.arrays.forEach((a) => {
+        if (a.kind !== 'arrayref' || (isDead(a) && !reachable.has(a.id))) return;
+        a.cells.forEach((id) => {
+          if (id && !reachable.has(id)) {
+            reachable.add(id);
+            grew = true;
+          }
+        });
+      });
+    }
     Array.from(this.micro.arrays.values()).forEach((a) => {
       if (isDead(a) && !reachable.has(a.id)) this.micro.removeArray(a.id);
     });
+  }
+
+  /** Fim de uma instrução (ver interpreter.js#tick; no Sandbox, App): as
+   * listas que saíram de uma lista de listas ("res.pop()", "res.remove(x)")
+   * e não foram guardadas em lugar nenhum somem — o lixo do Python. */
+  collectOrphans() {
+    if (!this.pendingOrphans.length) return;
+    const ids = this.pendingOrphans;
+    this.pendingOrphans = [];
+    ids.forEach((id) => this._dropIfOrphan({ kind: 'array', id }));
   }
 
   _note(kind, id) {
@@ -292,6 +334,8 @@ export class MicroRuntimeAdapter {
    * colide com identificador — tem "-", ver core/id.js). Qualquer outro valor
    * volta intacto. */
   stableRef(value) {
+    // "return [a, b]" com listas locais: cada item também
+    if (value?.kind === 'nestedlist') return { ...value, items: value.items.map((v) => this.stableRef(v)) };
     const node = this._collectionOf(value);
     if (!node) return value;
     if (value.kind === 'arrayref') return ArrayRefValue(node.id);
@@ -313,6 +357,17 @@ export class MicroRuntimeAdapter {
    * num dict global e lida depois do fim da chamada). */
   _arrayRef(arr) {
     return this._resolveArrayByName(arr.name) === arr ? ArrayRefValue(arr.name) : ArrayRefValue(arr.id);
+  }
+
+  /** Valor tipado guardado numa célula do array `arr`: valor cru, nó/None ou,
+   * numa lista de listas, a lista de dentro (`ArrayRefValue`)/None. */
+  _cellValue(arr, cell) {
+    if (arr.kind === 'value') return wrapValue(cell);
+    if (arr.kind === 'arrayref') {
+      const inner = cell ? this.micro.arrays.get(cell) : null;
+      return inner ? this._arrayRef(inner) : NoneValue;
+    }
+    return cell ? StructRef(cell) : NoneValue;
   }
 
   /** Valor tipado de um dict vivo: o `Map` reconstruído a partir das células
@@ -454,8 +509,10 @@ export class MicroRuntimeAdapter {
   /** `indexNode` é o nó da AST da expressão de índice (não só o valor já
    * resolvido) — precisamos dele pra poder reavaliar o cursor de leitura mais
    * tarde, quando alguma variável da expressão mudar (ver
-   * `_refreshDependentCursors`). */
-  getIndex(arrayName, indexNode, index) {
+   * `_refreshDependentCursors`). `objectNode` (opcional): a expressão da
+   * lista quando ela não é um nome direto ("res[i]" em "res[i][j]", ver
+   * `_arrayCursorSpec`). */
+  getIndex(arrayName, indexNode, index, objectNode) {
     const arr = this._resolveArrayByName(arrayName);
     if (arr?.isSet) {
       this.warn(`Set não tem posições — "${arrayName}[...]" não é permitido (use "sorted(${arrayName})" pra ter uma lista).`);
@@ -464,10 +521,8 @@ export class MicroRuntimeAdapter {
     if (!arr) return undefined;
     index = fromEnd(index, arr.cells.length);
     if (index < 0 || index >= arr.cells.length) return undefined;
-    this._showReadCursor(arrayName, arr, indexNode, index);
-    const cell = arr.cells[index];
-    if (arr.kind === 'value') return wrapValue(cell);
-    return cell ? StructRef(cell) : NoneValue;
+    this._showReadCursor(arrayName, arr, indexNode, index, objectNode);
+    return this._cellValue(arr, arr.cells[index]);
   }
 
   /** Toda leitura "nome[expr]" no código (ex: "sum + nums[i]") move (ou cria,
@@ -485,8 +540,8 @@ export class MicroRuntimeAdapter {
    * depende (`readCursorDeps`) pra `_refreshDependentCursors` poder
    * reavaliar o cursor quando qualquer uma delas for escrita em OUTRA linha
    * — não só quando "nome[expr]" é lido de novo. */
-  _showReadCursor(arrayName, arr, indexNode, index) {
-    const spec = this._arrayCursorSpec(arrayName, arr, indexNode);
+  _showReadCursor(arrayName, arr, indexNode, index, objectNode) {
+    const spec = this._arrayCursorSpec(arrayName, arr, indexNode, objectNode);
     const cursor = this._findCursor(spec.key) ?? this._newCursor(spec);
     this.micro.setPointerTarget(cursor.id, { kind: 'arrayCell', arrayId: arr.id, index });
     this._touch('pointer', cursor.id);
@@ -494,9 +549,26 @@ export class MicroRuntimeAdapter {
 
   /** Chave, rótulo e campos de um cursor de leitura de lista ("nums[i]") —
    * a chave é a expressão normalizada (sem espaços), o que identifica o
-   * cursor: "nums[i]" e "nums[i + 1]" são cursores diferentes. */
-  _arrayCursorSpec(arrayName, arr, indexNode) {
+   * cursor: "nums[i]" e "nums[i + 1]" são cursores diferentes. Lista que
+   * vem de uma expressão (`objectNode` — "res[i]" em "res[i][j]", "d[k]",
+   * "nó.neighbors") dá nome ao cursor pela expressão inteira, como foi
+   * escrita, e o cursor guarda a expressão pra mudar de lista quando "i"
+   * muda (ver `_recomputeCursor`). */
+  _arrayCursorSpec(arrayName, arr, indexNode, objectNode) {
     const label = exprLabel(indexNode);
+    const objectLabel = objectNode ? exprLabel(objectNode) : null;
+    if (objectLabel && !objectLabel.includes('?')) {
+      return {
+        key: `${objectLabel.replace(/\s+/g, '')}[${label.replace(/\s+/g, '')}]`,
+        label: `${objectLabel}[${label}]`,
+        fields: {
+          readCursorArrayId: arr.id,
+          readCursorObjectNode: objectNode,
+          readCursorIndexNode: indexNode,
+          readCursorDeps: exprDependencies(indexNode, exprDependencies(objectNode)),
+        },
+      };
+    }
     // `arrayName` pode ser o id da lista (referência estável, ver
     // `stableRef`) — o rótulo mostra sempre o nome dela
     const shownName = this.micro.arrays.has(arrayName) ? arr.name : arrayName;
@@ -582,7 +654,7 @@ export class MicroRuntimeAdapter {
   dropReadCursor(pointerId) {
     const pointer = this.micro.pointers.get(pointerId);
     if (!pointer) return;
-    ['readCursorKey', 'readCursorArrayId', 'readCursorMatrixId', 'readCursorIndexNode', 'readCursorColNode', 'readCursorDeps', 'readCursorHidden'].forEach(
+    ['readCursorKey', 'readCursorArrayId', 'readCursorMatrixId', 'readCursorObjectNode', 'readCursorIndexNode', 'readCursorColNode', 'readCursorDeps', 'readCursorHidden'].forEach(
       (f) => delete pointer[f],
     );
   }
@@ -620,6 +692,13 @@ export class MicroRuntimeAdapter {
       this.micro.setPointerTarget(cursor.id, { kind: 'matrixCell', matrixId: m.id, row, col });
       this._touch('pointer', cursor.id);
       return;
+    }
+    if (cursor.readCursorObjectNode) {
+      // "res[i][j]" com "i" novo: a lista também pode ter mudado
+      const obj = evaluate(cursor.readCursorObjectNode, this);
+      const target = obj?.kind === 'arrayref' ? this._resolveArrayByName(obj.name) : null;
+      if (!target) return;
+      cursor.readCursorArrayId = target.id;
     }
     const arr = this.micro.arrays.get(cursor.readCursorArrayId);
     if (!arr) return;
@@ -691,7 +770,7 @@ export class MicroRuntimeAdapter {
   iterateArray(arrayName) {
     const arr = this._resolveArrayByName(arrayName);
     if (!arr) return undefined;
-    return arr.cells.map((cell) => (arr.kind === 'value' ? wrapValue(cell) : cell ? StructRef(cell) : NoneValue));
+    return arr.cells.map((cell) => this._cellValue(arr, cell));
   }
 
   /** "len(nome)" — tamanho de um array já vivo no modelo. */
@@ -706,7 +785,7 @@ export class MicroRuntimeAdapter {
    * do array, mesma regra de `assignIndex`. */
   arrayAppend(arrayName, value) {
     const arr = this._resolveArrayByName(arrayName);
-    if (!arr) return;
+    if (!arr) return this._warnIfMatrix(arrayName, 'append');
     // cheio: crescer não faz nada, e a escrita abaixo cairia na ÚLTIMA
     // célula, sobrescrevendo um elemento sem aviso nenhum
     if (arr.cells.length >= MAX_ARRAY_SIZE) {
@@ -719,6 +798,13 @@ export class MicroRuntimeAdapter {
       if (raw === undefined) return;
       this.micro.growArray(arr.id);
       this.micro.setArrayCellValue(arr.id, arr.cells.length - 1, raw);
+    } else if (arr.kind === 'arrayref') {
+      // "res.append([1, 2])" / "res.append(grupo)" — a célula nova aponta pra
+      // lista (nova, ou a mesma que já existe)
+      const id = this._listCellId(arr, value, arr.cells.length);
+      if (id === undefined) return;
+      this.micro.growArray(arr.id);
+      this.micro.setArrayCellArrayRef(arr.id, arr.cells.length - 1, id);
     } else {
       if (value.kind !== 'struct' && value.kind !== 'none') return;
       this.micro.growArray(arr.id);
@@ -732,7 +818,7 @@ export class MicroRuntimeAdapter {
    * (valor simples em lista de valores, nó/None em lista de nós). */
   arrayInsert(arrayName, index, value) {
     const arr = this._resolveArrayByName(arrayName);
-    if (!arr) return;
+    if (!arr) return this._warnIfMatrix(arrayName, 'insert');
     if (arr.cells.length >= MAX_ARRAY_SIZE) {
       this.warn(`${arrayName}.insert(...): a lista já tem o máximo de ${MAX_ARRAY_SIZE} elementos que a ferramenta mostra.`);
       return;
@@ -742,11 +828,24 @@ export class MicroRuntimeAdapter {
     if (arr.kind === 'value') {
       cell = this._cellRaw(value);
       if (cell === undefined) return;
+    } else if (arr.kind === 'arrayref') {
+      cell = this._listCellId(arr, value, index);
+      if (cell === undefined) return;
     } else {
       if (value.kind !== 'struct' && value.kind !== 'none') return;
       cell = value.kind === 'struct' ? value.id : null;
     }
     if (this.micro.insertArrayCell(arr.id, index, cell)) this._touch('array', arr.id);
+  }
+
+  /** "m.append(...)" com "m" uma MATRIZ ("[[1, 2], [3, 4]]" — linhas do
+   * mesmo tamanho viram grade, ver evaluator.js#listValueFrom): a grade
+   * não ganha nem perde linhas, então avisa em vez de ignorar calado. */
+  _warnIfMatrix(name, method) {
+    if (!this._resolveMatrixByName(name)) return;
+    this.warn(
+      `"${name}" é uma matriz (linhas do mesmo tamanho viram grade), que não ganha nem perde linhas — "${name}.${method}(...)" foi ignorado. Pra uma lista de listas que muda de tamanho, comece com "${name} = []" e use append.`,
+    );
   }
 
   // ---- Environment: deque (array marcado `isDeque`, ver assignName) ----
@@ -759,28 +858,100 @@ export class MicroRuntimeAdapter {
     return this._resolveArrayByName(name)?.maxlen ?? null;
   }
 
-  /** O tipo das células de uma lista/deque (valores OU nós, nunca os dois)
-   * vem do que entra: vazia, assume o tipo do item novo (é o que deixa
-   * "fila = []" / "fila = deque()" + "fila.append(raiz)" funcionar); com
-   * itens, um do outro tipo avisa. A lista de vizinhos de um nó de grafo é
-   * sempre de nós — não troca. `false` se o item não pode entrar. Um valor
-   * que não é nem nó nem valor simples (lista, dict...) passa direto: quem
+  /** O tipo das células de uma lista/deque (valores, nós OU listas, nunca
+   * misturados) vem do que entra: vazia, assume o tipo do item novo (é o que
+   * deixa "fila = []" / "fila = deque()" + "fila.append(raiz)" e "res = []"
+   * + "res.append([1, 2])" funcionarem); com itens, um de outro tipo avisa.
+   * None cabe em lista de nós e em lista de listas. A lista de vizinhos de
+   * um nó de grafo é sempre de nós — não troca. `false` se o item não pode
+   * entrar. Um valor que não é nada disso (dict...) passa direto: quem
    * chamou já o ignora como sempre. */
   _fitArrayKind(arr, value, name) {
-    const isRef = value.kind === 'struct' || value.kind === 'none';
-    const isValue = ['scalar', 'string', 'bool', 'tuple'].includes(value.kind);
-    if ((!isRef && !isValue) || isRef === (arr.kind === 'ref')) return true;
+    let kind = null;
+    if (value.kind === 'struct') kind = 'ref';
+    else if (value.kind === 'none') kind = arr.kind === 'value' ? 'ref' : arr.kind;
+    else if (['scalar', 'string', 'bool', 'tuple'].includes(value.kind)) kind = 'value';
+    else if (LIST_VALUE_KINDS.has(value.kind)) kind = 'arrayref';
+    if (!kind || kind === arr.kind) return true;
     const isNeighbors = [...this.micro.structs.values()].some((s) => s.neighborsArrayId === arr.id);
+    if (kind === 'arrayref' && arr.isDeque) {
+      this.warn(`${name}: deque de listas ainda não é suportado — use uma lista ("[]") pra guardar listas.`);
+      return false;
+    }
     if (arr.cells.length === 0 && !isNeighbors) {
-      this.micro.setArrayContents(arr.id, isRef ? 'ref' : 'value', []);
+      this.micro.setArrayContents(arr.id, kind, []);
       return true;
     }
-    this.warn(
-      isNeighbors
-        ? '"neighbors" de um nó de grafo só guarda nós.'
-        : `${name}: ${arr.isDeque ? 'deque' : 'lista'} misturando nós e valores (número/texto) não é suportado.`,
-    );
+    const what = kind === 'arrayref' || arr.kind === 'arrayref' ? 'listas com nós ou valores (número/texto)' : 'nós e valores (número/texto)';
+    this.warn(isNeighbors ? '"neighbors" de um nó de grafo só guarda nós.' : `${name}: ${arr.isDeque ? 'deque' : 'lista'} misturando ${what} não é suportado.`);
     return false;
+  }
+
+  /** Id do array que vai na célula `index` da lista de listas `outer`:
+   * None -> null; uma lista viva -> ela mesma (por referência, igual
+   * Python); uma lista nova -> um array SEM nome criado agora, embaixo de
+   * `outer`, no frame dela (some junto, ver `releaseDeadArrays`).
+   * `undefined` se não cabe (já avisado, se não for óbvio). */
+  _listCellId(outer, value, index) {
+    if (value.kind === 'none') return null;
+    const frameId = outer.frameId ?? 'global';
+    if (value.kind === 'arrayref') {
+      const arr = this._resolveArrayByName(value.name);
+      if (!arr) return undefined;
+      if (arr === outer || this._arrayContains(arr, outer.id)) {
+        this.warn('Lista guardada dentro dela mesma ainda não pode ser mostrada.');
+        return undefined;
+      }
+      // sem nome e de uma chamada que já acabou (ex: a lista de um dict
+      // local, devolvida por "return list(grupos.values())"): passa a ser do
+      // frame de quem a guardou
+      const live = new Set(this.frameStack.map((f) => f.id));
+      if (!isIdentifier(arr.name) && !live.has(arr.frameId ?? 'global')) arr.frameId = frameId;
+      return arr.id;
+    }
+    const spec = this._cellListSpec(value);
+    if (!spec) return undefined;
+    const layoutKey = frameId === 'global' && isIdentifier(outer.name) ? microLayoutKey('array-in-list', { name: outer.name, key: index }) : null;
+    const pos = this.createPosition('array', specLength(spec), layoutKey, { belowArrayId: outer.id });
+    const node = this.micro.addArray(pos.x, pos.y, {
+      kind: spec.kind,
+      orientation: 'horizontal',
+      size: 0,
+      name: `${outer.name}[${index}]`, // só bookkeeping interno, como o de lista de dict (não é um identificador)
+      frameId,
+    });
+    this._fillArray(node, spec);
+    this._touch('array', node.id);
+    return node.id;
+  }
+
+  /** A lista `arr` guarda (em qualquer profundidade) o array `id`? */
+  _arrayContains(arr, id, seen = new Set()) {
+    if (arr.kind !== 'arrayref' || seen.has(arr.id)) return false;
+    seen.add(arr.id);
+    return arr.cells.some((c) => c === id || (c && this._arrayContains(this.micro.arrays.get(c) ?? {}, id, seen)));
+  }
+
+  /** `_listSpec` de uma lista que vai DENTRO de outra coleção (célula de
+   * lista de listas ou de dict): uma matriz nova ("[[1, 2], [3, 4]]") lá
+   * dentro é uma lista de listas, não uma grade. */
+  _cellListSpec(value) {
+    if (value.kind === 'matrix') return this._listSpec({ kind: 'nestedlist', items: value.rows.map((row) => ({ kind: 'array', elements: [...row] })) });
+    return this._listSpec(value);
+  }
+
+  /** Grava o conteúdo `spec` (ver `_listSpec`) no array `node`. Numa lista
+   * de listas, as células começam vazias (já com o tamanho certo) e cada
+   * lista de dentro é criada/ligada depois (`_listCellId`), com a de fora já
+   * no lugar — elas nascem embaixo dela. */
+  _fillArray(node, spec) {
+    if (!spec.items) {
+      this.micro.replaceArray(node.id, spec);
+      return;
+    }
+    this.micro.replaceArray(node.id, { ...spec, cells: spec.items.map(() => null) });
+    const cells = spec.items.map((it, i) => this._listCellId(node, it, i) ?? null);
+    this.micro.replaceArray(node.id, { ...spec, cells });
   }
 
   /** Troca todos os itens do deque (rotate/reverse/clear, ver
@@ -819,7 +990,7 @@ export class MicroRuntimeAdapter {
    * inserindo as células na ordem atual. Sempre um objeto novo (pode ser
    * alterado à vontade por quem chamou). */
   _setTableOf(arr) {
-    const values = arr.cells.map((cell) => (arr.kind === 'value' ? wrapValue(cell) : cell ? StructRef(cell) : NoneValue));
+    const values = arr.cells.map((cell) => this._cellValue(arr, cell));
     const stored = deserializeTable(arr.hashTable, values, this.hashSeed);
     return stored ?? buildFromItems(values, this.hashSeed);
   }
@@ -904,11 +1075,14 @@ export class MicroRuntimeAdapter {
    * None, mesmo critério de "célula vazia" usado no resto do adaptador. */
   arrayPop(arrayName, index) {
     const arr = this._resolveArrayByName(arrayName);
+    if (!arr) this._warnIfMatrix(arrayName, 'pop');
     if (!arr || arr.cells.length === 0) return NoneValue;
     const i = index == null ? arr.cells.length - 1 : index;
     if (i < 0 || i >= arr.cells.length) return NoneValue;
     const cell = arr.cells[i];
-    const result = arr.kind === 'value' ? wrapValue(cell) : cell ? StructRef(cell) : NoneValue;
+    const result = this._cellValue(arr, cell);
+    // a lista de dentro só some se a instrução não a guardar ("x = res.pop()")
+    if (arr.kind === 'arrayref' && cell) this.pendingOrphans.push(cell);
     this.micro.removeArrayCell(arr.id, i);
     this._touch('array', arr.id);
     return result;
@@ -926,12 +1100,20 @@ export class MicroRuntimeAdapter {
     const refCell = (v) => (v.kind === 'struct' ? v.id : null);
     switch (value.kind) {
       case 'array':
+        if (value.elements.length > MAX_ARRAY_SIZE) this.warn(`Lista com mais de ${MAX_ARRAY_SIZE} itens — só os ${MAX_ARRAY_SIZE} primeiros aparecem.`);
         return { kind: 'value', cells: [...value.elements] };
       case 'nodelist':
         // "fila = [raiz]" / "pai = [None] * n" — lista de referências (cada
         // célula com o pino até o nó, ou ∅)
         if (value.items.length > MAX_ARRAY_SIZE) this.warn(`Lista com mais de ${MAX_ARRAY_SIZE} itens — só os ${MAX_ARRAY_SIZE} primeiros aparecem.`);
         return { kind: 'ref', cells: value.items.map(refCell) };
+      case 'nestedlist':
+        // "res = [[1], [2, 3]]" / "list(d.values())" — lista de listas: cada
+        // célula aponta pra uma lista (as novas viram arrays sem nome, ver
+        // `_fillArray`). `items` com referências estáveis (por id): o nome de
+        // uma lista sem nome pode repetir enquanto as novas são criadas.
+        if (value.items.length > MAX_ARRAY_SIZE) this.warn(`Lista com mais de ${MAX_ARRAY_SIZE} itens — só os ${MAX_ARRAY_SIZE} primeiros aparecem.`);
+        return { kind: 'arrayref', cells: [], items: value.items.slice(0, MAX_ARRAY_SIZE).map((v) => this.stableRef(v)) };
       case 'set': {
         // "s = {1, 2, 3}" / "s = set()" — um array de verdade marcado `isSet`
         // (desenhado sem índices, com chaves — ver MicroCanvasView). Tudo que
@@ -983,6 +1165,9 @@ export class MicroRuntimeAdapter {
     for (const d of this.micro.dicts.values()) {
       if (d.cells.some((c) => c.kind === 'arrayref' && c.value === node.id)) return true;
     }
+    for (const a of this.micro.arrays.values()) {
+      if (a.kind === 'arrayref' && a.cells.includes(node.id)) return true;
+    }
     for (const st of this.micro.structs.values()) {
       if (st.neighborsArrayId === node.id) return true;
     }
@@ -1001,11 +1186,14 @@ export class MicroRuntimeAdapter {
     this._removeCollection(target.kind, node);
   }
 
-  /** Apaga uma coleção do modelo — um dict leva junto as listas sem nome das
-   * células dele (ver `_dropIfOrphan`). */
+  /** Apaga uma coleção do modelo — um dict ou uma lista de listas leva junto
+   * as listas sem nome das células dele (ver `_dropIfOrphan`). */
   _removeCollection(type, node) {
-    if (type === 'array') this.micro.removeArray(node.id);
-    else if (type === 'matrix') this.micro.removeMatrix(node.id);
+    if (type === 'array') {
+      const lists = node.kind === 'arrayref' ? node.cells.filter(Boolean) : [];
+      this.micro.removeArray(node.id);
+      lists.forEach((id) => this._dropIfOrphan({ kind: 'array', id }));
+    } else if (type === 'matrix') this.micro.removeMatrix(node.id);
     else {
       const lists = node.cells.filter((c) => c.kind === 'arrayref' && c.value).map((c) => c.value);
       this.micro.removeDict(node.id);
@@ -1101,9 +1289,18 @@ export class MicroRuntimeAdapter {
       if (raw === undefined) return;
     }
     const existing = this._bindingIn(this.currentFrameId, name);
-    if (existing && this._assignInPlace(existing, { name, kind, value, spec, raw })) return;
-    const labelPointerId = existing ? this._releaseBinding(existing, kind) : null;
-    this._createBinding({ name, kind, value, spec, raw, labelPointerId });
+    // lista de listas: as listas que ela vai guardar contam como em uso até
+    // ela existir — "res = [res]" não pode reescrever (nem apagar) a "res"
+    // antiga, que vai pra dentro da nova
+    const held = this.heldValues;
+    if (spec?.items) this.heldValues = [...(held ?? []), ...spec.items];
+    try {
+      if (existing && this._assignInPlace(existing, { name, kind, value, spec, raw })) return;
+      const labelPointerId = existing ? this._releaseBinding(existing, kind) : null;
+      this._createBinding({ name, kind, value, spec, raw, labelPointerId });
+    } finally {
+      this.heldValues = held;
+    }
     // um cursor "nums[i]" pode depender de "i" (inclusive nascido ANTES de
     // "i", criado à mão — ver `adoptReadCursor`)
     this._refreshDependentCursors(name);
@@ -1131,8 +1328,12 @@ export class MicroRuntimeAdapter {
     if (type === 'pointer' || type === 'variable') return false;
     if (kind === 'alias' && this._collectionOf(value) === node) return true; // "x = x"
     if (kind !== type || this._isShared(type, node)) return false;
-    if (type === 'array') this.micro.replaceArray(node.id, spec);
-    else if (type === 'matrix') this.micro.setMatrixContents(node.id, value.rows);
+    if (type === 'array') {
+      // as listas de dentro da versão antiga que ficaram sem ninguém somem
+      const lists = node.kind === 'arrayref' ? node.cells.filter(Boolean) : [];
+      this._fillArray(node, spec);
+      lists.forEach((id) => this._dropIfOrphan({ kind: 'array', id }));
+    } else if (type === 'matrix') this.micro.setMatrixContents(node.id, value.rows);
     else {
       const lists = node.cells.filter((c) => c.kind === 'arrayref' && c.value).map((c) => c.value);
       this.micro.clearDict(node.id);
@@ -1203,11 +1404,14 @@ export class MicroRuntimeAdapter {
       // verdade, com o ponteiro-rótulo que mostra o nome. "arr = []" cria um
       // array VAZIO de verdade (0 células), não um com uma célula fantasma —
       // é o que faz "arr.append(x)" a partir do zero funcionar certo.
-      const pos = this.createPosition('array', spec.cells.length, layoutKey('array'));
+      const pos = this.createPosition('array', specLength(spec), layoutKey('array'));
       const node = this.micro.addArray(pos.x, pos.y, { kind: spec.kind, orientation: 'horizontal', size: 0, name, frameId });
-      this.micro.replaceArray(node.id, spec);
+      // lista de listas: por enquanto só o tamanho — as de dentro nascem
+      // embaixo dela, então ela (e o rótulo) vão pro lugar antes
+      this.micro.replaceArray(node.id, spec.items ? { ...spec, cells: spec.items.map(() => null) } : spec);
       if (label) this.micro.linkArrayLabelPointer(node.id, label);
       else this.onArrayCreated(node, { movable: !pos.remembered });
+      if (spec.items) this._fillArray(node, spec);
       this._touch('array', node.id);
     } else if (kind === 'matrix') {
       // "m = [[1, 2], [3, 4]]" / "m = [[0] * c for _ in range(l)]" — a
@@ -1285,7 +1489,7 @@ export class MicroRuntimeAdapter {
       this.micro.setDictCellArrayRef(dict.id, key, arr.id);
       return true;
     }
-    const spec = this._listSpec(value);
+    const spec = this._cellListSpec(value);
     if (spec === null) return false;
     if (spec) {
       // "d[chave] = [1, 2, 3]" / "[no1, no2]" / "set()" / "deque()" — uma
@@ -1295,7 +1499,7 @@ export class MicroRuntimeAdapter {
       // Nasce no frame do dict (some junto com ele, ver `releaseDeadArrays`);
       // posição lembrada só pra dict global (um por chamada empilharia).
       const frameId = dict.frameId ?? 'global';
-      const pos = this.createPosition('array', spec.cells.length, frameId === 'global' ? microLayoutKey('array-in-dict', { dictName: name, key }) : null);
+      const pos = this.createPosition('array', specLength(spec), frameId === 'global' ? microLayoutKey('array-in-dict', { dictName: name, key }) : null);
       const node = this.micro.addArray(pos.x, pos.y, {
         kind: spec.kind,
         orientation: 'horizontal',
@@ -1303,12 +1507,12 @@ export class MicroRuntimeAdapter {
         name: `${name}["${key}"]`, // só bookkeeping interno — nunca exibido nem endereçável pelo código (não é um identificador válido)
         frameId,
       });
-      this.micro.replaceArray(node.id, spec);
+      this._fillArray(node, spec);
       this.micro.setDictCellArrayRef(dict.id, key, node.id);
       this._touch('array', node.id);
       return true;
     }
-    this.warn(`${name}[${typeof key === 'string' ? `'${key}'` : String(key)}]: um dict só guarda número, texto, bool, tupla, nó, None ou lista — dict dentro de dict e lista de listas ainda não são suportados.`);
+    this.warn(`${name}[${typeof key === 'string' ? `'${key}'` : String(key)}]: um dict só guarda número, texto, bool, tupla, nó, None ou lista — dict dentro de dict ainda não é suportado.`);
     return false;
   }
 
@@ -1343,10 +1547,19 @@ export class MicroRuntimeAdapter {
     if (!arr) return;
     index = fromEnd(index, arr.cells.length);
     if (index < 0 || index >= arr.cells.length) return;
+    if (!this._fitArrayKind(arr, value, arrayName)) return;
     if (arr.kind === 'value') {
       const raw = this._cellRaw(value);
       if (raw === undefined) return;
       this.micro.setArrayCellValue(arr.id, index, raw);
+    } else if (arr.kind === 'arrayref') {
+      // "res[i] = [1, 2]" / "res[i] = outra" — a lista que a célula guardava
+      // some se ficou sem ninguém
+      const previous = arr.cells[index];
+      const id = this._listCellId(arr, value, index);
+      if (id === undefined) return;
+      this.micro.setArrayCellArrayRef(arr.id, index, id);
+      if (previous && previous !== id) this._dropIfOrphan({ kind: 'array', id: previous });
     } else {
       if (value.kind !== 'struct' && value.kind !== 'none') return;
       this.micro.setArrayCellRef(arr.id, index, value.kind === 'struct' ? value.id : null);

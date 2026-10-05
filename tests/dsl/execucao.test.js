@@ -73,6 +73,14 @@ describe('avisos no console (⚠) em vez de exceção', () => {
     ['x = int(5, 2)', 'int(x, base): com base, x precisa ser um texto'],
     ['d = {"m": {"a": 1}}', `d['m']: um dict só guarda número, texto, bool, tupla, nó, None ou lista`],
     ['s = {1}\nprint(s[1:])', 'Set não tem posições'],
+    ['x = ord("ab")', 'ord(c): c precisa ser UM caractere'],
+    ['x = chr(-1)', 'chr(n): n precisa ser um inteiro'],
+    ['r = [[]] * 3', '"[[]] * n" faz todas as listas de dentro serem a MESMA lista'],
+    ['m = [[1, 2], [3, 4]]\nm.append([5, 6])', '"m" é uma matriz'],
+    ['nums = [1, 2]\nnums.append([3])', 'nums: lista misturando listas com nós ou valores'],
+    ['a = []\na.append(a)', 'Lista guardada dentro dela mesma'],
+    ['from collections import deque\nq = deque()\nq.append([1])', 'q: deque de listas ainda não é suportado'],
+    ['nums = [0] * 40', 'Lista com mais de 32 itens'],
   ])('%j', (codigo, aviso) => {
     const { output } = runDsl(codigo);
     expect(output.some((l) => l.startsWith('⚠ ') && l.includes(aviso))).toBe(true);
@@ -342,5 +350,94 @@ describe('estado do modelo', () => {
     const { micro } = runDsl(linhas('a = (1, 2)', 'b = (1, 2)'));
     expect(variavel(micro, 'a').value).toBe(variavel(micro, 'b').value);
     expect(String(variavel(micro, 'a').value)).toBe('(1, 2)');
+  });
+});
+
+describe('lista de listas', () => {
+  /** Conteúdo das listas de dentro de `outer`, na ordem das células. */
+  const dentro = (micro, outer) => outer.cells.map((id) => (id ? micro.arrays.get(id).cells : null));
+
+  test('lista irregular vira array kind:"arrayref" com uma lista sem nome por célula', () => {
+    const { micro } = runDsl('m = [[1], [2, 3], None]');
+    const m = array(micro, 'm');
+    expect(m.kind).toBe('arrayref');
+    expect(dentro(micro, m)).toEqual([[1], [2, 3], null]);
+    const primeira = micro.arrays.get(m.cells[0]);
+    expect(primeira.labelPointerId).toBeUndefined();
+    expect(primeira.name).toBe('m[0]');
+  });
+
+  test('linhas do mesmo tamanho continuam virando matriz', () => {
+    const { micro } = runDsl('m = [[1, 2], [3, 4]]');
+    expect(micro.matrices.size).toBe(1);
+    expect(micro.arrays.size).toBe(0);
+  });
+
+  test('lista vazia vira lista de listas no primeiro append de uma lista', () => {
+    const { micro } = runDsl(linhas('r = []', 'r.append([1, 2])', 'r.append(None)'));
+    const r = array(micro, 'r');
+    expect(r.kind).toBe('arrayref');
+    expect(dentro(micro, r)).toEqual([[1, 2], null]);
+  });
+
+  test('guardar uma lista que já existe liga a célula a ELA (sem cópia)', () => {
+    const { micro } = runDsl(linhas('a = [7]', 'm = [a, a]'));
+    const m = array(micro, 'm');
+    expect(m.cells).toEqual([array(micro, 'a').id, array(micro, 'a').id]);
+  });
+
+  test('list(d.values()) devolvido de função: o dict local some, as listas ficam com o resultado', () => {
+    const { micro } = runDsl(
+      linhas('def f():', '    d = {}', '    d["x"] = [1]', '    d["y"] = [2, 3]', '    return list(d.values())', 'r = f()'),
+    );
+    expect(micro.dicts.size).toBe(0);
+    const r = array(micro, 'r');
+    expect(dentro(micro, r)).toEqual([[1], [2, 3]]);
+    // as listas passam a ser do frame de quem as guardou
+    expect(r.cells.map((id) => micro.arrays.get(id).frameId)).toEqual(['global', 'global']);
+    expect(micro.arrays.size).toBe(3);
+  });
+
+  test('pop sem guardar o resultado apaga a lista de dentro; guardando, ela fica', () => {
+    const { micro } = runDsl(linhas('m = [[1], [2, 2], [3]]', 'm.pop()', 'x = m.pop()'));
+    expect(micro.arrays.size).toBe(3); // m, m[0] e a que "x" guardou
+    const x = valores(micro.pointers).find((p) => p.label === 'x');
+    expect(micro.arrays.get(x.target.id).cells).toEqual([2, 2]);
+  });
+
+  test('trocar a lista de uma célula, ou a lista inteira, apaga as de dentro que ficaram sem ninguém', () => {
+    const { micro } = runDsl(linhas('m = [[1], [2, 2]]', 'm[0] = [5]', 'k = m[1]', 'm = [[3], []]'));
+    const m = array(micro, 'm');
+    expect(dentro(micro, m)).toEqual([[3], []]);
+    // m, as duas novas e a antiga m[1] (que "k" ainda aponta)
+    expect(micro.arrays.size).toBe(4);
+  });
+
+  test('"res = [res]" guarda a lista antiga dentro da nova, sem ciclo', () => {
+    const { micro, output } = runDsl(linhas('res = [[1], [2, 3]]', 'res = [res]', 'print(res)'));
+    expect(output).toEqual(['[[[1], [2, 3]]]']);
+    const res = array(micro, 'res');
+    expect(micro.arrays.get(res.cells[0]).kind).toBe('arrayref');
+  });
+
+  test('cursor "res[i][j]" acompanha i e j, pela expressão', () => {
+    const { runner, micro } = runDsl(linhas('res = [[1, 2], [3]]', 'i = 0', 'j = 1', 'x = res[i][j]', 'i = 1', 'j = 0'));
+    const cursor = () => valores(micro.pointers).find((p) => p.readCursorKey === 'res[i][j]');
+    runner.goToStep(3);
+    const res = array(micro, 'res');
+    expect(cursor().label).toBe('res[i][j]');
+    expect(cursor().target).toEqual({ kind: 'arrayCell', arrayId: res.cells[0], index: 1 });
+    runner.goToStep(5);
+    expect(cursor().target).toEqual({ kind: 'arrayCell', arrayId: res.cells[1], index: 0 });
+  });
+
+  test('voltar um passo restaura as listas de dentro', () => {
+    const { runner, micro } = runDsl(linhas('m = [[1], [2, 3]]', 'm[0].append(4)', 'm.pop()'));
+    runner.goToStep(1);
+    expect(dentro(micro, array(micro, 'm'))).toEqual([[1, 4], [2, 3]]);
+    runner.goToStep(0);
+    expect(dentro(micro, array(micro, 'm'))).toEqual([[1], [2, 3]]);
+    runner.goToStep(2);
+    expect(dentro(micro, array(micro, 'm'))).toEqual([[1, 4]]);
   });
 });

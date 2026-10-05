@@ -623,4 +623,113 @@ print(f"{len(pairs)} pares", "(#)")
 3 pares (#)
 `,
   },
+  {
+    nome: "agrupar anagramas: contador de 26 letras com ord(), tupla como chave e list(d.values())",
+    codigo: `
+def group_anagrams(words):
+    groups = {}
+
+    for word in words:
+        counts = [0] * 26
+
+        for char in word:
+            index = ord(char) - ord("a")
+            counts[index] += 1
+
+        key = tuple(counts)
+
+        if key not in groups:
+            groups[key] = []
+
+        groups[key].append(word)
+
+    return list(groups.values())
+
+result = group_anagrams(["eat", "tea", "tan", "ate", "nat", "bat"])
+print(result)
+print(ord("a"), chr(98), ord("z") - ord("a"))
+`,
+    saida: `
+[['eat', 'tea', 'ate'], ['tan', 'nat'], ['bat']]
+97 b 25
+`,
+  },
+  {
+    nome: "lista de listas: irregular, append/pop/índice, aliasing, buckets, fatia, + e retorno de função",
+    codigo: `
+m = [[1], [2, 3]]
+print(m, len(m), len(m[1]), m[1][0], m[-1][-1])
+m[0].append(9)
+m.append([4, 5, 6])
+print(m)
+a = [7]
+m.append(a)
+a.append(8)
+print(m, a)
+m[1] = [0]
+print(m)
+x = m.pop()
+print(x, m)
+m.pop()
+print(m)
+r = []
+r.append([1, 2])
+r.append([3])
+print(r, r == [[1, 2], [3]], [3] in r, [9] in r)
+buckets = [[] for _ in range(3)]
+for v in [5, 1, 7, 3, 8]:
+    buckets[v % 3].append(v)
+print(buckets)
+flat = []
+for b in buckets:
+    for v in b:
+        flat.append(v)
+print(flat)
+d = {"a": [1], "b": [2, 3]}
+print(d.values(), d.keys(), d.items())
+vals = list(d.values())
+vals[0].append(10)
+print(vals, d)
+c = vals[:]
+print(c, c[1:], c + [[0]])
+g = [[1, 2], [3, 4]]
+print(g, g[1][0])
+t = [None, [1]]
+print(t)
+def f(n):
+    res = []
+    for i in range(n):
+        res.append([i] * (i + 1))
+    return res
+out = f(3)
+print(out)
+def g2():
+    a = [1]
+    b = [2, 3]
+    return [a, b]
+print(g2())
+y = [a, a]
+y[0].append(0)
+print(y)
+`,
+    saida: `
+[[1], [2, 3]] 2 2 2 3
+[[1, 9], [2, 3], [4, 5, 6]]
+[[1, 9], [2, 3], [4, 5, 6], [7, 8]] [7, 8]
+[[1, 9], [0], [4, 5, 6], [7, 8]]
+[7, 8] [[1, 9], [0], [4, 5, 6]]
+[[1, 9], [0]]
+[[1, 2], [3]] True True False
+[[3], [1, 7], [5, 8]]
+[3, 1, 7, 5, 8]
+dict_values([[1], [2, 3]]) dict_keys(['a', 'b']) dict_items([('a', [1]), ('b', [2, 3])])
+[[1, 10], [2, 3]] {'a': [1, 10], 'b': [2, 3]}
+[[1, 10], [2, 3]] [[2, 3]] [[1, 10], [2, 3], [0]]
+[[1, 2], [3, 4]] 3
+[None, [1]]
+[[0], [1, 1], [2, 2, 2]]
+[[1], [2, 3]]
+[[7, 8, 0], [7, 8, 0]]
+`,
+  },
 ];

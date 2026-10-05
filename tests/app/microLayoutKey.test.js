@@ -22,6 +22,7 @@ describe('microLayoutKey', () => {
     expect(microLayoutKey('matrix-label', { name: 'm' })).toBe('matrix-label:m');
     expect(microLayoutKey('cursor', { cursorKey: 'nums[i]' })).toBe('cursor:nums[i]');
     expect(microLayoutKey('array-in-dict', { dictName: 'g', key: 0 })).toBe('array-in-dict:g.0');
+    expect(microLayoutKey('array-in-list', { name: 'res', key: 1 })).toBe('array-in-list:res.1');
   });
 
   test('sem nome, ou tipo sem chave estável (struct anônimo), devolve null', () => {

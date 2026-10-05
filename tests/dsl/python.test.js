@@ -18,11 +18,17 @@ function temPython() {
 
 const prelude = readFileSync(new URL('./prelude.py', import.meta.url), 'utf8');
 
+// No Windows o stdout do Python em modo texto troca cada '\n' por '\r\n'.
+// Desligar essa tradução no próprio Python (sem criar nomes no programa) deixa
+// a saída byte a byte igual em todo sistema, sem mexer em '\r' que o programa
+// imprima de verdade.
+const SEM_TRADUCAO_DE_QUEBRA = "__import__('sys').stdout.reconfigure(newline='\\n')";
+
 describe.skipIf(!temPython())('gabarito confere com o Python real', () => {
   const casos = CASOS.filter((c) => c.python !== false);
   test.each(casos.map((c) => [c.nome, c]))('%s', (_nome, caso) => {
     const saida = execFileSync('python3', ['-'], {
-      input: `${prelude}\n${normalizar(caso.codigo)}\n`,
+      input: `${SEM_TRADUCAO_DE_QUEBRA}\n${prelude}\n${normalizar(caso.codigo)}\n`,
       encoding: 'utf8',
       // ordem de set de textos é sorteada a cada execução no Python
       env: { ...process.env, PYTHONHASHSEED: '0', PYTHONIOENCODING: 'utf-8' },

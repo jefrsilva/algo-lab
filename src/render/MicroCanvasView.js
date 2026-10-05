@@ -745,8 +745,9 @@ function appendHandleAndHalo(el, width, height, handle, boxR) {
 export function arrayLayout(node) {
   const n = node.cells.length;
   // largura da célula: a que cabe o valor mais longo (ver `cellWidthFor`);
-  // array de referências mostra só ∅/pino, fica sempre na quadrada.
-  const cellW = node.kind === 'ref' ? ARRAY_CELL : cellWidthFor(node.cells);
+  // array de referências (a nós ou, numa lista de listas, a listas) mostra
+  // só ∅/pino, fica sempre na quadrada.
+  const cellW = node.kind && node.kind !== 'value' ? ARRAY_CELL : cellWidthFor(node.cells);
   if (node.isSet) return setLayout(node, cellW);
   if (isVerticalOrientation(node.orientation)) {
     // pilha: a posição 0 fica embaixo e a última (o topo) em cima
@@ -2376,7 +2377,7 @@ export class MicroCanvasView {
       const inset = node.isSet ? 3 : 0;
       el.appendChild(
         svgEl('rect', {
-          class: `array-cell ${node.kind === 'ref' ? 'array-cell-ref' : 'array-cell-value'}`,
+          class: `array-cell ${node.kind === 'value' ? 'array-cell-value' : 'array-cell-ref'}`,
           x: c.x + inset,
           y: c.y + inset,
           width: c.w - 2 * inset,

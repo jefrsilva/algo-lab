@@ -69,7 +69,7 @@ function describeArg(value, env) {
     const shown = items.slice(0, 8).map((v) => describeArg(v, env));
     return `[${shown.join(', ')}${items.length > 8 ? ', …' : ''}]`;
   }
-  if (value.kind === 'nodelist') return `[${value.items.slice(0, 8).map((v) => describeArg(v, env)).join(', ')}${value.items.length > 8 ? ', …' : ''}]`;
+  if (value.kind === 'nodelist' || value.kind === 'nestedlist') return `[${value.items.slice(0, 8).map((v) => describeArg(v, env)).join(', ')}${value.items.length > 8 ? ', …' : ''}]`;
   if (value.kind === 'scalar') return String(value.value);
   if (value.kind === 'bool') return value.value ? 'True' : 'False';
   if (value.kind === 'string') return JSON.stringify(value.value);
@@ -114,6 +114,9 @@ export function* runProgram(program, functions, env) {
   }
 
   function* tick(step) {
+    // lista que saiu de uma lista de listas ("res.pop()") e que a instrução
+    // não guardou em lugar nenhum some agora, antes do passo ser mostrado
+    env.collectOrphans?.();
     count += 1;
     yield { ...step, activeFrameId: env.currentFrameId, callTree: callTree.slice() };
     if (count >= MAX_STEPS) {

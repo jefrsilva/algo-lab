@@ -29,6 +29,20 @@
  *                                        tipados. Mesma vida curta de 'array'
  *                                        — atribuída a um nome vira uma lista
  *                                        de referências no modelo
+ *   - {kind:'nestedlist', items: TypedValue[]} — irmã de 'array' pra uma
+ *                                        lista de LISTAS ("[[1], [2, 3]]",
+ *                                        "list(d.values())", "[a, b]" com
+ *                                        listas vivas): cada item é uma lista
+ *                                        viva ('arrayref', guardada por
+ *                                        referência, igual Python), uma lista
+ *                                        nova ('array'/'nodelist'/'set'/
+ *                                        'deque'/'nestedlist') ou None.
+ *                                        Atribuída a um nome vira uma lista
+ *                                        `kind:'arrayref'` no modelo, com as
+ *                                        listas de dentro em arrays sem nome
+ *                                        (ver MicroRuntimeAdapter). Lista de
+ *                                        listas NOVAS do mesmo tamanho
+ *                                        continua virando 'matrix'
  *   - {kind:'dict', entries: Map<number|string|PyTuple, TypedValue>} — AO
  *                                        CONTRÁRIO de array, É valor de
  *                                        primeira classe (mesma família de
@@ -88,7 +102,7 @@
  * uma das reconhecidas — "Node(valor)", "TreeNode(valor)", "GraphNode(valor)", "len(nome)", "range(...)",
  * "sum(...)", "min(...)", "max(...)", "sorted(...)", "enumerate(...)",
  * "list(...)", "set(...)", "tuple(...)", "deque(...)" (e os métodos de deque,
- * ver `callDequeMethod`), "str(valor)", "abs(x)", "int(x[, base])",
+ * ver `callDequeMethod`), "str(valor)", "abs(x)", "int(x[, base])", "ord(c)", "chr(n)",
  * "sep.join(...)", "texto.upper()",
  * "texto.lower()", "texto.split(...)", "texto.replace(...)",
  * "texto.strip(...)", "texto.lstrip(...)", "texto.rstrip(...)", "texto.startswith(...)", "texto.endswith(...)",
@@ -196,6 +210,12 @@ export const ArrayValue = (elements) => ({ kind: 'array', elements });
 /** Ver cabeçalho do arquivo — lista de nós/None. */
 export const NodeListValue = (items) => ({ kind: 'nodelist', items });
 const isNodeItem = (v) => v?.kind === 'struct' || v?.kind === 'none';
+/** Ver cabeçalho do arquivo — lista de listas (ou None). */
+export const NestedListValue = (items) => ({ kind: 'nestedlist', items });
+/** Valor que é uma LISTA (viva ou nova) — o que cabe numa célula de uma
+ * lista de listas ('nestedlist'). */
+const LIST_KINDS = ['arrayref', 'array', 'nodelist', 'set', 'deque', 'nestedlist', 'matrix'];
+const isListItem = (v) => LIST_KINDS.includes(v?.kind);
 /** Ver cabeçalho do arquivo. `table` é a tabela hash (ver pyset.js) e
  * `elements` os elementos na ordem dela — a ordem que o Python usaria ao
  * percorrer/imprimir, não a de inserção. */
@@ -220,11 +240,13 @@ export const RangeValue = (start, stop, step = 1) => ({ kind: 'range', start, st
  * par é uma tupla JS `[Scalar(índice), valorTipado]`, não um valor tipado —
  * é o que permite "for i, v in enumerate(arr):" fazer bind de DUAS variáveis
  * por item (ver ast.js#For). */
-export const PairsValue = (pairs) => ({ kind: 'pairs', pairs });
+export const PairsValue = (pairs, label) => ({ kind: 'pairs', pairs, ...(label ? { label } : {}) });
 /** Só existe como valor de "dict.keys()"/"dict.values()", só consumido pelo
  * "for" (mesma família de 'range'/'pairs' — ver
- * interpreter.js#resolveIterable). `items` já são valores tipados prontos. */
-export const IterValue = (items) => ({ kind: 'iter', items });
+ * interpreter.js#resolveIterable). `items` já são valores tipados prontos.
+ * `label` ('dict_keys'/'dict_values', e 'dict_items' no 'pairs') é só pro
+ * print: "dict_values([1, 2])", igual Python. */
+export const IterValue = (items, label) => ({ kind: 'iter', items, ...(label ? { label } : {}) });
 /** "nome" quando "nome" é um array já vivo no modelo — array não é valor de
  * primeira classe pra encadear expressão nenhuma (ver `evaluate`, caso
  * 'Name'), mas precisa fluir como ALGUM valor pra alimentar "d[chave] =
@@ -337,11 +359,12 @@ export function loopValues(item, nVars) {
 
 /** Monta o valor de uma lista a partir dos itens já avaliados (literal
  * "[a, b, c]" ou resultado de uma list comprehension): só valores simples ->
- * 'array'; só nós/None -> 'nodelist'; só listas simples ('array', do mesmo
- * tamanho) -> 'matrix'. Lista irregular (linhas de tamanhos diferentes),
- * vazia dentro de lista ou misturando nós e valores não tem representação
- * visual — avisa no console (`env.warn`) em vez de sumir sem explicação.
- * Qualquer outra mistura devolve `undefined`, como sempre. */
+ * 'array'; só nós/None -> 'nodelist'; só listas simples NOVAS ('array', do
+ * mesmo tamanho, sem ser vazias) -> 'matrix'; qualquer outra lista de listas
+ * (com None no meio, irregular, de listas vivas — "list(d.values())") ->
+ * 'nestedlist'. Misturar nós e valores não tem representação visual — avisa
+ * no console (`env.warn`) em vez de sumir sem explicação. Qualquer outra
+ * mistura devolve `undefined`, como sempre. */
 function listValueFrom(items, env) {
   if (items.every((v) => valueToRaw(v) !== undefined)) return ArrayValue(items.map(valueToRaw));
   if (items.every(isNodeItem)) return NodeListValue(items);
@@ -355,15 +378,15 @@ function listValueFrom(items, env) {
   }
   if (items.length > 0 && items.every((v) => v?.kind === 'array')) {
     const cols = items[0].elements.length;
-    if (cols === 0) {
-      env.warn?.('Matriz com linhas vazias não é suportada — cada linha precisa ter pelo menos uma coluna.');
-      return undefined;
-    }
-    if (items.some((v) => v.elements.length !== cols)) {
-      env.warn?.('Matriz com linhas de tamanhos diferentes não é suportada — todas as linhas precisam ter o mesmo número de colunas.');
-      return undefined;
-    }
-    return MatrixValue(items.map((v) => [...v.elements]));
+    if (cols > 0 && items.every((v) => v.elements.length === cols)) return MatrixValue(items.map((v) => [...v.elements]));
+  }
+  if (items.some(isListItem) && items.every((v) => isListItem(v) || v?.kind === 'none')) {
+    // uma matriz literal DENTRO da lista ("[[[1, 2], [3, 4]], [5]]") vira
+    // lista de listas também — grade só existe no nível de cima
+    return NestedListValue(items.map((v) => (v.kind === 'matrix' ? NestedListValue(v.rows.map((row) => ArrayValue([...row]))) : v)));
+  }
+  if (items.some((v) => v?.kind === 'matrixref')) {
+    env.warn?.('Matriz dentro de lista ainda não é suportada — use uma lista de listas ("[[1, 2], [3]]").');
   }
   return undefined;
 }
@@ -392,10 +415,13 @@ export function iterableItems(value, env) {
   if (value?.kind === 'iter') return value.items;
   if (value?.kind === 'arrayref') return env.iterateArray ? env.iterateArray(value.name) : undefined;
   if (value?.kind === 'array') return value.elements.map(rawToValue);
-  if (value?.kind === 'nodelist') return value.items;
+  if (value?.kind === 'nodelist' || value?.kind === 'nestedlist') return value.items;
   if (value?.kind === 'set' || value?.kind === 'deque') return value.elements;
   if (value?.kind === 'string') return [...value.value].map((ch) => StringValue(ch));
   if (value?.kind === 'matrixrow') return value.cells.map(rawToValue);
+  // matriz NOVA (literal, ainda sem nome): cada linha é uma lista nova —
+  // "res += [[1, 2]]", "res.extend([[1], [2]])"
+  if (value?.kind === 'matrix') return value.rows.map((row) => ArrayValue([...row]));
   if (value?.kind === 'tuple') return value.items;
   if (value?.kind === 'dict') {
     // "for chave in d:" — Python itera as CHAVES por padrão.
@@ -445,7 +471,7 @@ export function truthy(v, env) {
   if (v.kind === 'string') return v.value.length > 0;
   if (v.kind === 'struct') return v.id != null;
   if (v.kind === 'array' || v.kind === 'set' || v.kind === 'deque') return v.elements.length > 0;
-  if (v.kind === 'nodelist') return v.items.length > 0;
+  if (v.kind === 'nodelist' || v.kind === 'nestedlist') return v.items.length > 0;
   if (v.kind === 'dict') return v.entries.size > 0;
   if (v.kind === 'tuple') return v.items.length > 0;
   if (v.kind === 'matrix' || v.kind === 'matrixref') return v.rows.length > 0;
@@ -795,7 +821,13 @@ function formatPrintValue(v, env) {
     case 'deque':
       return formatPrintDeque(v.elements, v.maxlen, env);
     case 'nodelist':
+    case 'nestedlist':
       return formatPrintArray(v.items, env);
+    // "print(d.values())" -> "dict_values([1, 2])", igual Python
+    case 'iter':
+      return v.label ? `${v.label}(${formatPrintArray(v.items, env)})` : '?';
+    case 'pairs':
+      return v.label ? `${v.label}(${formatPrintArray(pairsAsTuples(v.pairs), env)})` : '?';
     case 'tuple': {
       // "(1, 'a')" — item de texto entre aspas, tupla de um item com
       // vírgula ("(1,)"), igual `repr()` do Python
@@ -1030,6 +1062,22 @@ function materializeList(v, env) {
   return listValueFrom(items, env) ?? v;
 }
 
+/** Valor com o CONTEÚDO de cada lista no lugar da referência, em qualquer
+ * profundidade — pra comparar listas de listas ("res == [[1], [2, 3]]",
+ * "[1] in res"): lista/set viva vira literal, matriz (viva ou nova) vira
+ * lista de listas. Qualquer outro valor volta intacto. */
+function materializeDeep(v, env) {
+  const m = materializeList(materializeSet(v, env), env);
+  if (m?.kind === 'matrix' || m?.kind === 'matrixref') return NestedListValue(m.rows.map((row) => ArrayValue([...row])));
+  if (m?.kind === 'nestedlist') return NestedListValue(m.items.map((it) => materializeDeep(it, env)));
+  return m;
+}
+
+/** "==" do Python que enxerga dentro de listas vivas (ver `materializeDeep`). */
+function equalDeep(a, b, env) {
+  return valuesEqual(materializeDeep(a, env), materializeDeep(b, env));
+}
+
 /** Texto -> inteiro, com as regras de "int(texto, base)" do Python: espaços
  * em volta, sinal, "_" entre dígitos ("1_000") e o prefixo da base ("0x" com
  * base 16, "0b" com 2, "0o" com 8). `undefined` se não é um inteiro válido
@@ -1258,7 +1306,9 @@ export function evaluate(node, env) {
       // array já foi resolvido em tempo de execução por dentro do
       // `ArrayRefValue` — é só repassar pra `env.getIndex` como se fosse
       // "nome[i]" de verdade, mesmo caminho de sempre.
-      if (objValue?.kind === 'arrayref') return env.getIndex(objValue.name, node.index, indexValue.value);
+      // `node.object` vai junto: o cursor de leitura se chama pela expressão
+      // ("res[i][j]", "nó.neighbors[k]") e acompanha quando ela muda de lista
+      if (objValue?.kind === 'arrayref') return env.getIndex(objValue.name, node.index, indexValue.value, node.object);
 
       // "m[i][j]" — o objeto indexado é "m[i]" (uma linha, ver abaixo): lê a
       // célula pelo Environment, passando as DUAS expressões de índice (linha
@@ -1274,7 +1324,7 @@ export function evaluate(node, env) {
 
       // "sorted(nums)[0]", "[3, 1, 2][-1]" — lista que é resultado de uma
       // expressão (não está no modelo, então não tem cursor de leitura)
-      if (objValue?.kind === 'array' || objValue?.kind === 'nodelist') {
+      if (objValue?.kind === 'array' || objValue?.kind === 'nodelist' || objValue?.kind === 'nestedlist') {
         const items = iterableItems(objValue, env);
         const i = indexValue.value < 0 ? items.length + indexValue.value : indexValue.value;
         return items[i];
@@ -1333,7 +1383,7 @@ export function evaluate(node, env) {
       // no modelo, por nome ou por expressão ("d[chave][1:]")
       let items;
       if (objValue?.kind === 'array' || objValue?.kind === 'matrixrow') items = iterableItems(objValue, env);
-      else if (objValue?.kind === 'nodelist') items = objValue.items;
+      else if (objValue?.kind === 'nodelist' || objValue?.kind === 'nestedlist') items = objValue.items;
       else {
         const listName = objValue?.kind === 'arrayref' ? objValue.name : node.object.type === 'Name' ? node.object.name : null;
         if (listName == null || !env.iterateArray) return undefined;
@@ -1353,8 +1403,14 @@ export function evaluate(node, env) {
       const indices = sliceIndices(items.length, start, stop, step);
       if (indices === undefined) return undefined;
       if (items.length && items.every(isNodeItem)) return NodeListValue(indices.map((idx) => items[idx]));
-      if (!items.every((v) => valueToRaw(v) !== undefined)) return undefined;
-      return ArrayValue(indices.map((idx) => valueToRaw(items[idx])));
+      if (items.every((v) => valueToRaw(v) !== undefined)) return ArrayValue(indices.map((idx) => valueToRaw(items[idx])));
+      // lista de listas: "res[1:]" — uma lista nova com as MESMAS listas de
+      // dentro (cópia rasa, igual Python)
+      if (items.some(isListItem) && items.every((v) => isListItem(v) || v.kind === 'none')) {
+        const picked = indices.map((idx) => items[idx]);
+        return picked.length ? NestedListValue(picked) : ArrayValue([]);
+      }
+      return undefined;
     }
 
     case 'Call': {
@@ -1430,7 +1486,9 @@ export function evaluate(node, env) {
           if (v?.kind === 'matrixref' || v?.kind === 'matrix') return Scalar(v.rows.length);
           if (v?.kind === 'matrixrow' || v?.kind === 'array') return Scalar(v.kind === 'array' ? v.elements.length : v.cells.length);
           if (v?.kind === 'set' || v?.kind === 'deque') return Scalar(v.elements.length);
-          if (v?.kind === 'nodelist') return Scalar(v.items.length);
+          if (v?.kind === 'nodelist' || v?.kind === 'nestedlist') return Scalar(v.items.length);
+          if (v?.kind === 'iter') return Scalar(v.items.length);
+          if (v?.kind === 'pairs') return Scalar(v.pairs.length);
           return undefined;
         }
 
@@ -1444,8 +1502,9 @@ export function evaluate(node, env) {
           const items = collectionItems(node.args[0], env);
           if (items === undefined) return undefined;
           const list = listValueFrom(items, env);
-          if (list?.kind !== 'array' && list?.kind !== 'nodelist') {
-            env.warn?.('list(...): só dá pra criar listas de valores simples (número, texto, bool) ou de nós.');
+          if (list?.kind === 'matrix') return NestedListValue(list.rows.map((row) => ArrayValue([...row])));
+          if (list?.kind !== 'array' && list?.kind !== 'nodelist' && list?.kind !== 'nestedlist') {
+            env.warn?.('list(...): só dá pra criar listas de valores simples (número, texto, bool), de nós ou de listas.');
             return undefined;
           }
           return list;
@@ -1594,6 +1653,26 @@ export function evaluate(node, env) {
           return undefined;
         }
 
+        // "ord(c)" — o código Unicode de UM caractere ("ord('a')" é 97, o
+        // truque de "ord(c) - ord('a')" pra contar letras); "chr(n)" é o
+        // inverso. Texto de outro tamanho / número fora do Unicode é o
+        // TypeError/ValueError do Python — avisa.
+        if (fname === 'ord' && node.args.length === 1) {
+          const v = evaluate(node.args[0], env);
+          if (v === undefined) return undefined;
+          const chars = v.kind === 'string' ? [...v.value] : null;
+          if (chars?.length === 1) return Scalar(chars[0].codePointAt(0));
+          env.warn?.(chars ? `ord(c): c precisa ser UM caractere (veio um texto de ${chars.length}).` : 'ord(c): c precisa ser um texto de um caractere.');
+          return undefined;
+        }
+        if (fname === 'chr' && node.args.length === 1) {
+          const v = evaluate(node.args[0], env);
+          if (v === undefined) return undefined;
+          if (v.kind === 'scalar' && Number.isInteger(v.value) && v.value >= 0 && v.value <= 0x10ffff) return StringValue(String.fromCodePoint(v.value));
+          env.warn?.('chr(n): n precisa ser um inteiro entre 0 e 1114111.');
+          return undefined;
+        }
+
         // "int()" (0), "int(x)" — número sem a parte fracionária (corta em
         // direção a zero: int(-2.7) é -2), bool vira 0/1, texto é lido como
         // inteiro ("int('42')", "int(' -7 ')") — "int('3.5')" é o ValueError
@@ -1692,14 +1771,15 @@ export function evaluate(node, env) {
             return NoneValue;
           }
           if (method === 'keys' && node.args.length === 0) {
-            return IterValue([...objValue.entries.keys()].map(rawToValue));
+            return IterValue([...objValue.entries.keys()].map(rawToValue), 'dict_keys');
           }
           if (method === 'values' && node.args.length === 0) {
-            return IterValue([...objValue.entries.values()]);
+            return IterValue([...objValue.entries.values()], 'dict_values');
           }
           if (method === 'items' && node.args.length === 0) {
             return PairsValue(
               [...objValue.entries.entries()].map(([k, v]) => [rawToValue(k), v]),
+              'dict_items',
             );
           }
           // método de set num dict — quase sempre "s = {}" achando que cria
@@ -1794,7 +1874,7 @@ export function evaluate(node, env) {
           if (arg === undefined) return undefined;
           const items = env.iterateArray?.(arrayName);
           if (items === undefined) return undefined;
-          const i = items.findIndex((v) => valuesEqual(v, arg));
+          const i = items.findIndex((v) => equalDeep(v, arg, env));
           if (i === -1) {
             env.warn?.(`${arrayName}.remove(...): o valor não está na lista.`);
             return undefined;
@@ -1890,8 +1970,8 @@ export function evaluate(node, env) {
           return BoolValue(node.op === 'in' ? found : !found);
         }
         // tupla ou lista literal ("no in [a, b]", "x in [1, 2]")
-        if (rightValue?.kind === 'tuple' || rightValue?.kind === 'nodelist' || rightValue?.kind === 'array') {
-          const found = iterableItems(rightValue, env).some((v) => valuesEqual(v, left));
+        if (rightValue?.kind === 'tuple' || rightValue?.kind === 'nodelist' || rightValue?.kind === 'array' || rightValue?.kind === 'nestedlist') {
+          const found = iterableItems(rightValue, env).some((v) => equalDeep(v, left, env));
           return BoolValue(node.op === 'in' ? found : !found);
         }
 
@@ -1905,8 +1985,9 @@ export function evaluate(node, env) {
         if (arrName == null) return undefined;
         const items = env.iterateArray(arrName);
         if (items === undefined) return undefined;
-        // set: igualdade de set do Python ("True in {1}" é True)
-        const eq = env.isSet?.(arrName) ? setKeyEq : valuesEqual;
+        // set: igualdade de set do Python ("True in {1}" é True); lista de
+        // listas compara pelo conteúdo ("[1] in res")
+        const eq = env.isSet?.(arrName) ? setKeyEq : (a, b) => equalDeep(a, b, env);
         const found = items.some((v) => eq(v, left));
         return BoolValue(node.op === 'in' ? found : !found);
       }
@@ -1926,10 +2007,11 @@ export function evaluate(node, env) {
         };
         return evaluate(extend, env) === undefined ? undefined : left;
       }
-      // "s == {1, 2}" / "a == b" com sets vivos — compara pelo conteúdo
+      // "s == {1, 2}" / "a == b" com sets vivos — compara pelo conteúdo,
+      // inclusive o das listas dentro de uma lista de listas
       if (node.op === '==' || node.op === '!=') {
-        left = materializeSet(left, env);
-        right = materializeSet(right, env);
+        left = materializeDeep(left, env);
+        right = materializeDeep(right, env);
       }
       // "nums == [1, 2]", "[raiz] + filhos", "nums * 2" com lista viva —
       // pelo conteúdo, igual uma lista literal
@@ -1943,6 +2025,13 @@ export function evaluate(node, env) {
       // jeito certo em vez de criar uma matriz que se comportaria diferente.
       if (node.op === '*' && (left.kind === 'matrix' || right.kind === 'matrix')) {
         env.warn?.('"[[0] * colunas] * linhas" faz todas as linhas serem a MESMA lista em Python — use "[[0] * colunas for _ in range(linhas)]".');
+        return undefined;
+      }
+      // "[[]] * n" — mesma armadilha: as n listas seriam UMA só. Repetir
+      // listas que já existem ("[a] * 3") é o que o Python faz mesmo (3
+      // referências à mesma lista), então só uma lista NOVA dentro barra.
+      if (node.op === '*' && [left, right].some((v) => v.kind === 'nestedlist' && v.items.some((it) => isListItem(it) && it.kind !== 'arrayref'))) {
+        env.warn?.('"[[]] * n" faz todas as listas de dentro serem a MESMA lista em Python — use "[[] for _ in range(n)]".');
         return undefined;
       }
       return evalBinOp(node.op, left, right);
@@ -1986,6 +2075,20 @@ function evalBinOp(op, left, right) {
   }
   if (op === '+' && (left.kind === 'nodelist' || right.kind === 'nodelist') && nodeItems(left) && nodeItems(right)) {
     return NodeListValue([...nodeItems(left), ...nodeItems(right)]);
+  }
+  // lista de listas: "res + [[1]]", "[a] * 3" — as listas de dentro entram
+  // por referência (não são copiadas), igual Python; uma matriz nova do lado
+  // de lá vira lista de listas, e "[]" junta com qualquer uma
+  const nestedItems = (v) =>
+    v.kind === 'nestedlist' ? v.items : v.kind === 'matrix' ? v.rows.map((row) => ArrayValue([...row])) : v.kind === 'array' && v.elements.length === 0 ? [] : null;
+  if (op === '*' && (left.kind === 'nestedlist' || right.kind === 'nestedlist')) {
+    const [list, n] = left.kind === 'nestedlist' ? [left, right] : [right, left];
+    if (n.kind !== 'scalar' || !Number.isInteger(n.value)) return undefined;
+    const items = Array.from({ length: Math.max(0, n.value) }, () => list.items).flat();
+    return items.length ? NestedListValue(items) : ArrayValue([]);
+  }
+  if (op === '+' && (left.kind === 'nestedlist' || right.kind === 'nestedlist') && nestedItems(left) && nestedItems(right)) {
+    return NestedListValue([...nestedItems(left), ...nestedItems(right)]);
   }
   if (left.kind === 'string' || right.kind === 'string') {
     // "a + b" (concatenação) e "s * n"/"n * s" (repetição) — únicas duas
@@ -2067,7 +2170,7 @@ export function valuesEqual(a, b) {
   if (a.kind === 'struct') return a.id === b.id;
   if (a.kind === 'none') return true;
   if (a.kind === 'array') return a.elements.length === b.elements.length && a.elements.every((v, i) => v === b.elements[i]);
-  if (a.kind === 'nodelist') return a.items.length === b.items.length && a.items.every((v, i) => valuesEqual(v, b.items[i]));
+  if (a.kind === 'nodelist' || a.kind === 'nestedlist') return a.items.length === b.items.length && a.items.every((v, i) => valuesEqual(v, b.items[i]));
   if (a.kind === 'tuple') return a.items.length === b.items.length && a.items.every((v, i) => valuesEqual(v, b.items[i]));
   if (a.kind === 'dict') {
     if (a.entries.size !== b.entries.size) return false;
@@ -2089,7 +2192,7 @@ export function assignChain(targetNodes, value, env) {
   let current = value;
   targetNodes.forEach((target, k) => {
     assign(target, current, env);
-    const fresh = ['array', 'set', 'matrix'].includes(current.kind) || (current.kind === 'dict' && !current.sourceName);
+    const fresh = ['array', 'set', 'matrix', 'nestedlist'].includes(current.kind) || (current.kind === 'dict' && !current.sourceName);
     if (k === 0 && fresh && target.type === 'Name') current = evaluate(target, env) ?? current;
   });
 }

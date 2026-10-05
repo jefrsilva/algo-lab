@@ -1,7 +1,8 @@
 import { nextId } from '../id.js';
 import { reviveRaw } from '../../interpreter/pytuple.js';
 
-export const MAX_ARRAY_SIZE = 24;
+// 32 cobre o contador de letras "[0] * 26" (anagramas, frequência)
+export const MAX_ARRAY_SIZE = 32;
 export const MAX_DICT_SIZE = 24;
 
 /** Lado de uma célula de array no canvas (= `ARRAY_CELL` de
@@ -31,6 +32,13 @@ export function ridesStackTop(pointer, arr) {
   return !!pointer && isStackArray(arr) && pointer.y < arr.y;
 }
 
+/** Tipo das células de um array: 'value' (valores crus), 'ref' (ids de
+ * struct) ou 'arrayref' (ids de outros arrays — lista de listas). Qualquer
+ * outra coisa (arquivo antigo/editado à mão) vira 'value'. */
+function arrayKind(kind) {
+  return kind === 'ref' || kind === 'arrayref' ? kind : 'value';
+}
+
 /**
  * Modelo do modo "micro": nós de estrutura (com campos internos, ex.
  * prev/data/next de uma lista duplamente ligada), arrays (de valores ou de
@@ -38,9 +46,12 @@ export function ridesStackTop(pointer, arr) {
  * ou para uma posição específica de um array. Não conhece renderização —
  * apenas os dados e as relações entre eles.
  *
- * Alvo de um ponteiro (`pointer.target`) e de uma célula de array de
- * referências (`array.cells[i]`, quando `array.kind === 'ref'`) são sempre
- * ids de struct. Já o alvo de um ponteiro é mais geral, podendo ser:
+ * Uma célula de array de referências (`array.cells[i]`, quando
+ * `array.kind === 'ref'`) guarda sempre um id de struct (ou null); numa
+ * lista de listas (`array.kind === 'arrayref'`, "[[1], [2, 3]]"), o id de
+ * OUTRO array (ou null) — as listas de dentro são arrays comuns, sem nome,
+ * alcançáveis só pela célula (mesmo espírito da célula 'arrayref' de dict).
+ * Já o alvo de um ponteiro é mais geral, podendo ser:
  *   null | { kind: 'struct', id } | { kind: 'arrayCell', arrayId, index } | { kind: 'array', id }
  *
  * `{ kind: 'array', id }` é o alvo do ponteiro-rótulo que nasce junto com todo
@@ -172,7 +183,7 @@ export class MicroModel {
     // de verdade sem nenhuma célula fantasma, pra "arr.append(x)"/"len(arr)"
     // funcionarem certo a partir do zero (ver janela deslizante, plano etapa 4).
     const clampedSize = Math.max(0, Math.min(size, MAX_ARRAY_SIZE));
-    const cells = Array.from({ length: clampedSize }, () => (kind === 'ref' ? null : 0));
+    const cells = Array.from({ length: clampedSize }, () => (kind === 'value' ? 0 : null));
     const node = { id: nextId('array'), x, y, kind, orientation, cells, name, frameId, ...(isSet ? { isSet: true } : {}), ...(isDeque ? { isDeque: true, maxlen } : {}) };
     this.arrays.set(node.id, node);
     return node;
@@ -187,7 +198,7 @@ export class MicroModel {
   setSetContents(arrayId, kind, cells, hashTable) {
     const node = this.arrays.get(arrayId);
     if (!node) return;
-    node.kind = kind === 'ref' ? 'ref' : 'value';
+    node.kind = arrayKind(kind);
     node.cells = cells.slice(0, MAX_ARRAY_SIZE);
     node.hashTable = hashTable;
   }
@@ -199,7 +210,7 @@ export class MicroModel {
   setArrayContents(arrayId, kind, cells) {
     const node = this.arrays.get(arrayId);
     if (!node) return;
-    node.kind = kind === 'ref' ? 'ref' : 'value';
+    node.kind = arrayKind(kind);
     const oldLen = node.cells.length;
     node.cells = cells.slice(0, MAX_ARRAY_SIZE);
     this._keepStackBase(node, oldLen);
@@ -512,6 +523,10 @@ export class MicroModel {
         if (c.kind === 'arrayref' && c.value === id) c.value = null;
       });
     }
+    // lista de listas que guardava este array numa célula: a célula vira None
+    for (const arr of this.arrays.values()) {
+      if (arr.kind === 'arrayref' && arr.cells.includes(id)) arr.cells = arr.cells.map((c) => (c === id ? null : c));
+    }
     // dono inverso de `setStructNeighborsArray` — se alguém apagar o array de
     // vizinhos DIRETO (ex: clique duplo nele no modo detalhado), o struct
     // 'graph' que o possuía fica sem lista (equivalente a "neighbors" nunca
@@ -587,6 +602,15 @@ export class MicroModel {
     node.cells[index] = targetStructId ?? null;
   }
 
+  /** Célula de uma lista de listas (`kind:'arrayref'`) passa a guardar o
+   * array `targetArrayId` (ou None) — "res[i] = [1, 2]", "res[i] = outra". */
+  setArrayCellArrayRef(arrayId, index, targetArrayId) {
+    const node = this.arrays.get(arrayId);
+    if (!node || node.kind !== 'arrayref' || index < 0 || index >= node.cells.length) return;
+    if (targetArrayId && !this.arrays.has(targetArrayId)) return;
+    node.cells[index] = targetArrayId ?? null;
+  }
+
   /** 'horizontal' | 'vertical' | 'stack' — a pilha (vertical com a posição 0
    * embaixo e o último elemento no topo) não vale pra set, que não tem posição. */
   setArrayOrientation(arrayId, orientation) {
@@ -624,7 +648,7 @@ export class MicroModel {
     const oldSize = node.cells.length;
     if (newSize === oldSize) return;
     if (newSize > oldSize) {
-      const fill = node.kind === 'ref' ? null : 0;
+      const fill = node.kind === 'value' ? 0 : null;
       node.cells = node.cells.concat(Array.from({ length: newSize - oldSize }, () => fill));
       this._keepStackBase(node, oldSize);
       return;
@@ -664,7 +688,8 @@ export class MicroModel {
     const node = this.arrays.get(arrayId);
     if (!node || index < 0 || index > node.cells.length || node.cells.length >= MAX_ARRAY_SIZE) return false;
     if (node.kind === 'ref' && value && !this.structs.has(value)) return false;
-    node.cells.splice(index, 0, node.kind === 'ref' ? (value ?? null) : value);
+    if (node.kind === 'arrayref' && value && !this.arrays.has(value)) return false;
+    node.cells.splice(index, 0, node.kind === 'value' ? value : (value ?? null));
     this._keepStackBase(node, node.cells.length - 1);
     for (const p of this.pointers.values()) {
       if (p.target?.kind === 'arrayCell' && p.target.arrayId === arrayId && p.target.index >= index) {
@@ -821,7 +846,7 @@ export class MicroModel {
         id: n.id,
         x: n.x || 0,
         y: n.y || 0,
-        kind: n.kind === 'ref' ? 'ref' : 'value',
+        kind: arrayKind(n.kind),
         orientation: n.orientation === 'vertical' || (n.orientation === 'stack' && !n.isSet) ? n.orientation : 'horizontal',
         // célula tupla volta a ser `PyTuple` (ver pytuple.js#reviveRaw)
         cells: Array.isArray(n.cells) ? n.cells.map(reviveRaw) : [],

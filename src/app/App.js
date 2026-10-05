@@ -3168,6 +3168,50 @@ export class App {
     return (parsed.ok && this.microRuntime.adoptReadCursor(node.id, parsed.ast)) || node.id;
   }
 
+  /** Cursor de índice FIXO ("nums[1]", "m[0][2]" — o que o arraste a partir
+   * do índice cria, ver _createMicroIndexCursor) religado à mão pela porta:
+   * o nome tem que acompanhar o alvo novo. Vira o cursor dessa posição
+   * ("nums[3]") se o alvo é célula de um array/matriz com nome; senão, um
+   * ponteiro comum (o nome antigo mentiria sobre pra onde ele aponta).
+   * Cursor com expressão ("nums[i]") não muda — ele segue o "i" e volta pra
+   * posição certa na próxima escrita. Devolve o id do ponteiro resultante
+   * (pode ser outro, se o cursor da posição nova já existia). */
+  _relinkMicroIndexCursor(pointerId) {
+    const p = this.micro.pointers.get(pointerId);
+    if (!p?.readCursorKey) return pointerId;
+    const literal = (n) => n?.type === 'Number';
+    const fixed = literal(p.readCursorIndexNode) && (!p.readCursorMatrixId || literal(p.readCursorColNode));
+    if (!fixed) return pointerId;
+    const oldKey = this._microPointerWindowKey(p);
+    const t = p.target;
+    const named = (c) => c?.name && !c.name.startsWith('__');
+    let expr = null;
+    if (t?.kind === 'arrayCell') {
+      const arr = this.micro.arrays.get(t.arrayId);
+      if (named(arr) && !arr.isSet) expr = `${arr.name}[${t.index}]`;
+    } else if (t?.kind === 'matrixCell') {
+      const m = this.micro.matrices.get(t.matrixId);
+      if (named(m)) expr = `${m.name}[${t.row}][${t.col}]`;
+    }
+    const parsed = expr ? parseExpression(expr) : null;
+    let id = parsed?.ok ? this.microRuntime.adoptReadCursor(pointerId, parsed.ast) : null;
+    if (id == null) {
+      this.microRuntime.dropReadCursor(pointerId);
+      p.label = this._microFreeName('p', [pointerId]);
+      id = pointerId;
+    }
+    // janela deslizante guardada pela chave antiga continua valendo pro
+    // mesmo ponteiro (se ele não foi absorvido por um cursor já existente)
+    if (id === pointerId) {
+      const newKey = this._microPointerWindowKey(p);
+      this.microWindows.forEach((w) => {
+        if (w.a === oldKey) w.a = newKey;
+        if (w.b === oldKey) w.b = newKey;
+      });
+    }
+    return id;
+  }
+
   /** Arraste a partir do índice de um array, ou com Shift a partir de uma
    * célula de array/matriz (ver _findMicroCursorCellAt), no primeiro
    * movimento: nasce o cursor de leitura dessa posição, já selecionado, e o
@@ -4303,6 +4347,9 @@ export class App {
           this.micro.setField(port.ownerId, port.field, resolved?.kind === 'struct' ? resolved.id : null);
         } else if (port.ownerKind === 'pointer') {
           this.micro.setPointerTarget(port.ownerId, resolved);
+          // "nums[1]" religado pra outra célula vira "nums[3]"
+          const id = this._relinkMicroIndexCursor(port.ownerId);
+          if (id !== port.ownerId && this.microSelectedId === port.ownerId) this._selectMicroElement('pointer', id);
         } else if (port.ownerKind === 'arrayCell') {
           this.micro.setArrayCellRef(port.ownerId, port.index, resolved?.kind === 'struct' ? resolved.id : null);
         } else if (port.ownerKind === 'dictCell') {

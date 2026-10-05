@@ -560,16 +560,31 @@ export class MicroRuntimeAdapter {
     }
     if (!spec) return null;
     const existing = this._findCursor(spec.key);
-    if (existing) {
+    if (existing && existing.id !== pointerId) {
       this.micro.removePointer(pointerId);
       existing.readCursorHidden = false;
       return existing.id;
     }
+    // `pointer` pode já ser um cursor (religado à mão pra outra posição, ver
+    // App#_relinkMicroIndexCursor) — sem limpar, um "m[0][1]" que vira
+    // "nums[2]" manteria `readCursorMatrixId` e seguiria sendo recalculado
+    // como célula de matriz
+    this.dropReadCursor(pointer.id);
     pointer.frameId = this.currentFrameId;
     pointer.label = spec.label;
     Object.assign(pointer, { readCursorKey: spec.key, ...spec.fields, readCursorHidden: false });
     this._recomputeCursor(pointer);
     return pointer.id;
+  }
+
+  /** Tira de um ponteiro tudo que o faz ser cursor de leitura — ele vira um
+   * ponteiro comum (o nome fica por conta de quem chama). */
+  dropReadCursor(pointerId) {
+    const pointer = this.micro.pointers.get(pointerId);
+    if (!pointer) return;
+    ['readCursorKey', 'readCursorArrayId', 'readCursorMatrixId', 'readCursorIndexNode', 'readCursorColNode', 'readCursorDeps', 'readCursorHidden'].forEach(
+      (f) => delete pointer[f],
+    );
   }
 
   /** Chamado depois de toda escrita bem-sucedida em "changedName" (variável

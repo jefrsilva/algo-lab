@@ -141,6 +141,35 @@ describe('Simulação', () => {
     expect(app.micro.pointers.get(t.labelPointerId).frameId).toBe(t.frameId);
   });
 
+  test('clicar em Simulação põe o foco no editor de código', () => {
+    document.body.focus();
+    botao('.code-editor-mode-btn', 'Simulação').click();
+    expect(document.activeElement).toBe(textarea());
+  });
+
+  test('Ctrl+Shift+Enter no editor, no Sandbox, passa pra Simulação e roda tudo', () => {
+    escreverCodigo(linhas('a = 1', 'b = 2', 'c = 3'));
+    textarea().focus();
+    textarea().setSelectionRange(0, 0);
+    const ev = tecla(textarea(), 'Enter', { ctrlKey: true, shiftKey: true });
+    expect(ev.defaultPrevented).toBe(true);
+    expect(botao('.code-editor-mode-btn', 'Simulação').classList.contains('active')).toBe(true);
+    expect(contador()).toBe('1 / 3');
+    // rodou o programa inteiro, não a linha do cursor (nem desceu o cursor)
+    expect(textarea().value).toBe(linhas('a = 1', 'b = 2', 'c = 3'));
+    expect(textarea().selectionStart).toBe(0);
+  });
+
+  test('Ctrl+Shift+Enter com o foco fora do editor também roda; na Simulação, roda de novo', () => {
+    escreverCodigo(linhas('x = 1', 'x = 2'));
+    tecla(document.body, 'Enter', { ctrlKey: true, shiftKey: true });
+    expect(contador()).toBe('1 / 2');
+    botao('.playback-btn', '⏭').click();
+    escreverCodigo(linhas('x = 1', 'x = 2', 'x = 3'));
+    tecla($('.micro-container svg'), 'Enter', { ctrlKey: true, shiftKey: true });
+    expect(contador()).toBe('1 / 3');
+  });
+
   test('voltar pro Sandbox encerra a reprodução', () => {
     rodarNaSimulacao('x = 1');
     botao('.code-editor-mode-btn', 'Sandbox').click();

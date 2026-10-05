@@ -30,7 +30,7 @@ Há duas formas de povoar o canvas, e elas convivem:
 - **À mão**, no canvas: criar elementos (Ctrl+Espaço → `new pointer`, `new node`…), arrastar pra ligar ponteiros, editar valores com duplo clique.
 - **Por código**, numa linguagem pequena com cara de Python (a "DSL") escrita no painel à direita. São dois modos:
   - **Sandbox** (interno: `'manual'`): Ctrl+Enter executa só a linha do cursor contra o modelo atual.
-  - **Simulação** (interno: `'run'`): o programa inteiro (com `if`/`while`/`for`/`def`/recursão) é executado de uma vez, e o resultado vira uma reprodução passo a passo (play, pause, voltar e avançar), com árvore de chamadas e console de `print`.
+  - **Simulação** (interno: `'run'`): o programa inteiro (com `if`/`while`/`for`/`def`/recursão) é executado de uma vez, e o resultado vira uma reprodução passo a passo (play, pause, voltar e avançar), com árvore de chamadas e console de `print`. Clicar em "Simulação" põe o foco no editor; **Ctrl+Shift+Enter**, com o foco em qualquer lugar (canvas, editor no Sandbox ou na Simulação), passa pra Simulação e já roda o programa inteiro (`CodeEditor#runAll`).
 
 Além dos elementos do modelo, o canvas tem **elementos de anotação**, que só existem no canvas e não fazem parte da execução: labels de texto, áreas hachuradas e gráficos de complexidade Big-O.
 
@@ -265,7 +265,7 @@ No Sandbox não há `def`, `if` com bloco nem loops: é um statement por vez —
 ### 6.2 Simulação: "▶ Rodar"
 
 ```
-CodeEditor (modo 'run') → onRun(código) → App#_runMicroProgram
+CodeEditor (modo 'run': ▶, Ctrl+Enter; ou Ctrl+Shift+Enter de qualquer modo → runAll) → onRun(código) → App#_runMicroProgram
   → MicroProgramRunner#run(source, microRuntime)
        parseProgram(source)               (erro → runner.error → barra mostra "Erro de sintaxe (linha N)")
        for (step of runProgram(program, functions, env)):
@@ -364,7 +364,7 @@ Preferências de tela (não do projeto) ficam num único objeto do localStorage 
 | Constantes de topo | `MICRO_MODES` (barra de ferramentas), paletas (`AREA_COLORS`, `TEXT_COLORS`, `ELEMENT_COLORS`), padrões de gráfico e label. |
 | `constructor` | Todo o estado de topo: `micro`, viewport, modo, seleção (`microSelectedId` + `microSelectedIds`), anotações (`microLabels/Areas/Charts`), `microColors`, `microWindows`, `microLayout`, destaques de execução, `manualFrameId`, estado de gestos (`_microPointer`, `_microDrag*`…). |
 | `_buildLayout` | Cria o DOM (canvas, painel de código, árvore de chamadas, divisórias) e instancia **todos** os widgets, ligando os callbacks. Também cria o `MicroRuntimeAdapter` e o `MicroProgramRunner`. |
-| `_onKeyDown` / `_onKeyUp` | Todos os atalhos globais (Tab → código, Ctrl+,/. passos, Ctrl+H, Ctrl+Espaço, Ctrl+A, Delete, Alt+dígito cor, Enter, Alt+C, 1-5/V/T/R/B/L modos, G, N, C). A ordem dos `if` importa: alguns valem mesmo digitando, outros não (`isTyping`). |
+| `_onKeyDown` / `_onKeyUp` | Todos os atalhos globais (Tab → código, Ctrl+,/. passos, Ctrl+H, Ctrl+Espaço, Ctrl+Shift+Enter → Simulação + rodar, Ctrl+A, Delete, Alt+dígito cor, Enter, Alt+C, 1-5/V/T/R/B/L modos, G, N, C). A ordem dos `if` importa: alguns valem mesmo digitando, outros não (`isTyping`). |
 | Configurações | `_settingsValues`, `_applySetting`, `_resetSettings`. |
 | Cores | `_paletteIndexFromKey`, `_applyMicroPaletteColor`. |
 | Viewport | `_resetMicroViewport`, `_fitMicroViewport`, `_onMicroWheel`, `_microWorldToScreen`… |
@@ -607,7 +607,7 @@ Não crie toggles novos no menu ☰: preferências ficam na janela de Configura�
 
 Tudo fica em `App#_onKeyDown`. Escolha o lugar certo na sequência:
 
-- atalhos que valem **mesmo digitando** no editor (Ctrl+H, Ctrl+,/., Ctrl+Espaço) vêm **antes** do teste `isTyping`;
+- atalhos que valem **mesmo digitando** no editor (Ctrl+H, Ctrl+,/., Ctrl+Espaço, Ctrl+Shift+Enter) vêm **antes** do teste `isTyping`;
 - atalhos de canvas vêm depois;
 - teclas sem modificador ficam no `if/else` do final.
 

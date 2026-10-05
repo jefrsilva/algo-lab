@@ -56,17 +56,85 @@ function stripComment(line) {
   return line;
 }
 
-/** Divide o código fonte em linhas não-vazias (sem comentário), cada uma com
- * sua indentação (contagem de espaços/tabs à esquerda) e número original. */
+/** Saldo de parênteses/colchetes/chaves abertos numa linha já sem
+ * comentário — ignorando os que estão dentro de string (ex. "(" ou f"{x}"). */
+function bracketBalance(line) {
+  let depth = 0;
+  let quote = null;
+  for (let i = 0; i < line.length; i += 1) {
+    const c = line[i];
+    if (quote) {
+      if (c === '\\') i += 1;
+      else if (c === quote) quote = null;
+    } else if (c === '"' || c === "'") {
+      quote = c;
+    } else if (c === '(' || c === '[' || c === '{') {
+      depth += 1;
+    } else if (c === ')' || c === ']' || c === '}') {
+      depth -= 1;
+    }
+  }
+  return depth;
+}
+
+/** Linha lógica que começa na linha física `start` de `rawLines` (já sem
+ * comentário em nenhuma delas): como no Python, ela continua nas linhas
+ * seguintes enquanto houver "(", "[" ou "{" aberto (junção implícita — ex.
+ * um dict literal com um par por linha) ou enquanto a linha terminar em "\"
+ * (junção explícita). As partes são juntadas com um espaço; linhas em
+ * branco dentro dos colchetes são puladas e a indentação das linhas de
+ * continuação não importa. Devolve `{content, end}` — `content` sem espaços
+ * nas pontas e `end` o índice da última linha física consumida. */
+function joinLogicalLine(rawLines, start) {
+  let content = rawLines[start].trim();
+  let depth = bracketBalance(content);
+  let end = start;
+  while (end + 1 < rawLines.length && (depth > 0 || content.endsWith('\\'))) {
+    if (depth <= 0) content = content.slice(0, -1).trimEnd();
+    end += 1;
+    const next = rawLines[end].trim();
+    if (!next) continue;
+    depth += bracketBalance(next);
+    content = `${content} ${next}`;
+  }
+  return { content, end };
+}
+
+/** Divide o código fonte em linhas lógicas não-vazias (sem comentário), cada
+ * uma com sua indentação (contagem de espaços/tabs à esquerda) e o número da
+ * linha física onde ela começa — que é a destacada na reprodução e a
+ * apontada nos erros (ver `joinLogicalLine`). */
 function tokenizeLines(source) {
   const lines = [];
-  source.split('\n').forEach((raw, lineNo) => {
-    const noComment = stripComment(raw);
-    if (!noComment.trim()) return;
-    const indent = noComment.match(/^[ \t]*/)[0].length;
-    lines.push({ indent, content: noComment.trim(), lineNo });
-  });
+  const raws = source.split('\n').map(stripComment);
+  for (let lineNo = 0; lineNo < raws.length; lineNo += 1) {
+    if (!raws[lineNo].trim()) continue;
+    const indent = raws[lineNo].match(/^[ \t]*/)[0].length;
+    const { content, end } = joinLogicalLine(raws, lineNo);
+    lines.push({ indent, content, lineNo });
+    lineNo = end;
+  }
   return lines;
+}
+
+/** Linha lógica (ver `joinLogicalLine`) que contém a linha física `idx` do
+ * código fonte — usada pelo Ctrl+Enter do Sandbox, que roda uma linha por
+ * vez mas precisa do statement inteiro quando ele ocupa várias linhas (ex.
+ * um dict literal com um par por linha), com o cursor em qualquer uma delas.
+ * Devolve `{content, start, end}` (`content` sem comentário e sem espaços
+ * nas pontas, vazio se a linha for em branco/só comentário). */
+export function logicalLineAt(source, idx) {
+  const raws = source.split('\n').map(stripComment);
+  for (let start = 0; start < raws.length; start += 1) {
+    if (!raws[start].trim()) {
+      if (start === idx) return { content: '', start, end: start };
+      continue;
+    }
+    const { content, end } = joinLogicalLine(raws, start);
+    if (idx <= end) return { content, start, end };
+    start = end;
+  }
+  return { content: '', start: idx, end: idx };
 }
 
 /** Statements simples e cabeçalhos de bloco que compartilham o mesmo nível

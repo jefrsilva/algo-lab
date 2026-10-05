@@ -1,4 +1,5 @@
 import { parseStatement, parseExpression } from '../interpreter/parser.js';
+import { logicalLineAt } from '../interpreter/blockParser.js';
 
 const KEYWORDS = new Set([
   'def', 'return', 'if', 'elif', 'else', 'while', 'for', 'in', 'not', 'and', 'or', 'is',
@@ -717,44 +718,51 @@ export class CodeEditor {
    * repassa a AST pra quem interpreta contra o modelo. Uma linha marcada
    * existe justamente pra fixar "qual linha roda", independente de pra onde
    * o cursor de texto tenha ido enquanto o usuário lê/navega o código.
-   * Linha vazia ou com erro de sintaxe é ignorada silenciosamente. */
+   * Linha vazia ou com erro de sintaxe é ignorada silenciosamente. Um
+   * statement que ocupa várias linhas (colchete aberto ou "\" no fim, ex. um
+   * dict com um par por linha) roda inteiro, com a linha ativa em qualquer
+   * uma delas — ver blockParser.js#logicalLineAt. */
   /** Linha vazia continua sem nenhum feedback (nada pra rodar) — qualquer
-   * outra tentativa pulsa o fundo da linha: verde se `onExecuteStatement`
-   * rodou sem lançar, vermelho se o parse falhou OU se `onExecuteStatement`
-   * lançou (operação impossível contra o modelo atual, ex: campo de um
-   * ponteiro nulo) — ver `flashLine`. */
+   * outra tentativa pulsa o fundo da(s) linha(s): verde se
+   * `onExecuteStatement` rodou sem lançar, vermelho se o parse falhou OU se
+   * `onExecuteStatement` lançou (operação impossível contra o modelo atual,
+   * ex: campo de um ponteiro nulo) — ver `flashLine`. */
   _handleGenerateFromLine() {
     const idx = this.markedLine != null ? this.markedLine : this._currentLineIndex();
-    const line = this.textarea.value.split('\n')[idx] ?? '';
-    if (!line.trim()) return;
+    // já sem comentário e sem espaços nas pontas
+    const { content: line, start, end } = logicalLineAt(this.textarea.value, idx);
+    if (!line) return;
+    const flash = (ok) => {
+      for (let i = start; i <= end; i += 1) this.flashLine(i, ok);
+    };
     // "if/elif/while condição:" — não dá pra executar o bloco (é uma linha
     // só), mas dá pra avaliar a condição: quem trata destaca os elementos
     // envolvidos e mostra o resultado (ver App#_evaluateCondition)
-    const cond = line.trim().match(/^(?:if|elif|while)\s+(.*):\s*$/) || line.trim().match(/^(?:if|elif|while)\s+(.*?):\s*#.*$/);
+    const cond = line.match(/^(?:if|elif|while)\s+(.*):$/);
     if (cond) {
       const test = parseExpression(cond[1]);
       if (!test.ok) {
-        this.flashLine(idx, false);
+        flash(false);
         return;
       }
       try {
         this.onEvaluateCondition(test.ast);
-        this.flashLine(idx, true);
+        flash(true);
       } catch (err) {
-        this.flashLine(idx, false);
+        flash(false);
       }
       return;
     }
     const result = parseStatement(line);
     if (!result.ok) {
-      this.flashLine(idx, false);
+      flash(false);
       return;
     }
     try {
       this.onExecuteStatement(result.ast);
-      this.flashLine(idx, true);
+      flash(true);
     } catch (err) {
-      this.flashLine(idx, false);
+      flash(false);
     }
   }
 

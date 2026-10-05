@@ -178,6 +178,15 @@ describe('Sandbox (Ctrl+Enter linha a linha)', () => {
     expect([...app.micro.arrays.values()]).toHaveLength(1);
   });
 
+  test('statement em várias linhas roda inteiro, com o cursor em qualquer linha dele', () => {
+    escreverCodigo(linhas('pairs = {', '    ")": "(",', '    "]": "["', '}', 'print(pairs)'));
+    ctrlEnterNaLinha(2);
+    expect($$('.code-editor-line-flash.success')).toHaveLength(4);
+    ctrlEnterNaLinha(4);
+    expect(consoleTexto()).toContain(`{')': '(', ']': '['}`);
+    expect([...app.micro.dicts.values()]).toHaveLength(1);
+  });
+
   test('condição de if/while é avaliada e mostra o resultado', () => {
     escreverCodigo(linhas('x = 3', 'if x > 2:'));
     ctrlEnterNaLinha(0);

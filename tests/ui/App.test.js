@@ -170,6 +170,32 @@ describe('Simulação', () => {
     expect(document.activeElement).toBe(textarea());
   });
 
+  test('Enter rola o editor até a linha nova quando ela sai da área visível', () => {
+    // o jsdom não faz layout: um painel de 200×300px, com o código rolado
+    // pra direita (linha longa)
+    const ta = textarea();
+    Object.defineProperty(ta, 'clientHeight', { configurable: true, value: 200 });
+    Object.defineProperty(ta, 'clientWidth', { configurable: true, value: 300 });
+    const altura = app.codeEditor.lineHeight;
+    escreverCodigo('x = 1');
+    ta.focus();
+    ta.scrollLeft = 150;
+    ta.setSelectionRange(5, 5);
+    for (let i = 0; i < 20; i += 1) tecla(ta, 'Enter');
+    expect(ta.value.split('\n')).toHaveLength(21);
+    // a linha 21 (índice 20) fica rente à borda de baixo, com o padding (10px)
+    const fundoDaLinha = 10 + 21 * altura;
+    expect(ta.scrollTop).toBe(fundoDaLinha + 10 - 200);
+    expect(ta.scrollLeft).toBe(0); // cursor na coluna 0
+    // gutter e realce acompanham o scroll
+    expect($('.code-editor-gutter-inner').style.transform).toBe(`translateY(${-ta.scrollTop}px)`);
+
+    // de volta ao topo: Enter na 1ª linha sobe o scroll até ela
+    ta.setSelectionRange(0, 0);
+    tecla(ta, 'Enter');
+    expect(ta.scrollTop).toBe(altura); // cursor na linha 2 (índice 1), padding acima
+  });
+
   test('Ctrl+Shift+Enter no editor, no Sandbox, passa pra Simulação e roda tudo', () => {
     escreverCodigo(linhas('a = 1', 'b = 2', 'c = 3'));
     textarea().focus();

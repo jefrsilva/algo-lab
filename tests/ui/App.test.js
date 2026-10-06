@@ -1375,6 +1375,59 @@ describe('ferramenta Ligar nós', () => {
     evento(window, 'pointerup', meio(a).x, meio(a).y, { shiftKey: true });
   });
 
+  test('o rótulo junto do cursor diz a operação: criar e conectar, conectar, desconectar', () => {
+    const [a, b] = doisStructs('list');
+    const rotulo = () => $('.link-hint');
+    const texto = () => (rotulo() && rotulo().getAttribute('display') !== 'none' ? rotulo().textContent : null);
+    tecla(document.body, 'l');
+    clicarEm(naDireita(a).x, naDireita(a).y);
+    expect(texto()).toBeNull(); // ainda sobre o próprio nó: nada
+    pairar(150, 300);
+    expect(texto()).toBe('criar e conectar');
+    expect(rotulo().dataset.action).toBe('create');
+    pairar(meio(b).x, meio(b).y);
+    expect(texto()).toBe('conectar');
+    clicarEm(meio(b).x, meio(b).y);
+    expect(a.next).toBe(b.id);
+    expect(texto()).toBeNull(); // concluída, o rótulo some
+    clicarEm(naDireita(a).x, naDireita(a).y);
+    pairar(meio(b).x, meio(b).y);
+    expect(texto()).toBe('desconectar');
+    expect(rotulo().dataset.action).toBe('unlink');
+    // o outro ponteiro (prev) não aponta pra `b`: conectar
+    tecla(svg(), 'Tab');
+    expect(texto()).toBe('conectar');
+    tecla(svg(), 'Escape');
+    expect(texto()).toBeNull();
+    // Shift + arraste também, e no nó de grafo pela lista de vizinhos
+    const [g, h] = doisNos();
+    g.y = h.y = 600;
+    app._renderMicroOnly();
+    tecla(document.body, 'v');
+    evento(svg(), 'pointerdown', meio(g).x, meio(g).y, { shiftKey: true });
+    evento(window, 'pointermove', meio(h).x, meio(h).y, { shiftKey: true });
+    expect(texto()).toBe('conectar');
+    evento(window, 'pointerup', meio(h).x, meio(h).y, { shiftKey: true });
+    evento(svg(), 'pointerdown', meio(g).x, meio(g).y, { shiftKey: true });
+    evento(window, 'pointermove', meio(h).x, meio(h).y, { shiftKey: true });
+    expect(texto()).toBe('desconectar');
+    evento(window, 'pointermove', 150, 800, { shiftKey: true });
+    expect(texto()).toBe('criar e conectar');
+    tecla(svg(), 'Escape');
+    expect(texto()).toBeNull();
+  });
+
+  test('o rótulo tem o mesmo tamanho na tela em qualquer zoom', () => {
+    const [a] = doisStructs('list');
+    app.microViewport.scale = 2;
+    app.microView.setViewport(app.microViewport);
+    tecla(document.body, 'l');
+    clicarEm(naDireita(a).x * 2, naDireita(a).y * 2);
+    expect(app._microLinkDraft?.pending).toBe(true);
+    pairar(150 * 2, 300 * 2);
+    expect($('.link-hint').getAttribute('transform')).toMatch(/^translate\(150, 300\) scale\(0\.5\)/);
+  });
+
   test('Esc no meio do Shift + arraste cancela: soltar no vazio não cria nada', () => {
     const [a] = doisStructs('list');
     const nStructs = app.micro.structs.size;

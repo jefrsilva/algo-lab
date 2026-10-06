@@ -1,7 +1,7 @@
 import { svgEl } from './svgUtils.js';
 import { ARRAY_CELL_H } from '../core/micro/MicroModel.js';
 import { labelLayout, LABEL_PAD_X, LABEL_CODE_PAD } from './labelMarkdown.js';
-import { textMeasureGeneration } from './textMeasure.js';
+import { measureText, textMeasureGeneration } from './textMeasure.js';
 
 // ---- geometria dos nós de estrutura (caixa prev | data | next) ----
 export const STRUCT_W = 138;
@@ -92,6 +92,14 @@ export const MATRIX_ROW_BAND_W = 26; // faixa à esquerda com o índice de cada 
 export const MATRIX_COL_BAND_H = 18; // faixa em cima com o índice de cada COLUNA
 
 export const PORT_R = 6; // raio visual/alvo de clique dos "pinos" de ligação
+
+// rótulo da operação junto do cursor durante uma ligação (ver
+// MicroCanvasView#_renderLinkHint) — medidas em px de TELA
+export const LINK_HINT_TEXT = { create: 'criar e conectar', link: 'conectar', unlink: 'desconectar' };
+const LINK_HINT_FONT = 12; // = .link-hint-text (canvas.css)
+const LINK_HINT_H = 20;
+const LINK_HINT_PAD_X = 7;
+const LINK_HINT_OFFSET = { x: 14, y: 16 }; // abaixo e à direita da ponta do cursor
 // afastamento do contorno de destaque (`.node-halo`, ver canvas.css) em
 // relação à borda do nó — só visual, não entra em hit-test nem layout.
 const HALO_GAP = 5;
@@ -1264,6 +1272,10 @@ export class MicroCanvasView {
     this.viewport.appendChild(this.variablesLayer);
     this.viewport.appendChild(this.labelsLayer);
     this.viewport.appendChild(this.areaHandlesLayer);
+    // rótulo da operação da ligação em andamento, por cima de tudo (ver
+    // `_renderLinkHint`)
+    this.linkHintLayer = svgEl('g', { class: 'link-hint-layer' });
+    this.viewport.appendChild(this.linkHintLayer);
     this.svg.appendChild(this.viewport);
     this.container.appendChild(this.svg);
 
@@ -1346,6 +1358,8 @@ export class MicroCanvasView {
    * @param previewEdge {x1,y1,x2,y2,valid}|null linha tracejada durante um arraste de ligação
    * @param newNodeGhost {cx,cy,r}|null círculo tracejado onde nasce o nó novo de uma ligação
    *   solta em espaço vazio (ferramenta "Ligar nós"/Shift + arraste), ver `_renderNewNodeGhost`
+   * @param linkHint {x,y,action,scale}|null rótulo junto do cursor com o que concluir a ligação
+   *   ali faz ('create' | 'link' | 'unlink'), ver `_renderLinkHint`
    * @param linkSource {x,y,type,field}|null struct e campo ('prev'|'next'|null pra grafo) que a
    *   ferramenta "Ligar nós" usa — sob o mouse ou da ligação em andamento, ver `_renderLinkSource`
    * @param labels [{id,x,y,text,color,fontSize,selected,dragging}] labels de texto soltas (modo "Texto")
@@ -1377,6 +1391,7 @@ export class MicroCanvasView {
     edges,
     previewEdge = null,
     newNodeGhost = null,
+    linkHint = null,
     linkSource = null,
     selectionRect = null,
     simplifiedNodes = false,
@@ -1404,6 +1419,7 @@ export class MicroCanvasView {
     this._renderPreviewEdge(previewEdge);
     this._renderLinkSource(linkSource, simplifiedNodes);
     this._renderNewNodeGhost(newNodeGhost);
+    this._renderLinkHint(linkHint);
     this._renderSelectionRect(selectionRect);
 
     const selected =
@@ -1514,6 +1530,35 @@ export class MicroCanvasView {
     this._newNodeGhostEl.setAttribute('cx', ghost.cx);
     this._newNodeGhostEl.setAttribute('cy', ghost.cy);
     this._newNodeGhostEl.setAttribute('r', ghost.r);
+  }
+
+  /** Rótulo junto do cursor durante uma ligação ("Ligar nós"/Shift +
+   * arraste): diz o que soltar/clicar ali faz — "criar e conectar",
+   * "conectar" ou "desconectar" (`LINK_HINT_TEXT`). Fica abaixo e à direita
+   * da ponta do cursor e com o mesmo tamanho na tela em qualquer zoom (a
+   * escala do viewport é desfeita). Mesmo padrão de `_renderPreviewEdge`: um
+   * único grupo reaproveitado, escondido quando não há o que mostrar. */
+  _renderLinkHint(hint) {
+    if (!this._linkHintEl) {
+      this._linkHintEl = svgEl('g', { class: 'link-hint' });
+      this._linkHintBg = svgEl('rect', { class: 'link-hint-bg', rx: 5, ry: 5, height: LINK_HINT_H });
+      this._linkHintText = svgEl('text', { class: 'link-hint-text', x: LINK_HINT_PAD_X, y: LINK_HINT_H / 2 + 4 });
+      this._linkHintEl.append(this._linkHintBg, this._linkHintText);
+      this.linkHintLayer.appendChild(this._linkHintEl);
+    }
+    if (!hint) {
+      this._linkHintEl.setAttribute('display', 'none');
+      return;
+    }
+    const text = LINK_HINT_TEXT[hint.action] ?? '';
+    this._linkHintEl.removeAttribute('display');
+    this._linkHintEl.dataset.action = hint.action;
+    this._linkHintEl.setAttribute(
+      'transform',
+      `translate(${hint.x}, ${hint.y}) scale(${1 / (hint.scale || 1)}) translate(${LINK_HINT_OFFSET.x}, ${LINK_HINT_OFFSET.y})`,
+    );
+    this._linkHintText.textContent = text;
+    this._linkHintBg.setAttribute('width', measureText(text, { size: LINK_HINT_FONT, bold: true }) + 2 * LINK_HINT_PAD_X);
   }
 
   /** Retângulo tracejado do arraste de seleção em área (modo Selecionar,

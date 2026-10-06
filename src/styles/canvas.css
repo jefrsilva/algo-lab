@@ -805,6 +805,27 @@
   pointer-events: none;
 }
 
+/* rótulo junto do cursor com a operação da ligação (criar e conectar /
+   conectar / desconectar) — ver MicroCanvasView#_renderLinkHint */
+.link-hint {
+  pointer-events: none;
+}
+
+.link-hint-bg {
+  fill: var(--sel);
+}
+
+.link-hint[data-action='unlink'] .link-hint-bg {
+  fill: var(--danger);
+}
+
+.link-hint-text {
+  fill: var(--bg-0);
+  font-family: var(--font-sans);
+  font-size: 12px; /* = LINK_HINT_FONT (MicroCanvasView.js) */
+  font-weight: 700; /* medido com bold: true */
+}
+
 /* nó novo que nasce onde a ligação terminar (espaço vazio) — círculo vazio e tracejado */
 .new-node-ghost {
   fill: none;

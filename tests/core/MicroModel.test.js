@@ -433,13 +433,24 @@ describe('toJSON / loadFrom', () => {
     expect([...outro.variables.values()][0]).toMatchObject({ value: makeTuple([3, 4]), frameId: 'frame-x' });
   });
 
-  test('ida e volta de uma lista de listas preserva o tipo e as ligações', () => {
-    const outer = m.addArray(0, 0, { kind: 'arrayref', size: 2, name: 'res' });
+  test('ida e volta de uma lista de listas preserva o tipo, as ligações e a grade', () => {
+    const outer = m.addArray(0, 0, { kind: 'arrayref', size: 2, name: 'res', orientation: 'grid' });
     const dentro = m.addArray(0, 60, { size: 1, name: 'res[0]' });
     m.setArrayCellArrayRef(outer.id, 0, dentro.id);
     const outro = new MicroModel();
     outro.loadFrom(JSON.parse(JSON.stringify(m.toJSON())));
-    expect(outro.arrays.get(outer.id)).toMatchObject({ kind: 'arrayref', cells: [dentro.id, null] });
+    expect(outro.arrays.get(outer.id)).toMatchObject({ kind: 'arrayref', cells: [dentro.id, null], orientation: 'grid' });
+    // grade só vale pra lista de listas
+    outro.loadFrom({ arrays: [{ id: 'a1', kind: 'value', orientation: 'grid', cells: [1] }] });
+    expect(outro.arrays.get('a1').orientation).toBe('horizontal');
+  });
+
+  test('a orientação "grade" só pega numa lista de listas', () => {
+    const lista = m.addArray(0, 0, { size: 2 });
+    const listas = m.addArray(0, 0, { kind: 'arrayref', size: 2 });
+    m.setArrayOrientation(lista.id, 'grid');
+    m.setArrayOrientation(listas.id, 'grid');
+    expect([lista.orientation, listas.orientation]).toEqual(['horizontal', 'grid']);
   });
 
   test('cursores de leitura não são salvos', () => {

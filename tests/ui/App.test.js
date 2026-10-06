@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { desmontarApp, montarApp, tecla } from '../helpers/dom.js';
 import { linhas } from '../helpers/runDsl.js';
-import { ARRAY_CELL, PTR_H, STRUCT_H, STRUCT_W, arrayHandleRect, arrayLayout, chartLayout, dictHandleRect, matrixHandleRect, pointerWidth } from '../../src/render/MicroCanvasView.js';
+import { ARRAY_CELL, GRID_COL_BAND_H, GRID_ROW_BAND_W, PTR_H, STRUCT_H, STRUCT_W, arrayHandleRect, arrayLayout, chartLayout, dictHandleRect, matrixHandleRect, pointerWidth } from '../../src/render/MicroCanvasView.js';
 
 let app;
 const $ = (sel) => document.querySelector(sel);
@@ -297,7 +297,7 @@ describe('ponteiro de um elemento recém-criado nasce longe o bastante pra seta 
     ['set', 's = {1, 2}', 'arrays'],
     ['deque', 'q = deque()', 'arrays'],
     ['dict', 'd = {"a": 1}', 'dicts'],
-    ['matriz', 'm = [[1, 2], [3, 4]]', 'matrices'],
+    ['grade', 'm = [[1, 2], [3, 4]]', 'arrays'],
   ])('%s do código: rótulo à esquerda, na altura da caixa', (_, codigo, mapa) => {
     noSandbox(codigo);
     const col = [...app.micro[mapa].values()][0];
@@ -910,18 +910,25 @@ describe('lista de vizinhos de um GraphNode novo: ao lado do nó, com folga pra 
 });
 
 describe('cursor de Shift+clique numa célula: nasce com folga pra seta', () => {
-  test.each([
-    ['lista', 'nums = [1, 2, 3]', 'arrays'],
-    ['matriz', 'm = [[1, 2], [3, 4]]', 'matrices'],
-  ])('%s: o cursor nasce a 48 px embaixo', (_, codigo, mapa) => {
-    escreverCodigo(codigo);
+  test('lista: o cursor nasce a 48 px embaixo', () => {
+    escreverCodigo('nums = [1, 2, 3]');
     ctrlEnterNaLinha(0);
-    const col = [...app.micro[mapa].values()][0];
-    const cell = mapa === 'arrays' ? { index: 1 } : { row: 1, col: 0 };
-    app._createMicroIndexCursorNearCell(col.id, cell);
+    const col = [...app.micro.arrays.values()][0];
+    app._createMicroIndexCursorNearCell(col.id, { index: 1 });
     const cursor = app.micro.pointers.get(app.microSelectedId);
     expect(cursor.readCursorKey).toBeTruthy();
     const r = app._microElementRect(col.id);
+    expect(cursor.y).toBe(r.y + r.h + 48);
+  });
+
+  test('célula de uma linha da grade: o cursor "m[1][0]" nasce a 48 px embaixo da grade', () => {
+    escreverCodigo('m = [[1, 2], [3, 4]]');
+    ctrlEnterNaLinha(0);
+    const m = [...app.micro.arrays.values()].find((a) => a.name === 'm');
+    app._createMicroIndexCursorNearCell(m.cells[1], { index: 0 });
+    const cursor = app.micro.pointers.get(app.microSelectedId);
+    expect(cursor).toMatchObject({ readCursorKey: 'm[1][0]', target: { kind: 'arrayCell', arrayId: m.cells[1], index: 0 } });
+    const r = app._microElementRect(m.id);
     expect(cursor.y).toBe(r.y + r.h + 48);
   });
 
@@ -1333,7 +1340,7 @@ describe('popup de configurações pelo puxador (botão direito)', () => {
     const h = handleOf(node);
     return { x: node.x + h.x + h.w / 2, y: node.y + h.y + h.h / 2 };
   }
-  /** Cria nums (lista), s (set), d (dict) e m (matriz) pelo Sandbox. */
+  /** Cria nums (lista), s (set), d (dict) e m (lista de listas em grade) pelo Sandbox. */
   function criarColecoes() {
     escreverCodigo(linhas('nums = [1, 2, 3]', 's = {4, 5}', 'd = {"a": 1}', 'm = [[1, 2], [3, 4]]'));
     [0, 1, 2, 3].forEach(ctrlEnterNaLinha);
@@ -1342,7 +1349,7 @@ describe('popup de configurações pelo puxador (botão direito)', () => {
       nums: porNome(app.micro.arrays, 'nums'),
       s: porNome(app.micro.arrays, 's'),
       d: porNome(app.micro.dicts, 'd'),
-      m: porNome(app.micro.matrices, 'm'),
+      m: porNome(app.micro.arrays, 'm'),
     };
   }
   const rotuloDe = (node) =>
@@ -1356,7 +1363,7 @@ describe('popup de configurações pelo puxador (botão direito)', () => {
       [nums, arrayHandleRect, 'nums'],
       [s, arrayHandleRect, 's'],
       [d, dictHandleRect, 'd'],
-      [m, matrixHandleRect, 'm'],
+      [m, arrayHandleRect, 'm'],
     ];
     for (const [node, handleOf, nome] of casos) {
       expect(node).toBeTruthy();
@@ -1664,5 +1671,103 @@ describe('labels de texto com markdown', () => {
     app._renderMicroOnly();
     app._editMicroLabelInPlace(app.microLabels.get('label_cru'));
     expect($('.inline-value-editor').value).toBe(texto);
+  });
+});
+
+describe('lista de listas em grade', () => {
+  const svg = () => $('.micro-canvas');
+  const popup = () => $('.array-settings-popup');
+  /** Evento de ponteiro no ponto (x, y) do MUNDO (sem layout no jsdom, a
+   * tela é o mundo escalado e deslocado). */
+  function evento(alvo, tipo, x, y, opts = {}) {
+    const { tx, ty, scale } = app.microViewport;
+    alvo.dispatchEvent(new MouseEvent(tipo, { clientX: x * scale + tx, clientY: y * scale + ty, button: 0, bubbles: true, cancelable: true, ...opts }));
+  }
+  function noSandbox(...codigo) {
+    escreverCodigo(linhas(...codigo));
+    codigo.forEach((_, i) => ctrlEnterNaLinha(i));
+  }
+  const porNome = (nome) => [...app.micro.arrays.values()].find((a) => a.name === nome);
+  const linhasDe = (m) => m.cells.map((id) => app.micro.arrays.get(id));
+
+  test('"m = [[1, 2], [3, 4]]" nasce em grade: as linhas ficam dentro da moldura, sem seta', () => {
+    noSandbox('m = [[1, 2], [3, 4]]', 'm.append([5])');
+    const m = porNome('m');
+    expect(m.orientation).toBe('grid');
+    const r = app._microElementRect(m.id);
+    linhasDe(m).forEach((linha, i) => {
+      expect(linha.gridRow).toMatchObject({ hostId: m.id, row: i });
+      const { width, height } = arrayLayout(linha);
+      expect(linha.x).toBeGreaterThanOrEqual(r.x);
+      expect(linha.x + width).toBeLessThanOrEqual(r.x + r.w);
+      expect(linha.y + height).toBeLessThanOrEqual(r.y + r.h);
+    });
+    m.cells.forEach((_, i) => expect(app.microView.edgeEls.has(`${m.id}-cell${i}`)).toBe(false));
+  });
+
+  test('"[[0] * 2] * 2": a lista repetida aparece uma vez, e a outra linha tem seta até ela', () => {
+    noSandbox('t = [[0] * 2] * 2');
+    const t = porNome('t');
+    expect(t.gridGeom.embedded).toEqual([true, false]);
+    expect(app.microView.edgeEls.has(`${t.id}-cell0`)).toBe(false);
+    expect(app.microView.edgeEls.has(`${t.id}-cell1`)).toBe(true);
+  });
+
+  test('clicar numa linha seleciona e arrasta a grade inteira, levando as linhas', () => {
+    noSandbox('m = [[1, 2], [3, 4]]');
+    const m = porNome('m');
+    const linha = linhasDe(m)[1];
+    const [x0, y0] = [linha.x + 10, linha.y + 10];
+    evento(svg(), 'pointerdown', x0, y0);
+    evento(window, 'pointermove', x0 + 30, y0 + 40);
+    evento(window, 'pointerup', x0 + 30, y0 + 40);
+    expect(app.microSelectedId).toBe(m.id);
+    const nova = porNome('m');
+    expect(linhasDe(nova)[1].y).toBe(nova.y + GRID_COL_BAND_H + ARRAY_CELL);
+    expect(linhasDe(nova)[1].x).toBe(nova.x + GRID_ROW_BAND_W);
+  });
+
+  test('o popup tem "Grade" pra lista de listas; trocar pra Horizontal põe as linhas embaixo, com seta', () => {
+    noSandbox('m = [[1, 2], [3, 4]]');
+    const m = porNome('m');
+    const h = arrayHandleRect(m);
+    const { tx, ty, scale } = app.microViewport;
+    const [x, y] = [m.x + h.x + h.w / 2, m.y + h.y + h.h / 2];
+    svg().dispatchEvent(new MouseEvent('contextmenu', { clientX: x * scale + tx, clientY: y * scale + ty, button: 2, bubbles: true, cancelable: true }));
+    const grade = [...popup().querySelectorAll('.array-orient-btn')].find((b) => b.textContent.includes('Grade'));
+    expect(grade.classList.contains('active')).toBe(true);
+    [...popup().querySelectorAll('.array-orient-btn')].find((b) => b.textContent.includes('Horizontal')).click();
+    botao('.array-settings-popup .btn', 'Salvar').click();
+    expect(m.orientation).toBe('horizontal');
+    const fora = app._microElementRect(m.id);
+    linhasDe(m).forEach((linha) => {
+      expect(linha.gridRow).toBeUndefined();
+      expect(linha.y).toBeGreaterThanOrEqual(fora.y + fora.h);
+    });
+    m.cells.forEach((_, i) => expect(app.microView.edgeEls.has(`${m.id}-cell${i}`)).toBe(true));
+  });
+
+  test('uma lista simples não oferece "Grade"', () => {
+    noSandbox('nums = [1, 2]');
+    const nums = porNome('nums');
+    const h = arrayHandleRect(nums);
+    const { tx, ty, scale } = app.microViewport;
+    const [x, y] = [nums.x + h.x + h.w / 2, nums.y + h.y + h.h / 2];
+    svg().dispatchEvent(new MouseEvent('contextmenu', { clientX: x * scale + tx, clientY: y * scale + ty, button: 2, bubbles: true, cancelable: true }));
+    expect([...popup().querySelectorAll('.array-orient-btn')].some((b) => b.textContent.includes('Grade'))).toBe(false);
+  });
+
+  test('"new matrix" cria uma lista de listas 3×3 em grade; apagá-la leva as linhas', () => {
+    app._quickNewCollection('matrix');
+    const m = [...app.micro.arrays.values()].find((a) => a.orientation === 'grid');
+    expect(m.kind).toBe('arrayref');
+    expect(linhasDe(m).map((l) => l.cells)).toEqual([
+      [0, 0, 0],
+      [0, 0, 0],
+      [0, 0, 0],
+    ]);
+    expect(app.micro.matrices.size).toBe(0);
+    app._microRemoveById(m.id);
+    expect(app.micro.arrays.size).toBe(0);
   });
 });

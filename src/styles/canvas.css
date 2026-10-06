@@ -805,6 +805,15 @@
   pointer-events: none;
 }
 
+/* nó novo que nasce onde a ligação terminar (espaço vazio) — círculo vazio e tracejado */
+.new-node-ghost {
+  fill: none;
+  stroke: var(--sel);
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+  pointer-events: none;
+}
+
 /* seta de rascunho sem um nó de grafo válido sob o mouse (soltar ali não liga nada) */
 .preview-edge-line.invalid {
   stroke: var(--text-2);

@@ -1344,6 +1344,8 @@ export class MicroCanvasView {
    * @param edges [{id,x1,y1,targetKind:'struct'|'arrayCell',targetId?,targetArrayId?,targetIndex?,fromStructId?}]
    *   o ponto de chegada (endpoint na borda do alvo) é calculado aqui a partir da posição atual dos nós.
    * @param previewEdge {x1,y1,x2,y2,valid}|null linha tracejada durante um arraste de ligação
+   * @param newNodeGhost {cx,cy,r}|null círculo tracejado onde nasce o nó novo de uma ligação
+   *   solta em espaço vazio (ferramenta "Ligar nós"/Shift + arraste), ver `_renderNewNodeGhost`
    * @param linkSource {x,y,type,field}|null struct e campo ('prev'|'next'|null pra grafo) que a
    *   ferramenta "Ligar nós" usa — sob o mouse ou da ligação em andamento, ver `_renderLinkSource`
    * @param labels [{id,x,y,text,color,fontSize,selected,dragging}] labels de texto soltas (modo "Texto")
@@ -1374,6 +1376,7 @@ export class MicroCanvasView {
     charts = [],
     edges,
     previewEdge = null,
+    newNodeGhost = null,
     linkSource = null,
     selectionRect = null,
     simplifiedNodes = false,
@@ -1400,6 +1403,7 @@ export class MicroCanvasView {
     this._renderEdges(edges, structById, arrayById, dictById, simplifiedNodes, matrixById);
     this._renderPreviewEdge(previewEdge);
     this._renderLinkSource(linkSource, simplifiedNodes);
+    this._renderNewNodeGhost(newNodeGhost);
     this._renderSelectionRect(selectionRect);
 
     const selected =
@@ -1493,6 +1497,23 @@ export class MicroCanvasView {
     this._linkSourceEl.removeAttribute('display');
     this._linkSourceEl.setAttribute('d', structLinkFieldPath(linkSource, linkSource.field, simplified));
     this._linkSourceEl.dataset.field = linkSource.field ?? 'neighbors';
+  }
+
+  /** Círculo vazio e tracejado onde nasce o nó novo de uma ligação que
+   * termina em espaço vazio — mesmo padrão de `_renderPreviewEdge`. */
+  _renderNewNodeGhost(ghost) {
+    if (!this._newNodeGhostEl) {
+      this._newNodeGhostEl = svgEl('circle', { class: 'new-node-ghost' });
+      this.linkSourceLayer.appendChild(this._newNodeGhostEl);
+    }
+    if (!ghost) {
+      this._newNodeGhostEl.setAttribute('display', 'none');
+      return;
+    }
+    this._newNodeGhostEl.removeAttribute('display');
+    this._newNodeGhostEl.setAttribute('cx', ghost.cx);
+    this._newNodeGhostEl.setAttribute('cy', ghost.cy);
+    this._newNodeGhostEl.setAttribute('r', ghost.r);
   }
 
   /** Retângulo tracejado do arraste de seleção em área (modo Selecionar,

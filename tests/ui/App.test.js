@@ -1069,7 +1069,8 @@ describe('ferramenta Ligar nós', () => {
     expect(linha.getAttribute('display')).toBeNull();
     expect(linha.getAttribute('x2')).toBe(String(b.x + 20));
     expect(linha.classList.contains('invalid')).toBe(false);
-    pairar(150, 300);
+    // sobre o próprio nó de origem: nenhum destino
+    pairar(meio(a).x, meio(a).y);
     expect(linha.classList.contains('invalid')).toBe(true);
     tecla(document.body, 'v');
     expect(linha.getAttribute('display')).toBe('none');
@@ -1084,9 +1085,9 @@ describe('ferramenta Ligar nós', () => {
     const linha = $('.preview-edge-line');
     expect(linha.getAttribute('display')).toBeNull();
     expect(linha.getAttribute('x2')).toBe(String(b.x + 20));
-    evento(window, 'pointermove', 150, 300, { shiftKey: true });
+    evento(window, 'pointermove', a.x + 30, a.y + 30, { shiftKey: true });
     expect(linha.classList.contains('invalid')).toBe(true);
-    evento(window, 'pointerup', 150, 300, { shiftKey: true });
+    evento(window, 'pointerup', a.x + 30, a.y + 30, { shiftKey: true });
     expect(linha.getAttribute('display')).toBe('none');
     expect(vizinhos(a)).toEqual([]);
   });
@@ -1105,12 +1106,18 @@ describe('ferramenta Ligar nós', () => {
     expect(vizinhos(a)).toEqual([]);
   });
 
-  test('soltar no vazio ou no próprio nó não muda nada', () => {
+  test('soltar no próprio nó ou num elemento que não é nó não muda nada', () => {
     const [a] = doisNos();
+    escreverCodigo('nums = [1, 2, 3]');
+    ctrlEnterNaLinha(0);
+    const arr = [...app.micro.arrays.values()].find((n) => n.name === 'nums');
+    const c = arrayLayout(arr).cells[1];
+    const nStructs = app.micro.structs.size;
     tecla(document.body, 'l');
-    arrastar(a, { x: 150, y: 250 }, { shiftKey: true });
     arrastar(a, { x: a.x + 15, y: a.y + 10 }, { shiftKey: true });
+    arrastar(a, { x: arr.x + c.x + c.w / 2 - 20, y: arr.y + c.y + c.h / 2 - 20 }, { shiftKey: true });
     expect(vizinhos(a)).toEqual([]);
+    expect(app.micro.structs.size).toBe(nStructs);
     expect({ x: a.x, y: a.y }).toEqual({ x: 0, y: 0 });
   });
 
@@ -1272,18 +1279,141 @@ describe('ferramenta Ligar nós', () => {
     expect(destaque().getAttribute('d')).toMatch(/^M 34 0 /); // célula prev de `a`
   });
 
-  test('clicar em espaço vazio volta pra ferramenta Selecionar', () => {
-    const [a] = doisStructs('list');
+  test('sem ligação pendente, clicar em espaço vazio volta pra ferramenta Selecionar', () => {
+    doisStructs('list');
+    const nStructs = app.micro.structs.size;
     tecla(document.body, 'l');
     clicarEm(150, 300);
     expect(app.microMode).toBe('select');
-    // com a ligação pendente também — e ela é descartada
+    expect(app.micro.structs.size).toBe(nStructs);
+  });
+
+  /** Structs criados depois de `antes` (Set de ids). */
+  const novos = (antes) => [...app.micro.structs.values()].filter((s) => !antes.has(s.id));
+
+  test('com a ligação pendente, clicar em espaço vazio cria ali um Node já ligado', () => {
+    const [a] = doisStructs('list');
+    const antes = new Set(app.micro.structs.keys());
     tecla(document.body, 'l');
     clicarEm(naDireita(a).x, naDireita(a).y);
     clicarEm(150, 300);
-    expect(app.microMode).toBe('select');
+    const [n] = novos(antes);
+    expect(n).toMatchObject({ type: 'list', data: 0, x: 150 - STRUCT_W / 2, y: 300 - STRUCT_H / 2 });
+    expect(a.next).toBe(n.id);
+    expect(a.prev).toBeNull();
+    expect(app.microMode).toBe('link'); // a ferramenta continua escolhida
     expect(app._microLinkDraft).toBeNull();
+    expect(app.microSelectedId).toBe(n.id);
+    // a edição do dado do nó novo abre — Enter confirma
+    const input = $('.inline-value-editor');
+    expect(input).toBeTruthy();
+    input.value = '42';
+    tecla(input, 'Enter');
+    expect(n.data).toBe(42);
+  });
+
+  test('TreeNode pela metade esquerda: o nó novo vira o left', () => {
+    const [a] = doisStructs('tree');
+    const antes = new Set(app.micro.structs.keys());
+    tecla(document.body, 'l');
+    clicarEm(naEsquerda(a).x, naEsquerda(a).y);
+    clicarEm(-100, 250);
+    const [n] = novos(antes);
+    expect(n.type).toBe('tree');
+    expect(a.prev).toBe(n.id);
     expect(a.next).toBeNull();
+  });
+
+  test('Shift + arrastar até o vazio cria um nó de grafo já ligado (no modo Selecionar também)', () => {
+    const [a] = doisNos();
+    const antes = new Set(app.micro.structs.keys());
+    arrastar(a, { x: 130, y: 230 }, { shiftKey: true }); // solta em (150, 250)
+    const [n] = novos(antes);
+    expect(n).toMatchObject({ type: 'graph', x: 150 - STRUCT_W / 2, y: 250 - STRUCT_H / 2 });
+    expect(app.micro.arrays.has(n.neighborsArrayId)).toBe(true); // ganhou a lista de vizinhos
+    expect(vizinhos(a)).toEqual([n.id]);
+    expect({ x: a.x, y: a.y }).toEqual({ x: 0, y: 0 });
+  });
+
+  test('Shift + arrastar a partir do pino next leva ao Shift + arraste (sem Shift, segue o arraste de pino)', () => {
+    const [a, b] = doisStructs('list');
+    const antes = new Set(app.micro.structs.keys());
+    const pino = { x: a.x + STRUCT_W, y: a.y + STRUCT_H / 2 };
+    evento(svg(), 'pointerdown', pino.x, pino.y, { shiftKey: true });
+    expect(app._microPointer?.hit).toBe('link-drag');
+    evento(window, 'pointermove', 200, 250, { shiftKey: true });
+    evento(window, 'pointerup', 200, 250, { shiftKey: true });
+    const [n] = novos(antes);
+    expect(a.next).toBe(n.id);
+    // (o pino de `a` agora acompanha a seta — o de `b` continua na borda)
+    evento(svg(), 'pointerdown', b.x + STRUCT_W, b.y + STRUCT_H / 2);
+    expect(app._microPointer?.hit).toBe('port');
+    evento(window, 'pointerup', b.x + STRUCT_W, b.y + STRUCT_H / 2);
+  });
+
+  test('o círculo tracejado marca onde o nó novo nasce, só em espaço vazio', () => {
+    const [a, b] = doisStructs('list');
+    const circulo = () => $('.new-node-ghost');
+    const visivel = () => !!circulo() && circulo().getAttribute('display') !== 'none';
+    tecla(document.body, 'l');
+    clicarEm(naDireita(a).x, naDireita(a).y);
+    pairar(150, 300);
+    expect(visivel()).toBe(true);
+    expect([circulo().getAttribute('cx'), circulo().getAttribute('cy')]).toEqual(['150', '300']);
+    expect($('.preview-edge-line').classList.contains('invalid')).toBe(false);
+    pairar(meio(b).x, meio(b).y); // sobre um destino: nada de círculo
+    expect(visivel()).toBe(false);
+    pairar(150, 300);
+    tecla(svg(), 'Escape');
+    expect(visivel()).toBe(false);
+    // Shift + arraste também
+    evento(svg(), 'pointerdown', naDireita(a).x, naDireita(a).y, { shiftKey: true });
+    evento(window, 'pointermove', 150, 300, { shiftKey: true });
+    expect(visivel()).toBe(true);
+    evento(window, 'pointermove', meio(a).x, meio(a).y, { shiftKey: true });
+    expect(visivel()).toBe(false);
+    evento(window, 'pointerup', meio(a).x, meio(a).y, { shiftKey: true });
+  });
+
+  test('Esc no meio do Shift + arraste cancela: soltar no vazio não cria nada', () => {
+    const [a] = doisStructs('list');
+    const nStructs = app.micro.structs.size;
+    evento(svg(), 'pointerdown', naDireita(a).x, naDireita(a).y, { shiftKey: true });
+    evento(window, 'pointermove', 150, 300, { shiftKey: true });
+    const ev = tecla(svg(), 'Escape');
+    expect(ev.defaultPrevented).toBe(true);
+    expect(app._microLinkDraft).toBeNull();
+    expect($('.preview-edge-line').getAttribute('display')).toBe('none');
+    evento(window, 'pointermove', 160, 310, { shiftKey: true });
+    evento(window, 'pointerup', 160, 310, { shiftKey: true });
+    expect(app.micro.structs.size).toBe(nStructs);
+    expect(a.next).toBeNull();
+    expect(app.microMode).toBe('select');
+  });
+
+  test('botão direito no meio do Shift + arraste cancela, sem abrir menu', () => {
+    const [a] = doisStructs('list');
+    const nStructs = app.micro.structs.size;
+    tecla(document.body, 'l');
+    evento(svg(), 'pointerdown', naDireita(a).x, naDireita(a).y, { shiftKey: true });
+    evento(window, 'pointermove', 150, 300, { shiftKey: true, buttons: 1 });
+    // o botão direito chega como pointermove com os dois botões...
+    evento(window, 'pointermove', 150, 300, { shiftKey: true, buttons: 3 });
+    expect(app._microLinkDraft).toBeNull();
+    // ...e o contextmenu que vem depois é engolido
+    const ev = botaoDireito(150, 300);
+    expect(ev.defaultPrevented).toBe(true);
+    evento(window, 'pointerup', 150, 300, { shiftKey: true });
+    expect(app.micro.structs.size).toBe(nStructs);
+    expect(a.next).toBeNull();
+    expect(app.microMode).toBe('link');
+    // só se o contextmenu vier primeiro também cancela
+    evento(svg(), 'pointerdown', naDireita(a).x, naDireita(a).y, { shiftKey: true });
+    evento(window, 'pointermove', 150, 300, { shiftKey: true, buttons: 1 });
+    expect(botaoDireito(150, 300).defaultPrevented).toBe(true);
+    expect(app._microPointer).toBeNull();
+    evento(window, 'pointerup', 150, 300, { shiftKey: true });
+    expect(app.micro.structs.size).toBe(nStructs);
   });
 
   test('clicar num elemento que não é nó não troca de ferramenta', () => {

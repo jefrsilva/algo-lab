@@ -17,11 +17,4 @@ describe('bugs conhecidos da DSL', () => {
   test.fails('dict dentro de dict', () => {
     expect(saida(linhas('d = {"m": {"a": 1}}', 'print(d)'))).toBe("{'m': {'a': 1}}");
   });
-
-  // linhas do mesmo tamanho viram matriz (grade), que não ganha linhas — a
-  // lista de listas (`kind:'arrayref'`) só nasce irregular, de "[]" ou de
-  // listas que já existem
-  test.fails('append de linha numa lista de listas que nasceu retangular', () => {
-    expect(saida(linhas('m = [[1, 2], [3, 4]]', 'm.append([5, 6])', 'print(m)'))).toBe('[[1, 2], [3, 4], [5, 6]]');
-  });
 });

@@ -626,9 +626,13 @@ export class MicroRuntimeAdapter {
     if (ast.object.type === 'Index' && ast.object.object.type === 'Name') {
       const m = this._resolveMatrixByName(ast.object.object.name);
       if (m) spec = this._matrixCursorSpec(ast.object.object.name, m, ast.object.index, ast.index);
-    } else if (ast.object.type === 'Name') {
-      const arr = this._resolveArrayByName(ast.object.name);
-      if (arr && !arr.isSet) spec = this._arrayCursorSpec(ast.object.name, arr, ast.index);
+    }
+    if (!spec) {
+      // "nums[i]", ou uma posição de lista de listas ("m[1][0]")
+      const arr = this._listAt(ast.object);
+      if (arr && !arr.isSet) {
+        spec = ast.object.type === 'Name' ? this._arrayCursorSpec(ast.object.name, arr, ast.index) : this._arrayCursorSpec(arr.id, arr, ast.index, ast.object);
+      }
     }
     if (!spec) return null;
     const existing = this._findCursor(spec.key);
@@ -647,6 +651,22 @@ export class MicroRuntimeAdapter {
     Object.assign(pointer, { readCursorKey: spec.key, ...spec.fields, readCursorHidden: false });
     this._recomputeCursor(pointer);
     return pointer.id;
+  }
+
+  /** A lista viva que a expressão `node` é, sem efeito nenhum (sem cursor
+   * de leitura): um nome ("nums") ou uma posição de lista de listas
+   * ("m[1]", "m[i][0]"). `null` se não é uma lista; `undefined` se a
+   * expressão é de outro formato ("d[k]", "nó.neighbors" — aí só avaliando). */
+  _listAt(node) {
+    if (node.type === 'Name') return this._resolveArrayByName(node.name) ?? null;
+    if (node.type !== 'Index') return undefined;
+    const outer = this._listAt(node.object);
+    if (outer === undefined || outer === null) return outer === null && node.object.type === 'Name' ? undefined : outer;
+    if (outer.kind !== 'arrayref') return null;
+    const idx = evaluate(node.index, this);
+    if (idx?.kind !== 'scalar' || !Number.isInteger(idx.value)) return null;
+    const id = outer.cells[fromEnd(idx.value, outer.cells.length)];
+    return (id && this.micro.arrays.get(id)) || null;
   }
 
   /** Tira de um ponteiro tudo que o faz ser cursor de leitura — ele vira um
@@ -694,9 +714,14 @@ export class MicroRuntimeAdapter {
       return;
     }
     if (cursor.readCursorObjectNode) {
-      // "res[i][j]" com "i" novo: a lista também pode ter mudado
-      const obj = evaluate(cursor.readCursorObjectNode, this);
-      const target = obj?.kind === 'arrayref' ? this._resolveArrayByName(obj.name) : null;
+      // "res[i][j]" com "i" novo: a lista também pode ter mudado. Pelo
+      // caminho sem efeito (`_listAt`) quando dá — avaliar "res[i]" moveria
+      // (ou criaria) o cursor "res[i]" junto
+      let target = this._listAt(cursor.readCursorObjectNode);
+      if (target === undefined) {
+        const obj = evaluate(cursor.readCursorObjectNode, this);
+        target = obj?.kind === 'arrayref' ? this._resolveArrayByName(obj.name) : null;
+      }
       if (!target) return;
       cursor.readCursorArrayId = target.id;
     }
@@ -912,10 +937,10 @@ export class MicroRuntimeAdapter {
     const spec = this._cellListSpec(value);
     if (!spec) return undefined;
     const layoutKey = frameId === 'global' && isIdentifier(outer.name) ? microLayoutKey('array-in-list', { name: outer.name, key: index }) : null;
-    const pos = this.createPosition('array', specLength(spec), layoutKey, { belowArrayId: outer.id });
+    const pos = this.createPosition('array', specLength(spec), layoutKey, { belowArrayId: outer.id, index });
     const node = this.micro.addArray(pos.x, pos.y, {
       kind: spec.kind,
-      orientation: 'horizontal',
+      orientation: spec.grid ? 'grid' : 'horizontal',
       size: 0,
       name: `${outer.name}[${index}]`, // só bookkeeping interno, como o de lista de dict (não é um identificador)
       frameId,
@@ -950,7 +975,15 @@ export class MicroRuntimeAdapter {
       return;
     }
     this.micro.replaceArray(node.id, { ...spec, cells: spec.items.map(() => null) });
-    const cells = spec.items.map((it, i) => this._listCellId(node, it, i) ?? null);
+    // o MESMO item repetido ("[[0] * 3] * 3", ver evaluator.js#evalBinOp) é
+    // UMA lista só, em várias células — igual Python
+    const made = new Map();
+    const cells = spec.items.map((it, i) => {
+      if (made.has(it)) return made.get(it);
+      const id = this._listCellId(node, it, i) ?? null;
+      made.set(it, id);
+      return id;
+    });
     this.micro.replaceArray(node.id, { ...spec, cells });
   }
 
@@ -1113,7 +1146,9 @@ export class MicroRuntimeAdapter {
         // `_fillArray`). `items` com referências estáveis (por id): o nome de
         // uma lista sem nome pode repetir enquanto as novas são criadas.
         if (value.items.length > MAX_ARRAY_SIZE) this.warn(`Lista com mais de ${MAX_ARRAY_SIZE} itens — só os ${MAX_ARRAY_SIZE} primeiros aparecem.`);
-        return { kind: 'arrayref', cells: [], items: value.items.slice(0, MAX_ARRAY_SIZE).map((v) => this.stableRef(v)) };
+        // `grid`: nasceu retangular ("[[0] * c for _ in range(l)]") —
+        // desenhada como grade (orientação 'grid', ver MicroCanvasView.js#layoutGrids)
+        return { kind: 'arrayref', cells: [], items: value.items.slice(0, MAX_ARRAY_SIZE).map((v) => this.stableRef(v)), grid: !!value.grid };
       case 'set': {
         // "s = {1, 2, 3}" / "s = set()" — um array de verdade marcado `isSet`
         // (desenhado sem índices, com chaves — ver MicroCanvasView). Tudo que
@@ -1184,6 +1219,14 @@ export class MicroRuntimeAdapter {
     const node = this._collectionMap(target.kind).get(target.id);
     if (!node || /^[A-Za-z_]\w*$/.test(node.name) || this._isShared(target.kind, node)) return;
     this._removeCollection(target.kind, node);
+  }
+
+  /** Apaga a lista `id` à mão (Delete, popup, Esc na criação — ver App):
+   * numa lista de listas, as listas sem nome de dentro que ficarem sem
+   * ninguém vão junto, como quando o código a solta. */
+  removeArray(id) {
+    const node = this.micro.arrays.get(id);
+    if (node) this._removeCollection('array', node);
   }
 
   /** Apaga uma coleção do modelo — um dict ou uma lista de listas leva junto
@@ -1328,6 +1371,9 @@ export class MicroRuntimeAdapter {
     if (type === 'pointer' || type === 'variable') return false;
     if (kind === 'alias' && this._collectionOf(value) === node) return true; // "x = x"
     if (kind !== type || this._isShared(type, node)) return false;
+    // "m = [[0] * 3 for ...]" num nome que era uma lista simples: ela vira
+    // uma caixa nova, já em grade (a orientação é escolhida ao nascer)
+    if (type === 'array' && spec.grid && node.kind !== 'arrayref') return false;
     if (type === 'array') {
       // as listas de dentro da versão antiga que ficaram sem ninguém somem
       const lists = node.kind === 'arrayref' ? node.cells.filter(Boolean) : [];
@@ -1405,7 +1451,7 @@ export class MicroRuntimeAdapter {
       // array VAZIO de verdade (0 células), não um com uma célula fantasma —
       // é o que faz "arr.append(x)" a partir do zero funcionar certo.
       const pos = this.createPosition('array', specLength(spec), layoutKey('array'));
-      const node = this.micro.addArray(pos.x, pos.y, { kind: spec.kind, orientation: 'horizontal', size: 0, name, frameId });
+      const node = this.micro.addArray(pos.x, pos.y, { kind: spec.kind, orientation: spec.grid ? 'grid' : 'horizontal', size: 0, name, frameId });
       // lista de listas: por enquanto só o tamanho — as de dentro nascem
       // embaixo dela, então ela (e o rótulo) vão pro lugar antes
       this.micro.replaceArray(node.id, spec.items ? { ...spec, cells: spec.items.map(() => null) } : spec);
@@ -1502,7 +1548,7 @@ export class MicroRuntimeAdapter {
       const pos = this.createPosition('array', specLength(spec), frameId === 'global' ? microLayoutKey('array-in-dict', { dictName: name, key }) : null);
       const node = this.micro.addArray(pos.x, pos.y, {
         kind: spec.kind,
-        orientation: 'horizontal',
+        orientation: spec.grid ? 'grid' : 'horizontal',
         size: 0,
         name: `${name}["${key}"]`, // só bookkeeping interno — nunca exibido nem endereçável pelo código (não é um identificador válido)
         frameId,

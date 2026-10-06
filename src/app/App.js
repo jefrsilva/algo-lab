@@ -21,6 +21,10 @@ import {
   variableValueRect,
   arrayLayout,
   arrayHandleRect,
+  layoutGrids,
+  GRID_ROW_BAND_W,
+  GRID_COL_BAND_H,
+  ARRAY_CELL,
   arrayDividers,
   isVerticalOrientation,
   dictHandleRect,
@@ -849,8 +853,11 @@ export class App {
    * está numa — os dois cursores da janela sempre na mesma cor do colchete
    * (sem cor na janela, os dois na cor padrão do tema). */
   _microEffectiveColors() {
-    if (!this.microWindows.length) return this.microColors;
+    const rows = [...this.micro.arrays.values()].filter((a) => a.gridRow && this.microColors.has(a.gridRow.hostId) && !this.microColors.has(a.id));
+    if (!this.microWindows.length && !rows.length) return this.microColors;
     const colors = new Map(this.microColors);
+    // linha embutida numa grade pega a cor da grade (sem cor própria)
+    rows.forEach((a) => colors.set(a.id, this.microColors.get(a.gridRow.hostId)));
     this.micro.pointers.forEach((p) => {
       const win = this._microPointerWindow(p);
       if (!win) return;
@@ -1335,6 +1342,13 @@ export class App {
    * partir do centro do viewport (`_findFreeMicroPosition`) e, se houver
    * chave, registra a posição escolhida pra próxima vez. */
   _microCreatePosition(kind, size = 1, layoutKey = null, near = null) {
+    // linha de uma lista de listas desenhada em grade: vai direto pro lugar
+    // dela na grade (ver MicroCanvasView.js#layoutGrids) — sem posição
+    // lembrada, a grade é quem manda
+    const host = near?.belowArrayId ? this.micro.arrays.get(near.belowArrayId) : null;
+    if (kind === 'array' && host?.orientation === 'grid' && near.index != null) {
+      return { x: host.x + GRID_ROW_BAND_W, y: host.y + GRID_COL_BAND_H + near.index * ARRAY_CELL };
+    }
     const fresh = near && this._microFindById(near.id);
     if (layoutKey && this.microLayout.has(layoutKey)) {
       const pos = { ...this.microLayout.get(layoutKey), remembered: true };
@@ -1531,8 +1545,10 @@ export class App {
   /** Retângulos ocupados por todo elemento vivo do canvas micro (usado só
    * pra evitar sobreposição ao posicionar um elemento novo). */
   _microOccupiedRects(exceptIds = []) {
+    this._layoutMicroGrids();
     const rects = [];
-    const skip = new Set(exceptIds);
+    // linha embutida numa grade: o espaço dela já é o da grade
+    const skip = new Set([...exceptIds, ...[...this.micro.arrays.values()].filter((a) => a.gridRow).map((a) => a.id)]);
     const each = (map, rectOf) => map.forEach((n, id) => skip.has(id) || rects.push(rectOf(n)));
     each(this.micro.structs, (n) => ({ x: n.x, y: n.y, w: STRUCT_W, h: STRUCT_H }));
     each(this.micro.pointers, (n) => ({ x: n.x, y: n.y, w: pointerWidth(n, this.microFullNames), h: PTR_H }));
@@ -1738,24 +1754,46 @@ export class App {
       showSize,
       // pilha (índices crescendo pra cima) só faz sentido com posição — set não tem
       showStack: !node.isSet,
+      // grade: as listas de dentro como linhas de uma tabela
+      showGrid: node.kind === 'arrayref',
       onSave: ({ name, size, orientation }) => {
         this.micro.renameArray(node.id, name);
+        const wasGrid = node.orientation === 'grid';
         // orientação antes do tamanho: virando pilha, as células novas já
         // entram em cima (base parada, ver MicroModel#_keepStackBase)
         this.micro.setArrayOrientation(node.id, orientation);
         this.microRunner.updateOrientation(node.id, orientation);
+        if (wasGrid && node.orientation !== 'grid') this._microUnstackGridRows(node);
         if (size !== undefined) this.micro.resizeArray(node.id, size);
         if (this.microSelectedId === node.id) this._syncCodeEditorSelection('array', node.id);
         this._renderMicroOnly();
       },
       onRemove: () => {
-        this.micro.removeArray(node.id);
+        this.microRuntime.removeArray(node.id);
         if (this.microSelectedId === node.id) {
           this.microSelectedId = null;
           this._syncCodeEditorSelection(null, null);
         }
         this._renderMicroOnly();
       },
+    });
+  }
+
+  /** A grade `node` deixou de ser grade: as listas de dentro, que estavam
+   * no lugar das linhas dela, vão pra baixo dela, uma embaixo da outra (o
+   * mesmo lugar onde nasceriam, ver `_microCreatePosition`), com a seta de
+   * cada célula aparecendo. */
+  _microUnstackGridRows(node) {
+    const rows = [...new Set(node.cells)].map((id) => this.micro.arrays.get(id)).filter((a) => a?.gridRow?.hostId === node.id);
+    rows.forEach((a) => delete a.gridRow);
+    delete node.gridGeom;
+    const handle = arrayHandleRect({ cells: [0], orientation: 'horizontal' });
+    rows.forEach((a) => {
+      const { width, height } = arrayLayout(a);
+      const base = { x: node.x + handle.w, y: node.y + arrayLayout(node).height + MICRO_ARROW_GAP };
+      // fora da conta de espaço livre enquanto procura: ainda está em cima da lista
+      const pos = this._findFreeMicroPosition(base, width, height, 'below', [a.id]);
+      this._microSetNodePos(a.id, pos.x, pos.y);
     });
   }
 
@@ -2006,7 +2044,7 @@ export class App {
   _microRemoveById(id) {
     if (this.micro.structs.has(id)) this.micro.removeStruct(id);
     else if (this.micro.pointers.has(id)) this.micro.removePointer(id);
-    else if (this.micro.arrays.has(id)) this.micro.removeArray(id);
+    else if (this.micro.arrays.has(id)) this.microRuntime.removeArray(id); // leva as listas de dentro sem dono
     else if (this.micro.dicts.has(id)) this.micro.removeDict(id);
     else if (this.micro.matrices.has(id)) this.micro.removeMatrix(id);
     else if (this.micro.variables.has(id)) this.micro.removeVariable(id);
@@ -2111,6 +2149,8 @@ export class App {
     this.micro.structs.forEach((n) => { if (hits(n.x, n.y, STRUCT_W, STRUCT_H, n.id)) ids.push(n.id); });
     this.micro.pointers.forEach((n) => { if (hits(n.x, n.y, pointerWidth(n, this.microFullNames), PTR_H, n.id)) ids.push(n.id); });
     this.micro.arrays.forEach((n) => {
+      // linha embutida numa grade não é selecionável sozinha — é a grade
+      if (n.gridRow) return;
       const { width, height } = arrayLayout(n);
       if (hits(n.x, n.y, width, height, n.id)) ids.push(n.id);
     });
@@ -2405,7 +2445,9 @@ export class App {
   }
 
   _findMicroArrayAt(worldPt) {
-    for (const node of this.micro.arrays.values()) {
+    // linhas embutidas numa grade primeiro: ficam por cima da moldura
+    const arrays = [...this.micro.arrays.values()].sort((a, b) => !!b.gridRow - !!a.gridRow);
+    for (const node of arrays) {
       if (!this._microPickable(node)) continue;
       const { width, height } = arrayLayout(node);
       if (worldPt.x >= node.x && worldPt.x <= node.x + width && worldPt.y >= node.y && worldPt.y <= node.y + height) return node;
@@ -2461,7 +2503,17 @@ export class App {
    * célula: `c.y` (horizontal) / `c.x` (vertical) é justamente a altura/
    * largura dela. */
   _findMicroArrayIndexAt(node, worldPt) {
-    if (node.isSet) return null;
+    // linha embutida numa grade não tem faixa de índice; na grade, a faixa
+    // do índice de cada linha (à esquerda) é a "célula" daquela posição
+    if (node.isSet || node.gridRow) return null;
+    if (node.gridGeom) {
+      const c = arrayLayout(node).cells.find((cell) => {
+        const x = node.x + cell.x;
+        const y = node.y + cell.y;
+        return worldPt.x >= x && worldPt.x <= x + cell.w && worldPt.y >= y && worldPt.y <= y + cell.h;
+      });
+      return c ? c.index : null;
+    }
     const vertical = isVerticalOrientation(node.orientation);
     const lx = worldPt.x - node.x;
     const ly = worldPt.y - node.y;
@@ -3160,7 +3212,21 @@ export class App {
       const c = this._findMicroArrayCellAt(worldPt);
       if (c?.array.id === node.id) index = c.index;
     }
-    return index == null ? null : { index };
+    // `collectionId`: a lista da posição — numa linha de grade, não é a
+    // grade que o gesto seleciona/arrasta
+    return index == null ? null : { index, collectionId: node.id };
+  }
+
+  /** Expressão do código que lê a posição `index` da lista `arr` ("nums[2]";
+   * numa linha de grade, pela grade: "m[1][0]"), ou null se a lista não tem
+   * nome no código (vizinhos de um nó de grafo). */
+  _microCellExpr(arr, index) {
+    if (arr.gridRow) {
+      const host = this.micro.arrays.get(arr.gridRow.hostId);
+      const base = host ? this._microCellExpr(host, arr.gridRow.row) : null;
+      return base ? `${base}[${index}]` : null;
+    }
+    return arr.name && !arr.name.startsWith('__') ? `${arr.name}[${index}]` : null;
   }
 
   /** Cria o cursor de leitura da posição `cell` (ver _findMicroCursorCellAt)
@@ -3183,11 +3249,11 @@ export class App {
     } else {
       if (cell.index >= coll.cells.length) return null;
       target = { kind: 'arrayCell', arrayId: coll.id, index: cell.index };
-      expr = `${coll.name}[${cell.index}]`;
+      expr = this._microCellExpr(coll, cell.index);
     }
     const node = this.micro.addPointer(x, y, this._microFreeName('p'));
     this.micro.setPointerTarget(node.id, target);
-    if (!coll.name || coll.name.startsWith('__')) return node.id;
+    if (!expr) return node.id;
     const parsed = parseExpression(expr);
     return (parsed.ok && this.microRuntime.adoptReadCursor(node.id, parsed.ast)) || node.id;
   }
@@ -3212,7 +3278,7 @@ export class App {
     let expr = null;
     if (t?.kind === 'arrayCell') {
       const arr = this.micro.arrays.get(t.arrayId);
-      if (named(arr) && !arr.isSet) expr = `${arr.name}[${t.index}]`;
+      if (arr && !arr.isSet) expr = this._microCellExpr(arr, t.index);
     } else if (t?.kind === 'matrixCell') {
       const m = this.micro.matrices.get(t.matrixId);
       if (named(m)) expr = `${m.name}[${t.row}][${t.col}]`;
@@ -3247,7 +3313,7 @@ export class App {
     gesture.cursorCell = null;
     // segura o ponteiro pela ponta esquerda, na altura do meio
     const grabOffset = { x: 10, y: PTR_H / 2 };
-    const id = this._createMicroIndexCursor(gesture.id, cell, worldPt.x - grabOffset.x, worldPt.y - grabOffset.y);
+    const id = this._createMicroIndexCursor(cell.collectionId ?? gesture.id, cell, worldPt.x - grabOffset.x, worldPt.y - grabOffset.y);
     if (id == null) return;
     this._selectMicroElement('pointer', id);
     Object.assign(gesture, { hit: 'pointer', id, grabOffset, groupStart: null });
@@ -3265,6 +3331,19 @@ export class App {
     if (matrix) {
       const r = matrixCellRect(matrix, cell.row, cell.col);
       desired = { x: r.x + r.width / 2 - w / 2, y: matrix.y + matrixLayout(matrix).height + MICRO_ARROW_GAP };
+    } else if (arr?.gridRow || arr?.gridGeom) {
+      // grade: embaixo dela, alinhado com a coluna da célula — ou, pra faixa
+      // do índice de uma linha ("m[1]"), à esquerda da linha
+      const host = arr.gridRow ? this.micro.arrays.get(arr.gridRow.hostId) : arr;
+      const hostLayout = arrayLayout(host);
+      const c = arrayLayout(arr).cells[cell.index];
+      if (!host || !c) return;
+      if (arr === host) {
+        side = 'left';
+        desired = { x: host.x + arrayHandleRect(host).x - MICRO_ARROW_GAP - w, y: host.y + c.y + c.h / 2 - PTR_H / 2 };
+      } else {
+        desired = { x: arr.x + c.x + c.w / 2 - w / 2, y: host.y + hostLayout.height + MICRO_ARROW_GAP };
+      }
     } else if (arr) {
       const layout = arrayLayout(arr);
       const c = layout.cells[cell.index];
@@ -3369,15 +3448,20 @@ export class App {
       const pos = this._microCreatePosition('dict', 1);
       node = this.micro.addDict(pos.x, pos.y, { name: this._microFreeName('d') });
     } else {
-      const pos = this._microCreatePosition('matrix', { rows: 3, cols: 3 });
-      node = this.micro.addMatrix(pos.x, pos.y, { name: this._microFreeName('m'), cells: [[0, 0, 0], [0, 0, 0], [0, 0, 0]] });
+      // "matriz": lista de listas 3×3 de zeros, desenhada em grade — a mesma
+      // coisa que "m = [[0] * 3 for _ in range(3)]" cria (ver layoutGrids)
+      const pos = this._microCreatePosition('array', 3);
+      const name = this._microFreeName('m');
+      node = this.micro.addArray(pos.x, pos.y, { kind: 'arrayref', orientation: 'grid', size: 0, name });
+      const rows = [0, 1, 2].map((i) => this.micro.addArray(node.x + GRID_ROW_BAND_W, node.y + GRID_COL_BAND_H + i * ARRAY_CELL, { size: 3, name: `${name}[${i}]` }).id);
+      this.micro.setArrayContents(node.id, 'arrayref', rows);
     }
     const labelPos = this._microPointerSpotNear(node.id, node.name, { movable: true });
     const label = this.micro.addPointer(labelPos.x, labelPos.y, node.name);
     // o rótulo fica à esquerda da coleção: cresce pra ESQUERDA conforme o
     // nome é digitado, com a ponta direita (e a seta) parada
     const right = label.x + pointerWidth(label, this.microFullNames);
-    const modelKind = kind === 'set' || kind === 'deque' ? 'array' : kind;
+    const modelKind = kind === 'dict' ? 'dict' : 'array';
     if (modelKind === 'array') this.micro.linkArrayLabelPointer(node.id, label.id);
     else if (modelKind === 'dict') this.micro.linkDictLabelPointer(node.id, label.id);
     else this.micro.linkMatrixLabelPointer(node.id, label.id);
@@ -4109,9 +4193,12 @@ export class App {
       id = structNode.id;
       grabOffset = { x: worldPt.x - structNode.x, y: worldPt.y - structNode.y };
     } else if (arrayNode) {
+      // linha embutida numa grade: selecionar/arrastar é a grade inteira (a
+      // célula da linha continua valendo pro cursor, abaixo, e pro duplo clique)
+      const owner = (arrayNode.gridRow && this.micro.arrays.get(arrayNode.gridRow.hostId)) || arrayNode;
       hit = 'array';
-      id = arrayNode.id;
-      grabOffset = { x: worldPt.x - arrayNode.x, y: worldPt.y - arrayNode.y };
+      id = owner.id;
+      grabOffset = { x: worldPt.x - owner.x, y: worldPt.y - owner.y };
     } else if (dictNode) {
       hit = 'dict';
       id = dictNode.id;
@@ -4355,7 +4442,7 @@ export class App {
     } else if (shift && cursorCell && !moved) {
       // Shift+clique numa célula: o mesmo cursor que o arraste criaria, num
       // lugar livre logo abaixo da célula
-      this._createMicroIndexCursorNearCell(id, cursorCell);
+      this._createMicroIndexCursorNearCell(cursorCell.collectionId ?? id, cursorCell);
     } else if (groupStart) {
       if (moved && this._microGroupDragPositions) {
         groupStart.forEach((start, gid) => {
@@ -4700,7 +4787,16 @@ export class App {
 
   // ---- modo micro: render ----
 
+  /** Grades (lista de listas na orientação 'grid'): põe cada lista de
+   * dentro no lugar da sua linha e guarda a geometria derivada (ver
+   * MicroCanvasView.js#layoutGrids). Antes de desenhar e de procurar
+   * espaço livre; os cliques usam o que o último render deixou. */
+  _layoutMicroGrids() {
+    layoutGrids(this.micro.arrays);
+  }
+
   _renderMicroOnly() {
+    this._layoutMicroGrids();
     // arraste de um elemento ou de um grupo: desliga a transição do traçado
     // das setas (ver `.dragging-elements` em canvas.css), senão elas ficam
     // atrás do elemento arrastado
@@ -4853,7 +4949,15 @@ export class App {
     const arrays = Array.from(this.micro.arrays.values())
       .filter((n) => !(this.microSimplifiedNodes && graphNeighborsArrayIds.has(n.id)))
       .map((n) => {
-      const { pos, dragging } = this._microNodePos(n);
+      let { pos, dragging } = this._microNodePos(n);
+      // linha embutida numa grade: no lugar da linha dela na grade, que pode
+      // estar sendo arrastada agora (ver MicroCanvasView.js#layoutGrids)
+      const host = n.gridRow ? this.micro.arrays.get(n.gridRow.hostId) : null;
+      if (host) {
+        const live = this._microNodePos(host);
+        pos = { x: live.pos.x + GRID_ROW_BAND_W, y: live.pos.y + GRID_COL_BAND_H + n.gridRow.row * ARRAY_CELL };
+        dragging = live.dragging;
+      }
       return {
         id: n.id,
         x: pos.x,
@@ -4862,6 +4966,8 @@ export class App {
         orientation: n.orientation,
         cells: n.cells,
         name: n.name,
+        ...(n.gridRow ? { gridRow: n.gridRow } : {}),
+        ...(n.gridGeom ? { gridGeom: n.gridGeom } : {}),
         isSet: !!n.isSet,
         isDeque: !!n.isDeque,
         maxlen: n.maxlen ?? null,
@@ -5165,6 +5271,9 @@ export class App {
       const layout = arrayLayout(n);
       n.cells.forEach((targetId, i) => {
         if (!targetId) return;
+        // grade: a lista da linha está desenhada ali mesmo — só uma lista
+        // repetida (embutida em outra linha) ganha seta
+        if (n.gridGeom?.embedded[i]) return;
         const c = layout.cells[i];
         const base = {
           id: `${n.id}-cell${i}`,

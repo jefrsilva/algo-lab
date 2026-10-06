@@ -471,17 +471,28 @@ describe('gráfico Big-O: leitura com o mouse sobre o gráfico (hover)', () => {
     expect($('.chart-readout-n').textContent).toBe('7');
   });
 
-  test('não aparece com botão pressionado, fora da plotagem, e some ao sair do canvas', () => {
+  test('não aparece com botão pressionado, fora do gráfico, e some ao sair do canvas', () => {
     const chart = criarGrafico();
     mover(chart, 6, 6, { buttons: 1 });
     expect(leitura().getAttribute('display')).toBe('none');
     const { plot } = chartLayout(chart);
-    moverLocal(plot.x - 10, plot.y + 10);
+    moverLocal(chart.width + 10, plot.y + 10);
     expect(leitura().getAttribute('display')).toBe('none');
     mover(chart, 6, 6);
     expect(leitura().getAttribute('display')).toBe('inline');
     svg().dispatchEvent(new MouseEvent('pointerleave'));
     expect(leitura().getAttribute('display')).toBe('none');
+  });
+
+  test('à direita do fim do eixo n (ainda no gráfico) lê o último ponto; à esquerda da origem, n = 0', () => {
+    const chart = criarGrafico();
+    const { plot, nMax } = chartLayout(chart);
+    moverLocal(plot.x + plot.w + 12, plot.y + 10);
+    expect(leitura().getAttribute('display')).toBe('inline');
+    expect($('.chart-readout-n').textContent).toBe(String(Math.floor(nMax)));
+    moverLocal(plot.x - 10, plot.y + plot.h - 2);
+    expect(leitura().getAttribute('display')).toBe('inline');
+    expect($('.chart-readout-n').textContent).toBe('0');
   });
 
   test('clicar e arrastar o gráfico esconde a leitura; ela volta no hover seguinte', () => {

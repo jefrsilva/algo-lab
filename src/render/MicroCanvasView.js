@@ -334,13 +334,15 @@ export function chartLayout(chart) {
  * [0, floor(nMax)]); entre as funções marcadas, vale a de menor distância
  * VERTICAL (na tela) entre o cursor e f(n) — ignorando as que já saíram pelo
  * topo (f(n) > yMax) e as que ainda não começaram (n < `from`, ex. log n em
- * n = 0). Devolve null fora da área de plotagem ou sem curva válida; senão
+ * n = 0). Vale em todo o retângulo do gráfico, não só na área de plotagem:
+ * à direita do fim do eixo n lê n máximo, à esquerda da origem lê 0 (senão
+ * acertar o x exato do último ponto seria quase impossível); acima/abaixo
+ * da plotagem a curva mais próxima na vertical continua valendo. Devolve
+ * null fora do gráfico ou sem curva válida; senão
  * { n, value, fnId, color, x, y }, com x/y (locais) do ponto na curva. */
 export function chartReadout(chart, localPt) {
   const { plot, nMax, yMax, px, py } = chartLayout(chart);
-  if (localPt.x < plot.x || localPt.x > plot.x + plot.w || localPt.y < plot.y || localPt.y > plot.y + plot.h) {
-    return null;
-  }
+  if (localPt.x < 0 || localPt.x > chart.width || localPt.y < 0 || localPt.y > chart.height) return null;
   const n = Math.min(Math.floor(nMax), Math.max(0, Math.round(((localPt.x - plot.x) / plot.w) * nMax)));
   let best = null;
   CHART_FUNCTIONS.forEach((fn) => {

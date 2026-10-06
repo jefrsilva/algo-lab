@@ -37,6 +37,7 @@ export function desmontarApp(app) {
   app.microRunner.stop();
   window.removeEventListener('keydown', app._boundKeyDown);
   window.removeEventListener('keyup', app._boundKeyUp);
+  window.removeEventListener('contextmenu', app._boundLinkDragContextMenu, true);
 }
 
 /** Dispara um keydown (com bubbles) no elemento. */

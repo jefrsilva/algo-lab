@@ -3977,6 +3977,23 @@ export class App {
     return { targetId: null, newNodeAt: free ? { x: worldPt.x, y: worldPt.y } : null };
   }
 
+  /** O que concluir a ligação `draft` no ponto atual faria — pro rótulo junto
+   * do cursor (`linkHint`): 'create' (nasce um nó novo já ligado, ver
+   * `_microLinkDropAt`), 'unlink' (o destino já é o alvo do ponteiro, ou já
+   * está em "neighbors" — `_applyMicroLink` desliga), 'link', ou null (nenhum
+   * destino sob o ponto). */
+  _microLinkAction(draft) {
+    if (draft.newNodeAt) return 'create';
+    if (!draft.targetId) return null;
+    const from = this.micro.structs.get(draft.fromId);
+    if (!from) return null;
+    if (draft.field == null) {
+      const cells = this.micro.arrays.get(from.neighborsArrayId)?.cells ?? [];
+      return cells.includes(draft.targetId) ? 'unlink' : 'link';
+    }
+    return from[draft.field] === draft.targetId ? 'unlink' : 'link';
+  }
+
   /** Ligação solta em espaço vazio: cria ali (centrado em `worldPt`) um nó
    * do mesmo tipo do de origem, liga a origem a ele pelo ponteiro `field`
    * (`_applyMicroLink`), seleciona o novo e abre a edição do dado dele — Esc
@@ -5548,6 +5565,7 @@ export class App {
 
     let previewEdge = null;
     let newNodeGhost = null;
+    let linkHint = null;
     if (this._microPortDrag) {
       previewEdge = {
         x1: this._microPortDrag.fromPt.x,
@@ -5580,6 +5598,9 @@ export class App {
           }
         }
         previewEdge = { x1: start.x, y1: start.y, x2: end.x, y2: end.y, valid: !!(draft.targetId || draft.newNodeAt) };
+        // rótulo junto do cursor dizendo o que concluir a ligação ali faz
+        const action = this._microLinkAction(draft);
+        if (action) linkHint = { x: draft.toPt.x, y: draft.toPt.y, action, scale: this.microViewport.scale };
       } else {
         // o nó de origem sumiu (apagado, ou a reprodução trocou de passo)
         this._microLinkDraft = null;
@@ -5611,6 +5632,7 @@ export class App {
       edges,
       previewEdge,
       newNodeGhost,
+      linkHint,
       linkSource,
       selectionRect: this._microSelectionPreview,
       simplifiedNodes: this.microSimplifiedNodes,

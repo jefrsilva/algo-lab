@@ -932,8 +932,8 @@ export class App {
   /** Recalcula a leitura (ver `chartReadout`) na última posição do mouse:
    * basta o hover (sem tecla), mas só sem botão pressionado (`idle`) nem
    * gesto em andamento (`_microPointer` — clique, arrasto, redimensionamento)
-   * e sobre a área de plotagem do gráfico de cima (o último desenhado) — o de
-   * baixo não é lido através do de cima. */
+   * e sobre o gráfico de cima (o último desenhado; fora da área de plotagem
+   * o n é preso nos limites do eixo) — o de baixo não é lido através do de cima. */
   _updateMicroChartReadout(idle) {
     let next = null;
     if (idle && this._microHoverScreen && !this._microPointer && this.microCharts.size) {

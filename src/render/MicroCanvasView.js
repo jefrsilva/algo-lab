@@ -782,13 +782,17 @@ function renderCellTargetOutlines(el) {
     }
     group.appendChild(svgEl('rect', attrs));
   });
-  el.appendChild(group);
+  el.insertBefore(group, firstPort(el));
 }
 
 /** Halo de seleção em volta de caixa + puxador, como um contorno só.
- * Chamado DEPOIS da caixa (cobre a borda de fora dela e do puxador; a
- * divisória entre os dois fica com a cor normal) e antes das células. Os
- * cantos do lado do puxador seguem o raio dele, os outros o da caixa. */
+ * Chamado no FIM do conteúdo: as células encostam na borda da caixa (x = 0,
+ * e embaixo/à direita até a borda), então desenhadas depois cobririam a
+ * parte de dentro do halo com o preenchimento e o traço cinza delas. Fica
+ * atrás dos pinos das células de referência (que ficam na borda), movidos
+ * pra frente dele. A divisória entre aba e caixa (borda da caixa)
+ * fica com a cor normal. Os cantos do lado do puxador seguem o raio dele,
+ * os outros o da caixa. */
 function appendCollectionHalo(el, width, height, handle, boxR) {
   const b = boxWithHandle(width, height, handle);
   const g = HALO_GAP;
@@ -796,6 +800,15 @@ function appendCollectionHalo(el, width, height, handle, boxR) {
   const br = boxR + g;
   const radii = handle.y < 0 ? [hr, hr, br, br] : [hr, br, br, hr];
   el.appendChild(svgEl('path', { class: 'node-halo', d: roundedRectPath(b.x - g, b.y - g, b.w + g * 2, b.h + g * 2, radii) }));
+  // pinos (intercalados com as células na construção) vão pra frente do halo
+  el.querySelectorAll(':scope > .struct-port').forEach((port) => el.appendChild(port));
+}
+
+/** Primeiro pino (`.struct-port`) entre os filhos diretos de `el`, ou null —
+ * o halo e o contorno das células destacadas entram antes dele, pra não
+ * cobrirem os pinos. */
+function firstPort(el) {
+  return el.querySelector(':scope > .struct-port');
 }
 
 /** Layout puro (não depende de x/y do nó) das células de um array, conforme orientação. */
@@ -2411,7 +2424,6 @@ export class MicroCanvasView {
     appendHandle(el, layout.width, layout.height, arrayHandleRect(node), boxR);
     const box = svgEl('rect', { class: 'array-box', width: layout.width, height: layout.height, rx: boxR, ry: boxR });
     el.appendChild(box);
-    appendCollectionHalo(el, layout.width, layout.height, arrayHandleRect(node), boxR);
     if (node.isSet && !isVerticalOrientation(node.orientation)) {
       const caption = svgEl('text', { class: 'array-index-label set-caption', x: SET_PAD + 2, y: ARRAY_INDEX_H - 4 });
       caption.textContent = node.cells.length === 0 ? 'set()' : 'set';
@@ -2493,6 +2505,7 @@ export class MicroCanvasView {
     arrayDividers(node).forEach((d) => {
       el.appendChild(svgEl('rect', { class: `array-divider-hit${isVerticalOrientation(node.orientation) ? ' vertical' : ''}`, x: d.x, y: d.y, width: d.w, height: d.h }));
     });
+    appendCollectionHalo(el, layout.width, layout.height, arrayHandleRect(node), boxR);
   }
 
   /** Irmã de `_renderArrays` — reaproveita as MESMAS classes CSS (`array-*`,
@@ -2542,7 +2555,6 @@ export class MicroCanvasView {
     const box = svgEl('rect', { class: 'array-box', width: layout.width, height: layout.height, rx: 8, ry: 8 });
     appendHandle(el, layout.width, layout.height, dictHandleRect(node), 8);
     el.appendChild(box);
-    appendCollectionHalo(el, layout.width, layout.height, dictHandleRect(node), 8);
 
     layout.cells.forEach((c, i) => {
       const cellModel = node.cells[i];
@@ -2586,6 +2598,7 @@ export class MicroCanvasView {
         el.appendChild(svgEl('circle', { class: 'struct-port array-cell-port', cx: c.port.x, cy: c.port.y, r: PORT_R }));
       }
     });
+    appendCollectionHalo(el, layout.width, layout.height, dictHandleRect(node), 8);
   }
 
   /** Irmã de `_renderArrays` — reaproveita as classes `.array-*` (mesma
@@ -2641,7 +2654,6 @@ export class MicroCanvasView {
     const layout = matrixLayout(node);
     appendHandle(el, layout.width, layout.height, matrixHandleRect(node), 8);
     el.appendChild(svgEl('rect', { class: 'array-box', width: layout.width, height: layout.height, rx: 8, ry: 8 }));
-    appendCollectionHalo(el, layout.width, layout.height, matrixHandleRect(node), 8);
 
     layout.colLabels.forEach((l) => {
       const t = svgEl('text', { class: 'array-index-label matrix-col-label', x: l.x, y: l.y, 'text-anchor': 'middle', 'data-col': l.col });
@@ -2671,6 +2683,7 @@ export class MicroCanvasView {
       val.textContent = cellText(node.cells[c.row][c.col]);
       el.appendChild(val);
     });
+    appendCollectionHalo(el, layout.width, layout.height, matrixHandleRect(node), 8);
   }
 
   destroy() {

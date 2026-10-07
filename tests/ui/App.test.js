@@ -1673,7 +1673,7 @@ describe('halo de seleção colado no elemento', () => {
   const ordem = (g) => [...g.children].map((c) => c.getAttribute('class') ?? c.tagName);
   const depois = (g, a, b) => ordem(g).findIndex((c) => c.includes(b)) === ordem(g).findIndex((c) => c.includes(a)) + 1;
 
-  test('o halo vem logo DEPOIS da caixa (por cima da borda) e antes de pinos e células', () => {
+  test('o halo vem logo DEPOIS da caixa (por cima da borda) e antes dos pinos', () => {
     const no = app.micro.addStruct(300, 200, 1);
     const p = app.micro.addPointer(100, 200, 'p');
     const v = app.micro.addVariable(100, 400, 'i', 2);
@@ -1686,8 +1686,24 @@ describe('halo de seleção colado no elemento', () => {
     // variável: depois do cabeçalho, que também pinta o topo da caixa
     const ov = ordem(el(v.id));
     expect(ov.findIndex((c) => c.includes('node-halo'))).toBeGreaterThan(ov.lastIndexOf('variable-header'));
-    expect(depois(el(arr.id), 'array-box', 'node-halo')).toBe(true);
-    expect(ordem(el(arr.id)).findIndex((c) => c.includes('node-halo'))).toBeLessThan(ordem(el(arr.id)).findIndex((c) => c.includes('array-cell')));
+  });
+
+  test('numa coleção o halo vem DEPOIS das células (que encostam na borda) e antes dos pinos', () => {
+    const valores = app.micro.addArray(300, 400, { name: 'nums', size: 3 });
+    const refs = app.micro.addArray(300, 600, { name: 'nos', size: 2, kind: 'ref' });
+    const m = app.micro.addMatrix(600, 400, { name: 'm', cells: [[1, 2], [3, 4]] });
+    const d = app.micro.addDict(600, 600, { name: 'd', cells: [{ key: 'a', kind: 'value', value: 1 }] });
+    app._renderMicroOnly();
+    for (const c of [valores, refs, m, d]) {
+      const o = ordem(el(c.id));
+      const halo = o.indexOf('node-halo');
+      const celula = (k) => k.split(' ').includes('array-cell');
+      expect(o.some(celula), c.name).toBe(true);
+      expect(halo, c.name).toBeGreaterThan(o.findLastIndex(celula));
+      const pinos = o.map((k, i) => (k.includes('struct-port') ? i : -1)).filter((i) => i >= 0);
+      if (c === refs) expect(pinos).toHaveLength(2);
+      pinos.forEach((i) => expect(i, c.name).toBeGreaterThan(halo));
+    }
   });
 
   test('numa coleção o halo é um contorno só em volta de caixa + puxador, 1px pra fora', () => {

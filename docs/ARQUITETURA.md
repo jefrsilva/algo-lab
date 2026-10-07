@@ -480,7 +480,7 @@ Cada widget é uma classe independente, sem classe base. Recebe um container e c
 ### 7.7 `src/styles/`
 
 - `variables.css`: **tokens**. Há uma cor por significado: `--sel` (selecionado), `--target` (alvo do selecionado), `--exec` (em execução), `--cursor` (cursor de leitura), `--danger`. O tema claro só redefine tokens em `:root[data-theme='light']`; tons translúcidos usam `color-mix()`. Pra mudar uma cor, mude o token, não a regra.
-- `canvas.css`: classes dos elementos SVG (`.struct-node`, `.pointer-node`, `.array-node`, `.node-halo`, `.selected`, `.linked`, `.micro-colored` com `--node-color`…). O `.node-halo` (contorno de seleção / alvo) é desenhado logo **depois** da caixa e colado nela (`haloRect`; numa coleção, `appendCollectionHalo` contorna caixa + puxador como uma peça só), cobrindo a borda dela — por isso `.selected`/`.linked` só tingem o preenchimento da caixa, sem mudar o traço.
+- `canvas.css`: classes dos elementos SVG (`.struct-node`, `.pointer-node`, `.array-node`, `.node-halo`, `.selected`, `.linked`, `.micro-colored` com `--node-color`…). O `.node-halo` (contorno de seleção / alvo) é desenhado **depois** da caixa e colado nela, cobrindo a borda dela (`haloRect`, antes dos textos e pinos; numa coleção, `appendCollectionHalo` contorna caixa + puxador como uma peça só e vem depois das células — que encostam na borda —, com os pinos movidos pra frente dele) — por isso `.selected`/`.linked` só tingem o preenchimento da caixa, sem mudar o traço. O contorno das células destacadas (`renderCellTargetOutlines`) também fica num grupo por cima das células e atrás dos pinos.
 - `controls.css`: botões, popups (`.array-settings-*`, reaproveitado por todos os popups de configurações), menu, diálogos, toolbar, quick actions.
 - `codeEditor.css`: painel de código, divisórias, barra de reprodução, árvore de chamadas, console.
 - `main.css`: reset e layout de página.
@@ -545,7 +545,7 @@ Esse é o caso mais extenso. Siga a **matriz** (`matrices`) como modelo, porque 
 **Render**
 - [ ] `MicroCanvasView`: constantes de geometria, `xLayout(node)` exportado (e `xHandleRect`, se ele tiver puxador), camada (`this.xLayer`, inserida na ordem certa), `this.xEls`, `_renderX` com diff por id, inclusão em `render({... xs = []})`, `_applyColors`/`_applyDimming` e no pulso de seleção.
 - [ ] Setas que chegam nele: `_renderEdges` (ponto de chegada) e o `targetKind` correspondente.
-- [ ] `canvas.css`: classes do novo elemento usando os tokens (`--node-fill`, `--sel`…) e suporte a `.micro-colored`; a seleção vem do `.node-halo` (desenhado logo depois da caixa, antes do conteúdo e dos pinos) — não mude o traço da caixa no `.selected`.
+- [ ] `canvas.css`: classes do novo elemento usando os tokens (`--node-fill`, `--sel`…) e suporte a `.micro-colored`; a seleção vem do `.node-halo` (desenhado depois da caixa e de tudo que encosta na borda dela, antes dos pinos) — não mude o traço da caixa no `.selected`.
 
 **App**
 - [ ] `_microNodeMaps`, `_microRemoveById`, `_isMicroModelElement`, `_microSetNodePos`/`_microNodePos`, `_microFindIdsInRect`, `_microOccupiedRects`, `_microCreatePosition` (um `kind` novo), `_fitMicroViewport`/`_hasMicroContent`.

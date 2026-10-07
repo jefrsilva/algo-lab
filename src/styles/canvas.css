@@ -38,7 +38,8 @@
    (drop-shadow), que borrava a borda e o valor escrito dentro do nó —
    especialmente em vídeo comprimido. Agora cada nó tem um contorno externo
    (`.node-halo`, criado em MicroCanvasView) que só aparece nesses estados:
-   nítido, sem desfoque. Fica POR CIMA da caixa e colado nela (cobre o traço
+   nítido, sem desfoque. Fica POR CIMA da caixa (numa coleção, também das
+   células, que encostam na borda — só os pinos ficam na frente) e colado nela (cobre o traço
    da própria caixa e cresce pra fora), então o elemento selecionado tem UMA
    borda grossa — e não borda + vão + halo. Por isso a seleção/alvo não muda
    mais o traço da caixa (nem do puxador de uma coleção, nem a divisória

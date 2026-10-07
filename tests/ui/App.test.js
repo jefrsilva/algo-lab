@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { desmontarApp, montarApp, tecla } from '../helpers/dom.js';
 import { linhas } from '../helpers/runDsl.js';
-import { ARRAY_CELL, PTR_H, STRUCT_H, STRUCT_W, arrayHandleRect, arrayLayout, chartLayout, dictHandleRect, matrixHandleRect, pointerWidth } from '../../src/render/MicroCanvasView.js';
+import { ARRAY_CELL, GRID_COL_BAND_H, GRID_ROW_BAND_W, PTR_H, STRUCT_H, STRUCT_W, arrayHandleRect, arrayLayout, arrayOuterBox, chartLayout, dictHandleRect, matrixHandleRect, pointerWidth } from '../../src/render/MicroCanvasView.js';
 
 let app;
 const $ = (sel) => document.querySelector(sel);
@@ -170,6 +170,32 @@ describe('Simulação', () => {
     expect(document.activeElement).toBe(textarea());
   });
 
+  test('Enter rola o editor até a linha nova quando ela sai da área visível', () => {
+    // o jsdom não faz layout: um painel de 200×300px, com o código rolado
+    // pra direita (linha longa)
+    const ta = textarea();
+    Object.defineProperty(ta, 'clientHeight', { configurable: true, value: 200 });
+    Object.defineProperty(ta, 'clientWidth', { configurable: true, value: 300 });
+    const altura = app.codeEditor.lineHeight;
+    escreverCodigo('x = 1');
+    ta.focus();
+    ta.scrollLeft = 150;
+    ta.setSelectionRange(5, 5);
+    for (let i = 0; i < 20; i += 1) tecla(ta, 'Enter');
+    expect(ta.value.split('\n')).toHaveLength(21);
+    // a linha 21 (índice 20) fica rente à borda de baixo, com o padding (10px)
+    const fundoDaLinha = 10 + 21 * altura;
+    expect(ta.scrollTop).toBe(fundoDaLinha + 10 - 200);
+    expect(ta.scrollLeft).toBe(0); // cursor na coluna 0
+    // gutter e realce acompanham o scroll
+    expect($('.code-editor-gutter-inner').style.transform).toBe(`translateY(${-ta.scrollTop}px)`);
+
+    // de volta ao topo: Enter na 1ª linha sobe o scroll até ela
+    ta.setSelectionRange(0, 0);
+    tecla(ta, 'Enter');
+    expect(ta.scrollTop).toBe(altura); // cursor na linha 2 (índice 1), padding acima
+  });
+
   test('Ctrl+Shift+Enter no editor, no Sandbox, passa pra Simulação e roda tudo', () => {
     escreverCodigo(linhas('a = 1', 'b = 2', 'c = 3'));
     textarea().focus();
@@ -297,7 +323,7 @@ describe('ponteiro de um elemento recém-criado nasce longe o bastante pra seta 
     ['set', 's = {1, 2}', 'arrays'],
     ['deque', 'q = deque()', 'arrays'],
     ['dict', 'd = {"a": 1}', 'dicts'],
-    ['matriz', 'm = [[1, 2], [3, 4]]', 'matrices'],
+    ['grade', 'm = [[1, 2], [3, 4]]', 'arrays'],
   ])('%s do código: rótulo à esquerda, na altura da caixa', (_, codigo, mapa) => {
     noSandbox(codigo);
     const col = [...app.micro[mapa].values()][0];
@@ -471,17 +497,28 @@ describe('gráfico Big-O: leitura com o mouse sobre o gráfico (hover)', () => {
     expect($('.chart-readout-n').textContent).toBe('7');
   });
 
-  test('não aparece com botão pressionado, fora da plotagem, e some ao sair do canvas', () => {
+  test('não aparece com botão pressionado, fora do gráfico, e some ao sair do canvas', () => {
     const chart = criarGrafico();
     mover(chart, 6, 6, { buttons: 1 });
     expect(leitura().getAttribute('display')).toBe('none');
     const { plot } = chartLayout(chart);
-    moverLocal(plot.x - 10, plot.y + 10);
+    moverLocal(chart.width + 10, plot.y + 10);
     expect(leitura().getAttribute('display')).toBe('none');
     mover(chart, 6, 6);
     expect(leitura().getAttribute('display')).toBe('inline');
     svg().dispatchEvent(new MouseEvent('pointerleave'));
     expect(leitura().getAttribute('display')).toBe('none');
+  });
+
+  test('à direita do fim do eixo n (ainda no gráfico) lê o último ponto; à esquerda da origem, n = 0', () => {
+    const chart = criarGrafico();
+    const { plot, nMax } = chartLayout(chart);
+    moverLocal(plot.x + plot.w + 12, plot.y + 10);
+    expect(leitura().getAttribute('display')).toBe('inline');
+    expect($('.chart-readout-n').textContent).toBe(String(Math.floor(nMax)));
+    moverLocal(plot.x - 10, plot.y + plot.h - 2);
+    expect(leitura().getAttribute('display')).toBe('inline');
+    expect($('.chart-readout-n').textContent).toBe('0');
   });
 
   test('clicar e arrastar o gráfico esconde a leitura; ela volta no hover seguinte', () => {
@@ -910,18 +947,25 @@ describe('lista de vizinhos de um GraphNode novo: ao lado do nó, com folga pra 
 });
 
 describe('cursor de Shift+clique numa célula: nasce com folga pra seta', () => {
-  test.each([
-    ['lista', 'nums = [1, 2, 3]', 'arrays'],
-    ['matriz', 'm = [[1, 2], [3, 4]]', 'matrices'],
-  ])('%s: o cursor nasce a 48 px embaixo', (_, codigo, mapa) => {
-    escreverCodigo(codigo);
+  test('lista: o cursor nasce a 48 px embaixo', () => {
+    escreverCodigo('nums = [1, 2, 3]');
     ctrlEnterNaLinha(0);
-    const col = [...app.micro[mapa].values()][0];
-    const cell = mapa === 'arrays' ? { index: 1 } : { row: 1, col: 0 };
-    app._createMicroIndexCursorNearCell(col.id, cell);
+    const col = [...app.micro.arrays.values()][0];
+    app._createMicroIndexCursorNearCell(col.id, { index: 1 });
     const cursor = app.micro.pointers.get(app.microSelectedId);
     expect(cursor.readCursorKey).toBeTruthy();
     const r = app._microElementRect(col.id);
+    expect(cursor.y).toBe(r.y + r.h + 48);
+  });
+
+  test('célula de uma linha da grade: o cursor "m[1][0]" nasce a 48 px embaixo da grade', () => {
+    escreverCodigo('m = [[1, 2], [3, 4]]');
+    ctrlEnterNaLinha(0);
+    const m = [...app.micro.arrays.values()].find((a) => a.name === 'm');
+    app._createMicroIndexCursorNearCell(m.cells[1], { index: 0 });
+    const cursor = app.micro.pointers.get(app.microSelectedId);
+    expect(cursor).toMatchObject({ readCursorKey: 'm[1][0]', target: { kind: 'arrayCell', arrayId: m.cells[1], index: 0 } });
+    const r = app._microElementRect(m.id);
     expect(cursor.y).toBe(r.y + r.h + 48);
   });
 
@@ -1051,7 +1095,8 @@ describe('ferramenta Ligar nós', () => {
     expect(linha.getAttribute('display')).toBeNull();
     expect(linha.getAttribute('x2')).toBe(String(b.x + 20));
     expect(linha.classList.contains('invalid')).toBe(false);
-    pairar(150, 300);
+    // sobre o próprio nó de origem: nenhum destino
+    pairar(meio(a).x, meio(a).y);
     expect(linha.classList.contains('invalid')).toBe(true);
     tecla(document.body, 'v');
     expect(linha.getAttribute('display')).toBe('none');
@@ -1066,9 +1111,9 @@ describe('ferramenta Ligar nós', () => {
     const linha = $('.preview-edge-line');
     expect(linha.getAttribute('display')).toBeNull();
     expect(linha.getAttribute('x2')).toBe(String(b.x + 20));
-    evento(window, 'pointermove', 150, 300, { shiftKey: true });
+    evento(window, 'pointermove', a.x + 30, a.y + 30, { shiftKey: true });
     expect(linha.classList.contains('invalid')).toBe(true);
-    evento(window, 'pointerup', 150, 300, { shiftKey: true });
+    evento(window, 'pointerup', a.x + 30, a.y + 30, { shiftKey: true });
     expect(linha.getAttribute('display')).toBe('none');
     expect(vizinhos(a)).toEqual([]);
   });
@@ -1087,12 +1132,18 @@ describe('ferramenta Ligar nós', () => {
     expect(vizinhos(a)).toEqual([]);
   });
 
-  test('soltar no vazio ou no próprio nó não muda nada', () => {
+  test('soltar no próprio nó ou num elemento que não é nó não muda nada', () => {
     const [a] = doisNos();
+    escreverCodigo('nums = [1, 2, 3]');
+    ctrlEnterNaLinha(0);
+    const arr = [...app.micro.arrays.values()].find((n) => n.name === 'nums');
+    const c = arrayLayout(arr).cells[1];
+    const nStructs = app.micro.structs.size;
     tecla(document.body, 'l');
-    arrastar(a, { x: 150, y: 250 }, { shiftKey: true });
     arrastar(a, { x: a.x + 15, y: a.y + 10 }, { shiftKey: true });
+    arrastar(a, { x: arr.x + c.x + c.w / 2 - 20, y: arr.y + c.y + c.h / 2 - 20 }, { shiftKey: true });
     expect(vizinhos(a)).toEqual([]);
+    expect(app.micro.structs.size).toBe(nStructs);
     expect({ x: a.x, y: a.y }).toEqual({ x: 0, y: 0 });
   });
 
@@ -1254,18 +1305,194 @@ describe('ferramenta Ligar nós', () => {
     expect(destaque().getAttribute('d')).toMatch(/^M 34 0 /); // célula prev de `a`
   });
 
-  test('clicar em espaço vazio volta pra ferramenta Selecionar', () => {
-    const [a] = doisStructs('list');
+  test('sem ligação pendente, clicar em espaço vazio volta pra ferramenta Selecionar', () => {
+    doisStructs('list');
+    const nStructs = app.micro.structs.size;
     tecla(document.body, 'l');
     clicarEm(150, 300);
     expect(app.microMode).toBe('select');
-    // com a ligação pendente também — e ela é descartada
+    expect(app.micro.structs.size).toBe(nStructs);
+  });
+
+  /** Structs criados depois de `antes` (Set de ids). */
+  const novos = (antes) => [...app.micro.structs.values()].filter((s) => !antes.has(s.id));
+
+  test('com a ligação pendente, clicar em espaço vazio cria ali um Node já ligado', () => {
+    const [a] = doisStructs('list');
+    const antes = new Set(app.micro.structs.keys());
     tecla(document.body, 'l');
     clicarEm(naDireita(a).x, naDireita(a).y);
     clicarEm(150, 300);
-    expect(app.microMode).toBe('select');
+    const [n] = novos(antes);
+    expect(n).toMatchObject({ type: 'list', data: 0, x: 150 - STRUCT_W / 2, y: 300 - STRUCT_H / 2 });
+    expect(a.next).toBe(n.id);
+    expect(a.prev).toBeNull();
+    expect(app.microMode).toBe('link'); // a ferramenta continua escolhida
     expect(app._microLinkDraft).toBeNull();
+    expect(app.microSelectedId).toBe(n.id);
+    // a edição do dado do nó novo abre — Enter confirma
+    const input = $('.inline-value-editor');
+    expect(input).toBeTruthy();
+    input.value = '42';
+    tecla(input, 'Enter');
+    expect(n.data).toBe(42);
+  });
+
+  test('TreeNode pela metade esquerda: o nó novo vira o left', () => {
+    const [a] = doisStructs('tree');
+    const antes = new Set(app.micro.structs.keys());
+    tecla(document.body, 'l');
+    clicarEm(naEsquerda(a).x, naEsquerda(a).y);
+    clicarEm(-100, 250);
+    const [n] = novos(antes);
+    expect(n.type).toBe('tree');
+    expect(a.prev).toBe(n.id);
     expect(a.next).toBeNull();
+  });
+
+  test('Shift + arrastar até o vazio cria um nó de grafo já ligado (no modo Selecionar também)', () => {
+    const [a] = doisNos();
+    const antes = new Set(app.micro.structs.keys());
+    arrastar(a, { x: 130, y: 230 }, { shiftKey: true }); // solta em (150, 250)
+    const [n] = novos(antes);
+    expect(n).toMatchObject({ type: 'graph', x: 150 - STRUCT_W / 2, y: 250 - STRUCT_H / 2 });
+    expect(app.micro.arrays.has(n.neighborsArrayId)).toBe(true); // ganhou a lista de vizinhos
+    expect(vizinhos(a)).toEqual([n.id]);
+    expect({ x: a.x, y: a.y }).toEqual({ x: 0, y: 0 });
+  });
+
+  test('Shift + arrastar a partir do pino next leva ao Shift + arraste (sem Shift, segue o arraste de pino)', () => {
+    const [a, b] = doisStructs('list');
+    const antes = new Set(app.micro.structs.keys());
+    const pino = { x: a.x + STRUCT_W, y: a.y + STRUCT_H / 2 };
+    evento(svg(), 'pointerdown', pino.x, pino.y, { shiftKey: true });
+    expect(app._microPointer?.hit).toBe('link-drag');
+    evento(window, 'pointermove', 200, 250, { shiftKey: true });
+    evento(window, 'pointerup', 200, 250, { shiftKey: true });
+    const [n] = novos(antes);
+    expect(a.next).toBe(n.id);
+    // (o pino de `a` agora acompanha a seta — o de `b` continua na borda)
+    evento(svg(), 'pointerdown', b.x + STRUCT_W, b.y + STRUCT_H / 2);
+    expect(app._microPointer?.hit).toBe('port');
+    evento(window, 'pointerup', b.x + STRUCT_W, b.y + STRUCT_H / 2);
+  });
+
+  test('o círculo tracejado marca onde o nó novo nasce, só em espaço vazio', () => {
+    const [a, b] = doisStructs('list');
+    const circulo = () => $('.new-node-ghost');
+    const visivel = () => !!circulo() && circulo().getAttribute('display') !== 'none';
+    tecla(document.body, 'l');
+    clicarEm(naDireita(a).x, naDireita(a).y);
+    pairar(150, 300);
+    expect(visivel()).toBe(true);
+    expect([circulo().getAttribute('cx'), circulo().getAttribute('cy')]).toEqual(['150', '300']);
+    expect($('.preview-edge-line').classList.contains('invalid')).toBe(false);
+    pairar(meio(b).x, meio(b).y); // sobre um destino: nada de círculo
+    expect(visivel()).toBe(false);
+    pairar(150, 300);
+    tecla(svg(), 'Escape');
+    expect(visivel()).toBe(false);
+    // Shift + arraste também
+    evento(svg(), 'pointerdown', naDireita(a).x, naDireita(a).y, { shiftKey: true });
+    evento(window, 'pointermove', 150, 300, { shiftKey: true });
+    expect(visivel()).toBe(true);
+    evento(window, 'pointermove', meio(a).x, meio(a).y, { shiftKey: true });
+    expect(visivel()).toBe(false);
+    evento(window, 'pointerup', meio(a).x, meio(a).y, { shiftKey: true });
+  });
+
+  test('o rótulo junto do cursor diz a operação: criar e conectar, conectar, desconectar', () => {
+    const [a, b] = doisStructs('list');
+    const rotulo = () => $('.link-hint');
+    const texto = () => (rotulo() && rotulo().getAttribute('display') !== 'none' ? rotulo().textContent : null);
+    tecla(document.body, 'l');
+    clicarEm(naDireita(a).x, naDireita(a).y);
+    expect(texto()).toBeNull(); // ainda sobre o próprio nó: nada
+    pairar(150, 300);
+    expect(texto()).toBe('criar e conectar');
+    expect(rotulo().dataset.action).toBe('create');
+    pairar(meio(b).x, meio(b).y);
+    expect(texto()).toBe('conectar');
+    clicarEm(meio(b).x, meio(b).y);
+    expect(a.next).toBe(b.id);
+    expect(texto()).toBeNull(); // concluída, o rótulo some
+    clicarEm(naDireita(a).x, naDireita(a).y);
+    pairar(meio(b).x, meio(b).y);
+    expect(texto()).toBe('desconectar');
+    expect(rotulo().dataset.action).toBe('unlink');
+    // o outro ponteiro (prev) não aponta pra `b`: conectar
+    tecla(svg(), 'Tab');
+    expect(texto()).toBe('conectar');
+    tecla(svg(), 'Escape');
+    expect(texto()).toBeNull();
+    // Shift + arraste também, e no nó de grafo pela lista de vizinhos
+    const [g, h] = doisNos();
+    g.y = h.y = 600;
+    app._renderMicroOnly();
+    tecla(document.body, 'v');
+    evento(svg(), 'pointerdown', meio(g).x, meio(g).y, { shiftKey: true });
+    evento(window, 'pointermove', meio(h).x, meio(h).y, { shiftKey: true });
+    expect(texto()).toBe('conectar');
+    evento(window, 'pointerup', meio(h).x, meio(h).y, { shiftKey: true });
+    evento(svg(), 'pointerdown', meio(g).x, meio(g).y, { shiftKey: true });
+    evento(window, 'pointermove', meio(h).x, meio(h).y, { shiftKey: true });
+    expect(texto()).toBe('desconectar');
+    evento(window, 'pointermove', 150, 800, { shiftKey: true });
+    expect(texto()).toBe('criar e conectar');
+    tecla(svg(), 'Escape');
+    expect(texto()).toBeNull();
+  });
+
+  test('o rótulo tem o mesmo tamanho na tela em qualquer zoom', () => {
+    const [a] = doisStructs('list');
+    app.microViewport.scale = 2;
+    app.microView.setViewport(app.microViewport);
+    tecla(document.body, 'l');
+    clicarEm(naDireita(a).x * 2, naDireita(a).y * 2);
+    expect(app._microLinkDraft?.pending).toBe(true);
+    pairar(150 * 2, 300 * 2);
+    expect($('.link-hint').getAttribute('transform')).toMatch(/^translate\(150, 300\) scale\(0\.5\)/);
+  });
+
+  test('Esc no meio do Shift + arraste cancela: soltar no vazio não cria nada', () => {
+    const [a] = doisStructs('list');
+    const nStructs = app.micro.structs.size;
+    evento(svg(), 'pointerdown', naDireita(a).x, naDireita(a).y, { shiftKey: true });
+    evento(window, 'pointermove', 150, 300, { shiftKey: true });
+    const ev = tecla(svg(), 'Escape');
+    expect(ev.defaultPrevented).toBe(true);
+    expect(app._microLinkDraft).toBeNull();
+    expect($('.preview-edge-line').getAttribute('display')).toBe('none');
+    evento(window, 'pointermove', 160, 310, { shiftKey: true });
+    evento(window, 'pointerup', 160, 310, { shiftKey: true });
+    expect(app.micro.structs.size).toBe(nStructs);
+    expect(a.next).toBeNull();
+    expect(app.microMode).toBe('select');
+  });
+
+  test('botão direito no meio do Shift + arraste cancela, sem abrir menu', () => {
+    const [a] = doisStructs('list');
+    const nStructs = app.micro.structs.size;
+    tecla(document.body, 'l');
+    evento(svg(), 'pointerdown', naDireita(a).x, naDireita(a).y, { shiftKey: true });
+    evento(window, 'pointermove', 150, 300, { shiftKey: true, buttons: 1 });
+    // o botão direito chega como pointermove com os dois botões...
+    evento(window, 'pointermove', 150, 300, { shiftKey: true, buttons: 3 });
+    expect(app._microLinkDraft).toBeNull();
+    // ...e o contextmenu que vem depois é engolido
+    const ev = botaoDireito(150, 300);
+    expect(ev.defaultPrevented).toBe(true);
+    evento(window, 'pointerup', 150, 300, { shiftKey: true });
+    expect(app.micro.structs.size).toBe(nStructs);
+    expect(a.next).toBeNull();
+    expect(app.microMode).toBe('link');
+    // só se o contextmenu vier primeiro também cancela
+    evento(svg(), 'pointerdown', naDireita(a).x, naDireita(a).y, { shiftKey: true });
+    evento(window, 'pointermove', 150, 300, { shiftKey: true, buttons: 1 });
+    expect(botaoDireito(150, 300).defaultPrevented).toBe(true);
+    expect(app._microPointer).toBeNull();
+    evento(window, 'pointerup', 150, 300, { shiftKey: true });
+    expect(app.micro.structs.size).toBe(nStructs);
   });
 
   test('clicar num elemento que não é nó não troca de ferramenta', () => {
@@ -1333,7 +1560,7 @@ describe('popup de configurações pelo puxador (botão direito)', () => {
     const h = handleOf(node);
     return { x: node.x + h.x + h.w / 2, y: node.y + h.y + h.h / 2 };
   }
-  /** Cria nums (lista), s (set), d (dict) e m (matriz) pelo Sandbox. */
+  /** Cria nums (lista), s (set), d (dict) e m (lista de listas em grade) pelo Sandbox. */
   function criarColecoes() {
     escreverCodigo(linhas('nums = [1, 2, 3]', 's = {4, 5}', 'd = {"a": 1}', 'm = [[1, 2], [3, 4]]'));
     [0, 1, 2, 3].forEach(ctrlEnterNaLinha);
@@ -1342,7 +1569,7 @@ describe('popup de configurações pelo puxador (botão direito)', () => {
       nums: porNome(app.micro.arrays, 'nums'),
       s: porNome(app.micro.arrays, 's'),
       d: porNome(app.micro.dicts, 'd'),
-      m: porNome(app.micro.matrices, 'm'),
+      m: porNome(app.micro.arrays, 'm'),
     };
   }
   const rotuloDe = (node) =>
@@ -1356,7 +1583,7 @@ describe('popup de configurações pelo puxador (botão direito)', () => {
       [nums, arrayHandleRect, 'nums'],
       [s, arrayHandleRect, 's'],
       [d, dictHandleRect, 'd'],
-      [m, matrixHandleRect, 'm'],
+      [m, arrayHandleRect, 'm'],
     ];
     for (const [node, handleOf, nome] of casos) {
       expect(node).toBeTruthy();
@@ -1520,6 +1747,37 @@ describe('popup de configurações da lista (botão direito no puxador)', () => 
     campo('Tamanho').value = '10';
     salvar();
     expect(f.cells).toEqual([1, 2, 0]);
+  });
+
+  test('deque mostra "início"/"fim" e nasce sem esconder os rótulos debaixo de outro elemento', () => {
+    escreverCodigo(linhas('from collections import deque', 'a = deque([1, 2])', 'b = deque([3])', 'c = deque([4, 5, 6])'));
+    [0, 1, 2, 3].forEach((i) => ctrlEnterNaLinha(i));
+    const textos = [...document.querySelectorAll('.array-end-caption')].map((t) => t.textContent);
+    expect(textos).toEqual(['início', 'fim', 'início', 'fim', 'início', 'fim']);
+    expect(document.querySelector('.deque-caption')).toBeNull();
+    // ninguém (outro array, rótulo com o nome) cai em cima do espaço dos rótulos
+    const fora = (n) => {
+      const b = arrayOuterBox(n);
+      return { x: n.x + b.x, y: n.y + b.y, w: b.w, h: b.h };
+    };
+    const outros = [
+      ...[...app.micro.arrays.values()].map((n) => ({ id: n.id, ...fora(n) })),
+      ...[...app.micro.pointers.values()].map((n) => ({ id: n.id, x: n.x, y: n.y, w: pointerWidth(n, app.microFullNames), h: PTR_H })),
+    ];
+    const cruza = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+    app.micro.arrays.forEach((n) => {
+      const r = fora(n);
+      outros.filter((o) => o.id !== n.id).forEach((o) => expect(cruza(r, o)).toBe(false));
+    });
+  });
+
+  test('lista em Pilha ganha o rótulo "topo"', () => {
+    const pilha = criarNoSandbox('pilha = [1, 2, 3]');
+    expect(document.querySelector('.array-end-caption')).toBeNull();
+    botaoDireitoNoPuxador(pilha);
+    botaoOrientacao('Pilha').click();
+    salvar();
+    expect([...document.querySelectorAll('.array-end-caption')].map((t) => t.textContent)).toEqual(['topo']);
   });
 
   const botaoOrientacao = (texto) => [...popup().querySelectorAll('.array-orient-btn')].find((b) => b.textContent.includes(texto));
@@ -1768,5 +2026,132 @@ describe('contorno da célula destacada por um cursor', () => {
     app._renderMicroOnly();
     expect(g.querySelectorAll('.array-cell-target')).toHaveLength(0);
     expect(g.querySelectorAll('.array-cell-outline')).toHaveLength(0);
+  });
+});
+
+describe('lista de listas em grade', () => {
+  const svg = () => $('.micro-canvas');
+  const popup = () => $('.array-settings-popup');
+  /** Evento de ponteiro no ponto (x, y) do MUNDO (sem layout no jsdom, a
+   * tela é o mundo escalado e deslocado). */
+  function evento(alvo, tipo, x, y, opts = {}) {
+    const { tx, ty, scale } = app.microViewport;
+    alvo.dispatchEvent(new MouseEvent(tipo, { clientX: x * scale + tx, clientY: y * scale + ty, button: 0, bubbles: true, cancelable: true, ...opts }));
+  }
+  function noSandbox(...codigo) {
+    escreverCodigo(linhas(...codigo));
+    codigo.forEach((_, i) => ctrlEnterNaLinha(i));
+  }
+  const porNome = (nome) => [...app.micro.arrays.values()].find((a) => a.name === nome);
+  const linhasDe = (m) => m.cells.map((id) => app.micro.arrays.get(id));
+
+  test('"m = [[1, 2], [3, 4]]" nasce em grade: as linhas ficam dentro da moldura, sem seta', () => {
+    noSandbox('m = [[1, 2], [3, 4]]', 'm.append([5])');
+    const m = porNome('m');
+    expect(m.orientation).toBe('grid');
+    const r = app._microElementRect(m.id);
+    linhasDe(m).forEach((linha, i) => {
+      expect(linha.gridRow).toMatchObject({ hostId: m.id, row: i });
+      const { width, height } = arrayLayout(linha);
+      expect(linha.x).toBeGreaterThanOrEqual(r.x);
+      expect(linha.x + width).toBeLessThanOrEqual(r.x + r.w);
+      expect(linha.y + height).toBeLessThanOrEqual(r.y + r.h);
+    });
+    m.cells.forEach((_, i) => expect(app.microView.edgeEls.has(`${m.id}-cell${i}`)).toBe(false));
+  });
+
+  test('"[[0] * 2] * 2": a lista repetida aparece uma vez, e a outra linha tem seta até ela', () => {
+    noSandbox('t = [[0] * 2] * 2');
+    const t = porNome('t');
+    expect(t.gridGeom.embedded).toEqual([true, false]);
+    expect(app.microView.edgeEls.has(`${t.id}-cell0`)).toBe(false);
+    expect(app.microView.edgeEls.has(`${t.id}-cell1`)).toBe(true);
+  });
+
+  test('clicar numa linha seleciona e arrasta a grade inteira, levando as linhas', () => {
+    noSandbox('m = [[1, 2], [3, 4]]');
+    const m = porNome('m');
+    const linha = linhasDe(m)[1];
+    const [x0, y0] = [linha.x + 10, linha.y + 10];
+    evento(svg(), 'pointerdown', x0, y0);
+    evento(window, 'pointermove', x0 + 30, y0 + 40);
+    evento(window, 'pointerup', x0 + 30, y0 + 40);
+    expect(app.microSelectedId).toBe(m.id);
+    const nova = porNome('m');
+    expect(linhasDe(nova)[1].y).toBe(nova.y + GRID_COL_BAND_H + ARRAY_CELL);
+    expect(linhasDe(nova)[1].x).toBe(nova.x + GRID_ROW_BAND_W);
+  });
+
+  test('o popup tem "Grade" pra lista de listas; trocar pra Horizontal põe as linhas embaixo, com seta', () => {
+    noSandbox('m = [[1, 2], [3, 4]]');
+    const m = porNome('m');
+    const h = arrayHandleRect(m);
+    const { tx, ty, scale } = app.microViewport;
+    const [x, y] = [m.x + h.x + h.w / 2, m.y + h.y + h.h / 2];
+    svg().dispatchEvent(new MouseEvent('contextmenu', { clientX: x * scale + tx, clientY: y * scale + ty, button: 2, bubbles: true, cancelable: true }));
+    const grade = [...popup().querySelectorAll('.array-orient-btn')].find((b) => b.textContent.includes('Grade'));
+    expect(grade.classList.contains('active')).toBe(true);
+    [...popup().querySelectorAll('.array-orient-btn')].find((b) => b.textContent.includes('Horizontal')).click();
+    botao('.array-settings-popup .btn', 'Salvar').click();
+    expect(m.orientation).toBe('horizontal');
+    const fora = app._microElementRect(m.id);
+    linhasDe(m).forEach((linha) => {
+      expect(linha.gridRow).toBeUndefined();
+      expect(linha.y).toBeGreaterThanOrEqual(fora.y + fora.h);
+    });
+    m.cells.forEach((_, i) => expect(app.microView.edgeEls.has(`${m.id}-cell${i}`)).toBe(true));
+  });
+
+  test('uma lista simples não oferece "Grade"', () => {
+    noSandbox('nums = [1, 2]');
+    const nums = porNome('nums');
+    const h = arrayHandleRect(nums);
+    const { tx, ty, scale } = app.microViewport;
+    const [x, y] = [nums.x + h.x + h.w / 2, nums.y + h.y + h.h / 2];
+    svg().dispatchEvent(new MouseEvent('contextmenu', { clientX: x * scale + tx, clientY: y * scale + ty, button: 2, bubbles: true, cancelable: true }));
+    expect([...popup().querySelectorAll('.array-orient-btn')].some((b) => b.textContent.includes('Grade'))).toBe(false);
+  });
+
+  test('"new matrix" cria uma lista de listas 3×3 em grade; apagá-la leva as linhas', () => {
+    app._quickNewCollection('matrix');
+    const m = [...app.micro.arrays.values()].find((a) => a.orientation === 'grid');
+    expect(m.kind).toBe('arrayref');
+    expect(linhasDe(m).map((l) => l.cells)).toEqual([
+      [0, 0, 0],
+      [0, 0, 0],
+      [0, 0, 0],
+    ]);
+    expect(app.micro.matrices.size).toBe(0);
+    app._microRemoveById(m.id);
+    expect(app.micro.arrays.size).toBe(0);
+  });
+});
+
+describe('halo de uma grade por cima das linhas embutidas', () => {
+  test('a cópia do halo fica numa camada acima das listas, com o estado e a posição da moldura', () => {
+    rodarNaSimulacao(linhas('m = [[0] * 3 for _ in range(2)]', 'i = 1', 'x = m[i]'));
+    botao('.playback-btn', '⏭').click();
+    const grade = [...app.micro.arrays.values()].find((a) => a.name === 'm');
+    expect(grade.orientation).toBe('grid');
+    app._toggleMicroSelection(grade.id);
+    app._renderMicroOnly();
+    const moldura = $(`.arrays-layer > [data-id="${grade.id}"]`);
+    const copia = $('.grid-halos-layer > .grid-halo-overlay');
+    expect(copia).not.toBeNull();
+    // a camada vem depois da das listas (as linhas embutidas ficam embaixo dela)
+    expect($('.arrays-layer').compareDocumentPosition(copia) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(copia.getAttribute('transform')).toBe(moldura.getAttribute('transform'));
+    expect(copia.classList.contains('selected')).toBe(true);
+    expect(copia.querySelector('.node-halo').getAttribute('d')).toBe(moldura.querySelector(':scope > .node-halo').getAttribute('d'));
+    // a faixa da linha lida por "m[i]" tem o contorno copiado também
+    expect(copia.querySelectorAll('.array-cell-outline')).toHaveLength(moldura.querySelectorAll('.array-cell-outline').length);
+
+    app._toggleMicroSelection(grade.id);
+    app._renderMicroOnly();
+    expect(copia.classList.contains('selected')).toBe(false);
+    // sem a grade, sem cópia
+    app._microRemoveById(grade.id);
+    app._renderMicroOnly();
+    expect($('.grid-halo-overlay')).toBeNull();
   });
 });

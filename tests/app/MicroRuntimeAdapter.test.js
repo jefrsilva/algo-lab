@@ -21,7 +21,7 @@ describe('frames', () => {
 });
 
 describe('ganchos de criação (usados pelo App pra criar o ponteiro-rótulo)', () => {
-  test('onArrayCreated/onDictCreated/onMatrixCreated recebem o elemento novo', () => {
+  test('onArrayCreated/onDictCreated recebem o elemento novo (a grade "m" é uma lista)', () => {
     const onArrayCreated = vi.fn();
     const onDictCreated = vi.fn();
     const onMatrixCreated = vi.fn();
@@ -30,7 +30,10 @@ describe('ganchos de criação (usados pelo App pra criar o ponteiro-rótulo)', 
     // posição nova (não lembrada): o App pode mover o elemento junto com o rótulo
     expect(onArrayCreated).toHaveBeenCalledWith(expect.objectContaining({ name: 'nums' }), { movable: true });
     expect(onDictCreated).toHaveBeenCalledWith(expect.objectContaining({ name: 'd' }), { movable: true });
-    expect(onMatrixCreated).toHaveBeenCalledWith(expect.objectContaining({ name: 'm' }), { movable: true });
+    // as linhas, sem nome, não ganham rótulo
+    expect(onArrayCreated).toHaveBeenCalledWith(expect.objectContaining({ name: 'm', orientation: 'grid' }), { movable: true });
+    expect(onArrayCreated).toHaveBeenCalledTimes(2);
+    expect(onMatrixCreated).not.toHaveBeenCalled();
   });
 
   test('onStructCreated recebe todo nó novo — o de grafo já com a lista de vizinhos', () => {
@@ -98,11 +101,14 @@ describe('adoptReadCursor (ponteiro digitado como "nums[i]" no canvas)', () => {
     expect(micro.pointers.has(p.id)).toBe(false);
   });
 
-  test('cursor de matriz', () => {
+  test('cursor de uma posição de lista de listas ("m[1][0]"), sem criar o cursor "m[1]"', () => {
     const { micro, env } = runDsl('m = [[1, 2], [3, 4]]');
+    const m = valores(micro.arrays).find((a) => a.name === 'm');
     const p = micro.addPointer(0, 0, 'tmp');
     env.adoptReadCursor(p.id, parseExpression('m[1][0]').ast);
-    expect(p.target).toMatchObject({ kind: 'matrixCell', row: 1, col: 0 });
+    expect(p).toMatchObject({ label: 'm[1][0]', readCursorKey: 'm[1][0]' });
+    expect(p.target).toEqual({ kind: 'arrayCell', arrayId: m.cells[1], index: 0 });
+    expect(valores(micro.pointers).filter((q) => q.readCursorKey)).toHaveLength(1);
   });
 
   test('expressão que não é posição de lista viva devolve null', () => {

@@ -82,11 +82,12 @@ describe('goToStep', () => {
     runner.goToStep(2);
     const d = [...micro.dicts.values()][0];
     d.cells[0].value = 999;
-    [...micro.matrices.values()][0].cells[0][0] = 999;
+    const linha0 = () => micro.arrays.get([...micro.arrays.values()].find((a) => a.name === 'm').cells[0]);
+    linha0().cells[0] = 999;
     runner.goToStep(1);
     runner.goToStep(2);
     expect([...micro.dicts.values()][0].cells[0].value).toBe(1);
-    expect([...micro.matrices.values()][0].cells[0][0]).toBe(0);
+    expect(linha0().cells[0]).toBe(0);
   });
 
   test('sem passos, não faz nada', () => {

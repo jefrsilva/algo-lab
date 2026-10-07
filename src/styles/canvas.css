@@ -82,6 +82,16 @@
   animation: micro-select-pulse 0.6s ease-out;
 }
 
+/* cópia do halo de uma grade por cima das linhas embutidas (ver
+   MicroCanvasView#_syncGridHalos) — só visual, acompanha a moldura */
+.grid-halo-overlay {
+  pointer-events: none;
+}
+
+.grid-halo-overlay:not(.dragging) {
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 /* ---- modo micro: nós de estrutura (prev | data | next) ---- */
 
 .micro-canvas {
@@ -463,6 +473,14 @@
   user-select: none;
 }
 
+/* "início"/"fim" de um deque, "topo" de uma pilha (ver arrayEndCaptions) —
+   discretos, menores que os índices */
+.array-index-label.array-end-caption {
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0.85;
+}
+
 .array-value-label {
   fill: var(--text-0);
   font-family: var(--font-mono);
@@ -789,6 +807,36 @@
   fill: color-mix(in srgb, var(--sel) 30%, transparent);
   stroke: var(--sel);
   stroke-width: 2;
+  pointer-events: none;
+}
+
+/* rótulo junto do cursor com a operação da ligação (criar e conectar /
+   conectar / desconectar) — ver MicroCanvasView#_renderLinkHint */
+.link-hint {
+  pointer-events: none;
+}
+
+.link-hint-bg {
+  fill: var(--sel);
+}
+
+.link-hint[data-action='unlink'] .link-hint-bg {
+  fill: var(--danger);
+}
+
+.link-hint-text {
+  fill: var(--bg-0);
+  font-family: var(--font-sans);
+  font-size: 12px; /* = LINK_HINT_FONT (MicroCanvasView.js) */
+  font-weight: 700; /* medido com bold: true */
+}
+
+/* nó novo que nasce onde a ligação terminar (espaço vazio) — círculo vazio e tracejado */
+.new-node-ghost {
+  fill: none;
+  stroke: var(--sel);
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
   pointer-events: none;
 }
 

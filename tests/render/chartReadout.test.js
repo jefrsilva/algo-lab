@@ -62,14 +62,39 @@ describe('chartReadout', () => {
     expect(chartReadout(c, ponto(c, 0, 0)).fnId).not.toBe('logn');
   });
 
-  test('null fora da área de plotagem e sem função marcada', () => {
+  test('null fora do retângulo do gráfico e sem função marcada', () => {
     const c = grafico();
     const { plot } = chartLayout(c);
-    expect(chartReadout(c, { x: plot.x - 1, y: plot.y + 10 })).toBeNull();
-    expect(chartReadout(c, { x: plot.x + 10, y: plot.y + plot.h + 1 })).toBeNull();
-    expect(chartReadout(c, { x: plot.x + plot.w + 5, y: plot.y + 10 })).toBeNull();
-    expect(chartReadout(c, { x: plot.x + 10, y: plot.y - 1 })).toBeNull();
+    expect(chartReadout(c, { x: -1, y: plot.y + 10 })).toBeNull();
+    expect(chartReadout(c, { x: c.width + 1, y: plot.y + 10 })).toBeNull();
+    expect(chartReadout(c, { x: plot.x + 10, y: -1 })).toBeNull();
+    expect(chartReadout(c, { x: plot.x + 10, y: c.height + 1 })).toBeNull();
     expect(chartReadout(grafico({ functions: [] }), { x: plot.x + 10, y: plot.y + 10 })).toBeNull();
+  });
+
+  test('fora da área de plotagem o n é preso nos limites do eixo: nMax à direita, 0 à esquerda', () => {
+    const c = grafico({ functions: ['n'] });
+    const { plot, px, py } = chartLayout(c);
+    // à direita do fim do eixo n (sobre os rótulos das curvas): lê o último ponto
+    expect(chartReadout(c, { x: plot.x + plot.w + 5, y: py(12) })).toMatchObject({ n: 12, value: 12, x: px(12) });
+    expect(chartReadout(c, { x: c.width, y: plot.y + 10 })).toMatchObject({ n: 12, fnId: 'n' });
+    // à esquerda da origem (sobre o título do eixo vertical): lê n = 0
+    expect(chartReadout(c, { x: plot.x - 10, y: py(0) })).toMatchObject({ n: 0, value: 0, x: px(0) });
+    expect(chartReadout(c, { x: 0, y: plot.y + 10 })).toMatchObject({ n: 0 });
+    // acima e abaixo da plotagem continua valendo o n da coluna do mouse
+    expect(chartReadout(c, { x: px(5), y: plot.y - 1 })).toMatchObject({ n: 5, value: 5 });
+    expect(chartReadout(c, { x: px(5), y: plot.y + plot.h + 1 })).toMatchObject({ n: 5, value: 5 });
+    // nMax fracionário: à direita vale floor(nMax)
+    const frac = grafico({ functions: ['n'], nMax: 12.5 });
+    expect(chartReadout(frac, { x: frac.width - 1, y: 50 })).toMatchObject({ n: 12 });
+  });
+
+  test('à direita do eixo n vale a curva mais próxima na vertical no último ponto', () => {
+    const c = grafico({ functions: ['1', 'n'], nMax: 12, yMax: 12 });
+    const { plot, py } = chartLayout(c);
+    const x = plot.x + plot.w + 20;
+    expect(chartReadout(c, { x, y: py(11) })).toMatchObject({ n: 12, fnId: 'n' });
+    expect(chartReadout(c, { x, y: py(2) })).toMatchObject({ n: 12, fnId: '1' });
   });
 
   test('modo automático: o eixo vertical vai até caber a maior curva', () => {

@@ -8,7 +8,8 @@ import { fitPopupInContainer } from './fitPopup.js';
  * linhas e colunas, ver `sizeFields`) e orientação (não se aplica à
  * matriz, ver `showOrientation`; a "pilha" — vertical com os índices
  * crescendo pra cima, o último elemento no topo — só pra lista/deque, ver
- * `showStack`), além da ação de remover. Aberto pelo
+ * `showStack`; a "grade" — as listas de dentro como linhas de uma tabela
+ * — só pra lista de listas, ver `showGrid`), além da ação de remover. Aberto pelo
  * botão direito no puxador da coleção (modo micro, ver
  * App#_onMicroContextMenu).
  */
@@ -22,7 +23,7 @@ export class ArraySettingsPopup {
     screenX,
     screenY,
     node,
-    { maxSize = 24, showSize = true, sizeFields = null, showOrientation = true, showStack = false, removeLabel = 'Remover array', onSave, onRemove, returnFocusTo },
+    { maxSize = 24, showSize = true, sizeFields = null, showOrientation = true, showStack = false, showGrid = false, removeLabel = 'Remover array', onSave, onRemove, returnFocusTo },
   ) {
     this.close();
     this._returnFocusTo = returnFocusTo || null;
@@ -100,10 +101,16 @@ export class ArraySettingsPopup {
     sBtn.className = 'array-orient-btn';
     sBtn.textContent = '⤒ Pilha';
     sBtn.title = 'Vertical com os índices crescendo para cima: o último elemento (o topo da pilha) fica no alto';
+    const gBtn = document.createElement('button');
+    gBtn.type = 'button';
+    gBtn.className = 'array-orient-btn';
+    gBtn.textContent = '▦ Grade';
+    gBtn.title = 'Cada lista de dentro vira uma linha de uma tabela (linhas de tamanhos diferentes ficam irregulares)';
     const syncOrientButtons = () => {
       hBtn.classList.toggle('active', orientation === 'horizontal');
       vBtn.classList.toggle('active', orientation === 'vertical');
       sBtn.classList.toggle('active', orientation === 'stack');
+      gBtn.classList.toggle('active', orientation === 'grid');
     };
     hBtn.addEventListener('click', () => {
       orientation = 'horizontal';
@@ -117,10 +124,15 @@ export class ArraySettingsPopup {
       orientation = 'stack';
       syncOrientButtons();
     });
+    gBtn.addEventListener('click', () => {
+      orientation = 'grid';
+      syncOrientButtons();
+    });
     syncOrientButtons();
     orientButtons.appendChild(hBtn);
     orientButtons.appendChild(vBtn);
     if (showStack) orientButtons.appendChild(sBtn);
+    if (showGrid) orientButtons.appendChild(gBtn);
     orientRow.appendChild(orientLabel);
     orientRow.appendChild(orientButtons);
 

@@ -611,12 +611,19 @@ export class MicroModel {
     node.cells[index] = targetArrayId ?? null;
   }
 
-  /** 'horizontal' | 'vertical' | 'stack' — a pilha (vertical com a posição 0
-   * embaixo e o último elemento no topo) não vale pra set, que não tem posição. */
+  /** 'horizontal' | 'vertical' | 'stack' | 'grid' — a pilha (vertical com a
+   * posição 0 embaixo e o último elemento no topo) não vale pra set, que não
+   * tem posição; a grade (as listas de dentro desenhadas como linhas de uma
+   * tabela, ver MicroCanvasView.js#layoutGrids) só pra lista de listas. */
   setArrayOrientation(arrayId, orientation) {
     const node = this.arrays.get(arrayId);
     if (!node) return;
-    if (orientation === 'horizontal' || orientation === 'vertical' || (orientation === 'stack' && !node.isSet)) node.orientation = orientation;
+    const ok =
+      orientation === 'horizontal' ||
+      orientation === 'vertical' ||
+      (orientation === 'stack' && !node.isSet) ||
+      (orientation === 'grid' && node.kind === 'arrayref');
+    if (ok) node.orientation = orientation;
   }
 
   /** Pilha que mudou de tamanho (tinha `oldLen` células): `y` é o TOPO da
@@ -847,7 +854,10 @@ export class MicroModel {
         x: n.x || 0,
         y: n.y || 0,
         kind: arrayKind(n.kind),
-        orientation: n.orientation === 'vertical' || (n.orientation === 'stack' && !n.isSet) ? n.orientation : 'horizontal',
+        orientation:
+          n.orientation === 'vertical' || (n.orientation === 'stack' && !n.isSet) || (n.orientation === 'grid' && n.kind === 'arrayref')
+            ? n.orientation
+            : 'horizontal',
         // célula tupla volta a ser `PyTuple` (ver pytuple.js#reviveRaw)
         cells: Array.isArray(n.cells) ? n.cells.map(reviveRaw) : [],
         name: n.name,

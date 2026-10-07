@@ -1,5 +1,6 @@
 import { parseStatement, parseExpression } from '../interpreter/parser.js';
 import { logicalLineAt } from '../interpreter/blockParser.js';
+import { measureText } from '../render/textMeasure.js';
 
 const KEYWORDS = new Set([
   'def', 'return', 'if', 'elif', 'else', 'while', 'for', 'in', 'not', 'and', 'or', 'is',
@@ -15,6 +16,7 @@ const TOKEN_RE = /(#.*$)|([fF]?"(?:[^"\\]|\\.)*"|[fF]?'(?:[^'\\]|\\.)*')|(\b\d+(
 const WORD_RE = /[A-Za-z0-9_]/;
 
 const PAD_TOP = 10;
+const PAD_LEFT = 12;
 const BP_ZONE_W = 16;
 const INDENT = '    ';
 const FONT_MIN = 16;
@@ -515,6 +517,7 @@ export class CodeEditor {
       const lead = lines[next].match(/^[ \t]*/)[0].length;
       const pos = this.textarea.selectionStart + lead;
       this.textarea.setSelectionRange(pos, pos);
+      this._scrollCursorIntoView();
       return;
     }
     const end = this.textarea.value.length;
@@ -818,6 +821,38 @@ export class CodeEditor {
     if (ta.value !== expected) ta.value = expected;
     ta.setSelectionRange(selStart, selEnd);
     this._onInput(); // "insertText" já dispara "input", mas a seleção final só existe agora
+    this._scrollCursorIntoView();
+  }
+
+  /** Rola o textarea (o mínimo necessário) até o cursor ficar visível, com a
+   * folga do padding. Na digitação normal o navegador já faz isso sozinho,
+   * mas nas edições feitas pelo próprio editor (Enter com auto-indentação,
+   * Tab, Ctrl+Enter…) o cursor é reposicionado por `setSelectionRange`, que
+   * não rola: Enter várias vezes no fim do código criava linhas abaixo da
+   * área visível sem acompanhá-las. Linhas têm altura fixa e a fonte é
+   * monoespaçada, então a posição sai da conta (linha × altura, largura do
+   * texto antes do cursor). Sem layout (painel oculto, jsdom), não faz nada. */
+  _scrollCursorIntoView() {
+    const ta = this.textarea;
+    const viewH = ta.clientHeight;
+    const viewW = ta.clientWidth;
+    if (!viewH || !viewW) return;
+    const pos = ta.selectionEnd;
+    const value = ta.value;
+    const lineStart = value.lastIndexOf('\n', pos - 1) + 1;
+    const line = value.slice(0, lineStart).split('\n').length - 1;
+    const top = PAD_TOP + line * this.lineHeight;
+    const bottom = top + this.lineHeight;
+    if (top - PAD_TOP < ta.scrollTop) ta.scrollTop = top - PAD_TOP;
+    else if (bottom + PAD_TOP > ta.scrollTop + viewH) ta.scrollTop = bottom + PAD_TOP - viewH;
+
+    // tabs contam até a próxima parada (tab-size: 4 no CSS)
+    let col = 0;
+    for (const ch of value.slice(lineStart, pos)) col = ch === '\t' ? col + INDENT.length - (col % INDENT.length) : col + 1;
+    const x = PAD_LEFT + measureText('0'.repeat(col), { size: this.fontSize, mono: true });
+    if (x - PAD_LEFT < ta.scrollLeft) ta.scrollLeft = Math.max(0, x - PAD_LEFT);
+    else if (x + PAD_LEFT > ta.scrollLeft + viewW) ta.scrollLeft = x + PAD_LEFT - viewW;
+    this._onScroll(); // o evento "scroll" é assíncrono — sincroniza gutter/realce já
   }
 
   _insertAtCursor(text) {

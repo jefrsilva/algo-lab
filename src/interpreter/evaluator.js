@@ -41,8 +41,9 @@
  *                                        `kind:'arrayref'` no modelo, com as
  *                                        listas de dentro em arrays sem nome
  *                                        (ver MicroRuntimeAdapter). Lista de
- *                                        listas NOVAS do mesmo tamanho
- *                                        continua virando 'matrix'
+ *                                        listas NOVAS de valores, do mesmo
+ *                                        tamanho, vem com `grid` (desenhada
+ *                                        como grade, ver NestedListValue)
  *   - {kind:'dict', entries: Map<number|string|PyTuple, TypedValue>} — AO
  *                                        CONTRÁRIO de array, É valor de
  *                                        primeira classe (mesma família de
@@ -84,9 +85,11 @@
  *                                        (ver interpreter.js#resolveIterable),
  *                                        nunca circula além disso
  *   - {kind:'matrix', rows: (number|string|boolean)[][]} — mesma família de
- *                                        'array' (só existe como valor de um
- *                                        literal "[[1, 2], [3, 4]]" ou de uma
- *                                        list comprehension), retangular
+ *                                        'array', retangular. O código não
+ *                                        cria mais matriz ("[[1, 2], [3, 4]]"
+ *                                        é uma 'nestedlist' com `grid`); o
+ *                                        valor só sobra pra uma matriz feita
+ *                                        à mão no canvas
  *   - {kind:'matrixref', name, rows}   — "m" quando "m" é uma matriz já viva
  *                                        no modelo (irmã de 'arrayref'); `rows`
  *                                        é uma CÓPIA do conteúdo, só pra
@@ -210,8 +213,12 @@ export const ArrayValue = (elements) => ({ kind: 'array', elements });
 /** Ver cabeçalho do arquivo — lista de nós/None. */
 export const NodeListValue = (items) => ({ kind: 'nodelist', items });
 const isNodeItem = (v) => v?.kind === 'struct' || v?.kind === 'none';
-/** Ver cabeçalho do arquivo — lista de listas (ou None). */
-export const NestedListValue = (items) => ({ kind: 'nestedlist', items });
+/** Ver cabeçalho do arquivo — lista de listas (ou None). `grid`: nasceu
+ * retangular, de listas novas de valores ("[[0] * c for _ in range(l)]") —
+ * o canvas a desenha como grade (ver MicroCanvasView.js#layoutGrids). Um
+ * mesmo objeto repetido em `items` ("[[0] * 3] * 3") é UMA lista só, igual
+ * Python (ver MicroRuntimeAdapter#_fillArray). */
+export const NestedListValue = (items, grid = false) => ({ kind: 'nestedlist', items, ...(grid ? { grid: true } : {}) });
 /** Valor que é uma LISTA (viva ou nova) — o que cabe numa célula de uma
  * lista de listas ('nestedlist'). */
 const LIST_KINDS = ['arrayref', 'array', 'nodelist', 'set', 'deque', 'nestedlist', 'matrix'];
@@ -359,10 +366,10 @@ export function loopValues(item, nVars) {
 
 /** Monta o valor de uma lista a partir dos itens já avaliados (literal
  * "[a, b, c]" ou resultado de uma list comprehension): só valores simples ->
- * 'array'; só nós/None -> 'nodelist'; só listas simples NOVAS ('array', do
- * mesmo tamanho, sem ser vazias) -> 'matrix'; qualquer outra lista de listas
- * (com None no meio, irregular, de listas vivas — "list(d.values())") ->
- * 'nestedlist'. Misturar nós e valores não tem representação visual — avisa
+ * 'array'; só nós/None -> 'nodelist'; lista de listas (com None no meio,
+ * irregular, de listas vivas — "list(d.values())") -> 'nestedlist', com
+ * `grid` quando são só listas NOVAS de valores do mesmo tamanho, sem ser
+ * vazias ("[[1, 2], [3, 4]]" — o canvas a desenha como grade). Misturar nós e valores não tem representação visual — avisa
  * no console (`env.warn`) em vez de sumir sem explicação. Qualquer outra
  * mistura devolve `undefined`, como sempre. */
 function listValueFrom(items, env) {
@@ -376,14 +383,13 @@ function listValueFrom(items, env) {
     env.warn?.('Lista de tuplas com nó/lista dentro ainda não é suportada — só tuplas de número, texto, bool ou None.');
     return undefined;
   }
-  if (items.length > 0 && items.every((v) => v?.kind === 'array')) {
-    const cols = items[0].elements.length;
-    if (cols > 0 && items.every((v) => v.elements.length === cols)) return MatrixValue(items.map((v) => [...v.elements]));
-  }
   if (items.some(isListItem) && items.every((v) => isListItem(v) || v?.kind === 'none')) {
-    // uma matriz literal DENTRO da lista ("[[[1, 2], [3, 4]], [5]]") vira
-    // lista de listas também — grade só existe no nível de cima
-    return NestedListValue(items.map((v) => (v.kind === 'matrix' ? NestedListValue(v.rows.map((row) => ArrayValue([...row]))) : v)));
+    const cols = items[0]?.elements?.length;
+    const grid = cols > 0 && items.every((v) => v.kind === 'array' && v.elements.length === cols);
+    return NestedListValue(
+      items.map((v) => (v.kind === 'matrix' ? NestedListValue(v.rows.map((row) => ArrayValue([...row])), true) : v)),
+      grid,
+    );
   }
   if (items.some((v) => v?.kind === 'matrixref')) {
     env.warn?.('Matriz dentro de lista ainda não é suportada — use uma lista de listas ("[[1, 2], [3]]").');
@@ -2027,13 +2033,6 @@ export function evaluate(node, env) {
         env.warn?.('"[[0] * colunas] * linhas" faz todas as linhas serem a MESMA lista em Python — use "[[0] * colunas for _ in range(linhas)]".');
         return undefined;
       }
-      // "[[]] * n" — mesma armadilha: as n listas seriam UMA só. Repetir
-      // listas que já existem ("[a] * 3") é o que o Python faz mesmo (3
-      // referências à mesma lista), então só uma lista NOVA dentro barra.
-      if (node.op === '*' && [left, right].some((v) => v.kind === 'nestedlist' && v.items.some((it) => isListItem(it) && it.kind !== 'arrayref'))) {
-        env.warn?.('"[[]] * n" faz todas as listas de dentro serem a MESMA lista em Python — use "[[] for _ in range(n)]".');
-        return undefined;
-      }
       return evalBinOp(node.op, left, right);
     }
 
@@ -2084,8 +2083,11 @@ function evalBinOp(op, left, right) {
   if (op === '*' && (left.kind === 'nestedlist' || right.kind === 'nestedlist')) {
     const [list, n] = left.kind === 'nestedlist' ? [left, right] : [right, left];
     if (n.kind !== 'scalar' || !Number.isInteger(n.value)) return undefined;
+    // "[[0] * 3] * 3": os itens se repetem como os MESMOS objetos — vira UMA
+    // lista só repetida em 3 linhas, a armadilha clássica do Python (ver
+    // MicroRuntimeAdapter#_fillArray)
     const items = Array.from({ length: Math.max(0, n.value) }, () => list.items).flat();
-    return items.length ? NestedListValue(items) : ArrayValue([]);
+    return items.length ? NestedListValue(items, list.grid) : ArrayValue([]);
   }
   if (op === '+' && (left.kind === 'nestedlist' || right.kind === 'nestedlist') && nestedItems(left) && nestedItems(right)) {
     return NestedListValue([...nestedItems(left), ...nestedItems(right)]);

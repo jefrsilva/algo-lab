@@ -92,6 +92,14 @@ export const MATRIX_ROW_BAND_W = 26; // faixa à esquerda com o índice de cada 
 export const MATRIX_COL_BAND_H = 18; // faixa em cima com o índice de cada COLUNA
 
 export const PORT_R = 6; // raio visual/alvo de clique dos "pinos" de ligação
+
+// rótulo da operação junto do cursor durante uma ligação (ver
+// MicroCanvasView#_renderLinkHint) — medidas em px de TELA
+export const LINK_HINT_TEXT = { create: 'criar e conectar', link: 'conectar', unlink: 'desconectar' };
+const LINK_HINT_FONT = 12; // = .link-hint-text (canvas.css)
+const LINK_HINT_H = 20;
+const LINK_HINT_PAD_X = 7;
+const LINK_HINT_OFFSET = { x: 14, y: 16 }; // abaixo e à direita da ponta do cursor
 // afastamento do contorno de destaque (`.node-halo`, ver canvas.css) em
 // relação à borda do nó — só visual, não entra em hit-test nem layout.
 const HALO_GAP = 5;
@@ -334,13 +342,15 @@ export function chartLayout(chart) {
  * [0, floor(nMax)]); entre as funções marcadas, vale a de menor distância
  * VERTICAL (na tela) entre o cursor e f(n) — ignorando as que já saíram pelo
  * topo (f(n) > yMax) e as que ainda não começaram (n < `from`, ex. log n em
- * n = 0). Devolve null fora da área de plotagem ou sem curva válida; senão
+ * n = 0). Vale em todo o retângulo do gráfico, não só na área de plotagem:
+ * à direita do fim do eixo n lê n máximo, à esquerda da origem lê 0 (senão
+ * acertar o x exato do último ponto seria quase impossível); acima/abaixo
+ * da plotagem a curva mais próxima na vertical continua valendo. Devolve
+ * null fora do gráfico ou sem curva válida; senão
  * { n, value, fnId, color, x, y }, com x/y (locais) do ponto na curva. */
 export function chartReadout(chart, localPt) {
   const { plot, nMax, yMax, px, py } = chartLayout(chart);
-  if (localPt.x < plot.x || localPt.x > plot.x + plot.w || localPt.y < plot.y || localPt.y > plot.y + plot.h) {
-    return null;
-  }
+  if (localPt.x < 0 || localPt.x > chart.width || localPt.y < 0 || localPt.y > chart.height) return null;
   const n = Math.min(Math.floor(nMax), Math.max(0, Math.round(((localPt.x - plot.x) / plot.w) * nMax)));
   let best = null;
   CHART_FUNCTIONS.forEach((fn) => {
@@ -689,6 +699,8 @@ function handleRectFor(width, height, vertical) {
 /** Array: à esquerda no horizontal, em cima no vertical (a direita/embaixo
  * ficam pros pinos e pro colchete de janela deslizante). */
 export function arrayHandleRect(node) {
+  // linha embutida numa grade: o puxador é o da grade
+  if (node.gridRow) return { x: 0, y: 0, w: 0, h: 0 };
   const { width, height } = arrayLayout(node);
   return handleRectFor(width, height, isVerticalOrientation(node.orientation));
 }
@@ -741,8 +753,109 @@ function appendHandleAndHalo(el, width, height, handle, boxR) {
   );
 }
 
+// ---- grade: lista de listas desenhada como tabela (orientação 'grid') ----
+// A lista de fora (`kind:'arrayref'`) desenha só a moldura — puxador,
+// índice de cada linha à esquerda, de cada coluna em cima —, e cada lista de
+// dentro é desenhada no lugar da sua linha, como uma fileira de células sem
+// faixa de índice nem puxador ("linha embutida"). Por ser o array de
+// verdade, a linha continua sendo clicável, editável e alvo de setas pelos
+// caminhos de array de sempre. Linhas de tamanhos diferentes ficam
+// irregulares; a grade tem a largura da maior. Mesmas faixas da matriz.
+export const GRID_ROW_BAND_W = MATRIX_ROW_BAND_W;
+export const GRID_COL_BAND_H = MATRIX_COL_BAND_H;
+
+/** Prepara o desenho das grades: em cada lista de listas com orientação
+ * 'grid' ("anfitriã"), põe a geometria em `gridGeom` (largura de coluna,
+ * número de colunas, quais linhas estão embutidas) e, em cada lista de
+ * dentro embutida, `gridRow` ({cellW, hostId, row}) e a posição (x/y) da
+ * linha dela. Campos derivados, refeitos a cada render (App#_layoutMicroGrids
+ * chama antes de desenhar, de procurar espaço livre e dos cliques) — nunca
+ * salvos (ver MicroModel#toJSON). Uma lista que aparece em mais de uma
+ * linha (ou grade) é embutida só na primeira; nas outras a linha mostra um
+ * pino com seta até ela. Uma grade dentro de outra é desenhada como linha. */
+export function layoutGrids(arrays) {
+  const isGrid = (a) => a.orientation === 'grid' && a.kind === 'arrayref';
+  let hosts = [...arrays.values()].filter(isGrid);
+  let embedded;
+  for (;;) {
+    embedded = new Map(); // id da lista de dentro -> {host, row}
+    hosts.forEach((h) =>
+      h.cells.forEach((id, row) => {
+        if (id && id !== h.id && arrays.has(id) && !embedded.has(id)) embedded.set(id, { host: h, row });
+      }),
+    );
+    const next = hosts.filter((h) => !embedded.has(h.id));
+    if (next.length === hosts.length) break;
+    hosts = next;
+  }
+  const hostSet = new Set(hosts);
+  arrays.forEach((a) => {
+    delete a.gridRow;
+    if (!hostSet.has(a)) delete a.gridGeom;
+  });
+  hosts.forEach((h) => {
+    const rows = h.cells.map((id, row) => {
+      const e = id ? embedded.get(id) : null;
+      return e?.host === h && e.row === row ? arrays.get(id) : null;
+    });
+    // largura de coluna única pra grade toda (as colunas se alinham)
+    const cellW = rows.reduce((w, r) => (r ? Math.max(w, r.kind === 'value' ? cellWidthFor(r.cells) : ARRAY_CELL) : w), ARRAY_CELL);
+    const cols = rows.reduce((n, r) => (r ? Math.max(n, r.cells.length) : n), 0);
+    h.gridGeom = { cellW, cols, embedded: rows.map(Boolean) };
+    rows.forEach((r, row) => {
+      if (!r) return;
+      r.x = h.x + GRID_ROW_BAND_W;
+      r.y = h.y + GRID_COL_BAND_H + row * ARRAY_CELL;
+      r.gridRow = { cellW, hostId: h.id, row };
+    });
+  });
+}
+
+/** Layout da moldura de uma grade (ver `layoutGrids`): a "célula" `i` da
+ * lista de fora é a faixa do índice da linha `i` (é ali que pousa a seta de
+ * "res[i]" e que o Shift+clique cria esse cursor); o pino só aparece numa
+ * linha que não está embutida (lista repetida). */
+function gridLayout(node) {
+  const { cellW, cols } = node.gridGeom;
+  const rows = node.cells.length;
+  const width = GRID_ROW_BAND_W + Math.max(1, cols) * cellW;
+  const height = GRID_COL_BAND_H + Math.max(1, rows) * ARRAY_CELL;
+  const cells = node.cells.map((_, i) => {
+    const y = GRID_COL_BAND_H + i * ARRAY_CELL;
+    return {
+      index: i,
+      x: 0,
+      y,
+      w: GRID_ROW_BAND_W,
+      h: ARRAY_CELL,
+      indexX: GRID_ROW_BAND_W / 2,
+      indexY: y + ARRAY_CELL / 2 + 4,
+      port: { x: GRID_ROW_BAND_W + PORT_R + 8, y: y + ARRAY_CELL / 2 },
+    };
+  });
+  const colLabels = Array.from({ length: cols }, (_, col) => ({ col, x: GRID_ROW_BAND_W + col * cellW + cellW / 2, y: GRID_COL_BAND_H - 5 }));
+  return { width, height, cells, colLabels, grid: true };
+}
+
+/** Layout de uma linha embutida numa grade: só as células, com a largura de
+ * coluna da grade, sem faixa de índice (os índices ficam na moldura). Uma
+ * linha vazia ainda ocupa uma célula, pra aparecer. */
+function gridRowLayout(node) {
+  const { cellW } = node.gridRow;
+  const n = node.cells.length;
+  const cells = node.cells.map((_, i) => {
+    const x = i * cellW;
+    // pino (linha de nós/listas) no meio da célula: embaixo dela já é a
+    // linha seguinte
+    return { index: i, x, y: 0, w: cellW, h: ARRAY_CELL, indexX: x + cellW / 2, indexY: -5, port: { x: x + cellW / 2, y: ARRAY_CELL / 2 } };
+  });
+  return { width: Math.max(cellW, n * cellW), height: ARRAY_CELL, cells };
+}
+
 /** Layout puro (não depende de x/y do nó) das células de um array, conforme orientação. */
 export function arrayLayout(node) {
+  if (node.gridRow) return gridRowLayout(node);
+  if (node.orientation === 'grid' && node.gridGeom) return gridLayout(node);
   const n = node.cells.length;
   // largura da célula: a que cabe o valor mais longo (ver `cellWidthFor`);
   // array de referências (a nós ou, numa lista de listas, a listas) mostra
@@ -805,7 +918,7 @@ export const ARRAY_DIVIDER_HIT = 8;
  * faixa das células (a faixa de índice continua criando cursores). Set não
  * tem posição, então não tem divisória. */
 export function arrayDividers(node) {
-  if (node.isSet || node.cells.length < 2) return [];
+  if (node.isSet || node.gridRow || node.gridGeom || node.cells.length < 2) return [];
   const half = ARRAY_DIVIDER_HIT / 2;
   const vertical = isVerticalOrientation(node.orientation);
   // na pilha a célula `at` fica ACIMA da anterior: a divisória é a borda de baixo dela
@@ -834,7 +947,7 @@ const END_CAPTION_LINE = 13;
  * hit-test não muda, e longe o bastante pra não encostar no halo de
  * seleção. Set não tem pontas. */
 export function arrayEndCaptions(node) {
-  if (node.isSet || (!node.isDeque && node.orientation !== 'stack')) return [];
+  if (node.isSet || node.gridRow || (!node.isDeque && node.orientation !== 'stack')) return [];
   const layout = arrayLayout(node);
   const n = node.cells.length;
   // textos de cada posição (índice -> linhas, de cima pra baixo)
@@ -1089,6 +1202,35 @@ function matrixCellEdgePoint(node, row, col, from) {
   return best;
 }
 
+/** `matrixCellEdgePoint` pra grade (ver `layoutGrids`): a célula `col` da
+ * linha `row` da grade `host` — linha embutida ou só a faixa do índice dela
+ * (`col` null: "res[i]", ou um ponteiro pra lista da linha inteira, que
+ * pousa à esquerda da linha). */
+function gridCellEdgePoint(host, row, col, from) {
+  const layout = arrayLayout(host);
+  const outer = outerBounds(host, layout, arrayHandleRect(host), 6);
+  const cy = host.y + GRID_COL_BAND_H + row * ARRAY_CELL + ARRAY_CELL / 2;
+  if (col == null) return { x: outer.left, y: cy, nx: -1, ny: 0 };
+  const cx = host.x + GRID_ROW_BAND_W + col * host.gridGeom.cellW + host.gridGeom.cellW / 2;
+  const candidates = [
+    { x: cx, y: outer.top, nx: 0, ny: -1 },
+    { x: cx, y: outer.bottom, nx: 0, ny: 1 },
+    { x: outer.left, y: cy, nx: -1, ny: 0 },
+    { x: outer.right, y: cy, nx: 1, ny: 0 },
+  ];
+  return candidates.reduce((best, c) => (Math.hypot(from.x - c.x, from.y - c.y) < Math.hypot(from.x - best.x, from.y - best.y) ? c : best));
+}
+
+/** `matrixAvoidBulge` pra grade. */
+function gridAvoidBulge(from, end, host) {
+  const o = outerBounds(host, arrayLayout(host), arrayHandleRect(host), 6);
+  const midX = (from.x + end.x) / 2;
+  const midY = (from.y + end.y) / 2;
+  if (!(midX > o.left && midX < o.right && midY > o.top && midY < o.bottom)) return null;
+  const CLEARANCE = 60;
+  return { x: end.x + end.nx * CLEARANCE, y: end.y + end.ny * CLEARANCE };
+}
+
 /** Equivalente de `arrayAvoidBulge` pra matriz: se a reta até o ponto de
  * chegada cruzaria a grade, puxa o controle da curva pra FORA, do lado em
  * que a seta pousa (`end.nx/ny`, ver `matrixCellEdgePoint`). */
@@ -1211,6 +1353,10 @@ export class MicroCanvasView {
     this.viewport.appendChild(this.variablesLayer);
     this.viewport.appendChild(this.labelsLayer);
     this.viewport.appendChild(this.areaHandlesLayer);
+    // rótulo da operação da ligação em andamento, por cima de tudo (ver
+    // `_renderLinkHint`)
+    this.linkHintLayer = svgEl('g', { class: 'link-hint-layer' });
+    this.viewport.appendChild(this.linkHintLayer);
     this.svg.appendChild(this.viewport);
     this.container.appendChild(this.svg);
 
@@ -1291,6 +1437,10 @@ export class MicroCanvasView {
    * @param edges [{id,x1,y1,targetKind:'struct'|'arrayCell',targetId?,targetArrayId?,targetIndex?,fromStructId?}]
    *   o ponto de chegada (endpoint na borda do alvo) é calculado aqui a partir da posição atual dos nós.
    * @param previewEdge {x1,y1,x2,y2,valid}|null linha tracejada durante um arraste de ligação
+   * @param newNodeGhost {cx,cy,r}|null círculo tracejado onde nasce o nó novo de uma ligação
+   *   solta em espaço vazio (ferramenta "Ligar nós"/Shift + arraste), ver `_renderNewNodeGhost`
+   * @param linkHint {x,y,action,scale}|null rótulo junto do cursor com o que concluir a ligação
+   *   ali faz ('create' | 'link' | 'unlink'), ver `_renderLinkHint`
    * @param linkSource {x,y,type,field}|null struct e campo ('prev'|'next'|null pra grafo) que a
    *   ferramenta "Ligar nós" usa — sob o mouse ou da ligação em andamento, ver `_renderLinkSource`
    * @param labels [{id,x,y,text,color,fontSize,selected,dragging}] labels de texto soltas (modo "Texto")
@@ -1321,6 +1471,8 @@ export class MicroCanvasView {
     charts = [],
     edges,
     previewEdge = null,
+    newNodeGhost = null,
+    linkHint = null,
     linkSource = null,
     selectionRect = null,
     simplifiedNodes = false,
@@ -1347,6 +1499,8 @@ export class MicroCanvasView {
     this._renderEdges(edges, structById, arrayById, dictById, simplifiedNodes, matrixById);
     this._renderPreviewEdge(previewEdge);
     this._renderLinkSource(linkSource, simplifiedNodes);
+    this._renderNewNodeGhost(newNodeGhost);
+    this._renderLinkHint(linkHint);
     this._renderSelectionRect(selectionRect);
 
     const selected =
@@ -1440,6 +1594,52 @@ export class MicroCanvasView {
     this._linkSourceEl.removeAttribute('display');
     this._linkSourceEl.setAttribute('d', structLinkFieldPath(linkSource, linkSource.field, simplified));
     this._linkSourceEl.dataset.field = linkSource.field ?? 'neighbors';
+  }
+
+  /** Círculo vazio e tracejado onde nasce o nó novo de uma ligação que
+   * termina em espaço vazio — mesmo padrão de `_renderPreviewEdge`. */
+  _renderNewNodeGhost(ghost) {
+    if (!this._newNodeGhostEl) {
+      this._newNodeGhostEl = svgEl('circle', { class: 'new-node-ghost' });
+      this.linkSourceLayer.appendChild(this._newNodeGhostEl);
+    }
+    if (!ghost) {
+      this._newNodeGhostEl.setAttribute('display', 'none');
+      return;
+    }
+    this._newNodeGhostEl.removeAttribute('display');
+    this._newNodeGhostEl.setAttribute('cx', ghost.cx);
+    this._newNodeGhostEl.setAttribute('cy', ghost.cy);
+    this._newNodeGhostEl.setAttribute('r', ghost.r);
+  }
+
+  /** Rótulo junto do cursor durante uma ligação ("Ligar nós"/Shift +
+   * arraste): diz o que soltar/clicar ali faz — "criar e conectar",
+   * "conectar" ou "desconectar" (`LINK_HINT_TEXT`). Fica abaixo e à direita
+   * da ponta do cursor e com o mesmo tamanho na tela em qualquer zoom (a
+   * escala do viewport é desfeita). Mesmo padrão de `_renderPreviewEdge`: um
+   * único grupo reaproveitado, escondido quando não há o que mostrar. */
+  _renderLinkHint(hint) {
+    if (!this._linkHintEl) {
+      this._linkHintEl = svgEl('g', { class: 'link-hint' });
+      this._linkHintBg = svgEl('rect', { class: 'link-hint-bg', rx: 5, ry: 5, height: LINK_HINT_H });
+      this._linkHintText = svgEl('text', { class: 'link-hint-text', x: LINK_HINT_PAD_X, y: LINK_HINT_H / 2 + 4 });
+      this._linkHintEl.append(this._linkHintBg, this._linkHintText);
+      this.linkHintLayer.appendChild(this._linkHintEl);
+    }
+    if (!hint) {
+      this._linkHintEl.setAttribute('display', 'none');
+      return;
+    }
+    const text = LINK_HINT_TEXT[hint.action] ?? '';
+    this._linkHintEl.removeAttribute('display');
+    this._linkHintEl.dataset.action = hint.action;
+    this._linkHintEl.setAttribute(
+      'transform',
+      `translate(${hint.x}, ${hint.y}) scale(${1 / (hint.scale || 1)}) translate(${LINK_HINT_OFFSET.x}, ${LINK_HINT_OFFSET.y})`,
+    );
+    this._linkHintText.textContent = text;
+    this._linkHintBg.setAttribute('width', measureText(text, { size: LINK_HINT_FONT, bold: true }) + 2 * LINK_HINT_PAD_X);
   }
 
   /** Retângulo tracejado do arraste de seleção em área (modo Selecionar,
@@ -1809,8 +2009,16 @@ export class MicroCanvasView {
         }
       } else if (edge.targetKind === 'arrayCell') {
         const arr = arrayById.get(edge.targetArrayId);
+        // grade: a célula de uma linha embutida ("res[i][j]") ou a faixa do
+        // índice da linha ("res[i]") pousam por fora da grade inteira, como
+        // numa matriz (ver gridCellEdgePoint)
+        const host = arr?.gridRow ? arrayById.get(arr.gridRow.hostId) : arr?.gridGeom ? arr : null;
         let avoidBulge = null;
-        if (arr) {
+        if (host) {
+          const from = { x: edge.x1, y: edge.y1 };
+          end = arr === host ? gridCellEdgePoint(host, edge.targetIndex, null, from) : gridCellEdgePoint(host, arr.gridRow.row, edge.targetIndex, from);
+          avoidBulge = gridAvoidBulge(from, end, host);
+        } else if (arr) {
           end = arrayCellEdgePoint(arr, edge.targetIndex, { x: edge.x1, y: edge.y1 });
           avoidBulge = arrayAvoidBulge({ x: edge.x1, y: edge.y1 }, end, arr);
         }
@@ -1822,7 +2030,11 @@ export class MicroCanvasView {
         // reta cruza por cima da faixa de índices), mesmo cálculo de "ponto
         // mais próximo do AABB" usado pros structs.
         const arr = arrayById.get(edge.targetArrayId);
-        if (arr) {
+        const host = arr?.gridRow ? arrayById.get(arr.gridRow.hostId) : null;
+        if (host) {
+          // a lista de uma linha da grade ("linha = res[0]"): à esquerda da linha
+          end = gridCellEdgePoint(host, arr.gridRow.row, null, { x: edge.x1, y: edge.y1 });
+        } else if (arr) {
           // caixa + puxador, pra seta não atravessar a aba
           const { width, height } = arrayLayout(arr);
           const b = boxWithHandle(width, height, arrayHandleRect(arr));
@@ -2339,6 +2551,9 @@ export class MicroCanvasView {
         cellEl.classList.toggle('array-cell-target', !!node.targetCellIndexes?.has(i));
       });
       this._renderWindowBrackets(el, node, pointerEdges);
+      // linha embutida numa grade vai pra cima da moldura (que pode ter sido
+      // criada depois dela, ex: "list(d.values())")
+      if (node.gridRow) this.arraysLayer.appendChild(el);
     });
   }
 
@@ -2421,12 +2636,19 @@ export class MicroCanvasView {
   /** Reconstrói o conteúdo interno (célula por célula) apenas quando algo estrutural mudou. */
   _buildArrayContent(el, node) {
     const kindTag = node.isSet ? 'set' : node.isDeque ? `deque:${node.maxlen ?? ''}` : '';
-    const sig = `${node.kind}|${node.orientation}|${kindTag}|${node.cells.join(',')}`;
+    const gridTag = node.gridRow ? `row:${node.gridRow.cellW}` : node.gridGeom ? `grid:${node.gridGeom.cellW}:${node.gridGeom.cols}:${node.gridGeom.embedded.join('')}` : '';
+    const sig = `${node.kind}|${node.orientation}|${kindTag}|${gridTag}|${node.cells.join(',')}`;
     if (el.dataset.sig === sig) return;
     el.dataset.sig = sig;
     el.innerHTML = '';
     el.classList.toggle('set-node', !!node.isSet);
     el.classList.toggle('deque-node', !!node.isDeque);
+    el.classList.toggle('grid-node', !!node.gridGeom);
+    el.classList.toggle('grid-row-node', !!node.gridRow);
+    if (node.gridGeom) {
+      this._buildGridFrame(el, node);
+      return;
+    }
 
     const layout = arrayLayout(node);
     // set (ver MicroModel#addArray, `isSet`): mesma geometria de array (hit-
@@ -2434,11 +2656,15 @@ export class MicroCanvasView {
     // posição — com caixa mais arredondada, células em "pílula" e o rótulo
     // "set" na faixa onde ficariam os índices (só na horizontal, a vertical
     // não tem largura pra isso).
-    const boxR = node.isSet ? 14 : 8;
-    appendHandleAndHalo(el, layout.width, layout.height, arrayHandleRect(node), boxR);
+    // linha embutida numa grade: só a fileira de células, sem puxador nem
+    // halo (são os da grade) e sem cantos arredondados
+    const boxR = node.gridRow ? 0 : node.isSet ? 14 : 8;
+    if (!node.gridRow) appendHandleAndHalo(el, layout.width, layout.height, arrayHandleRect(node), boxR);
     const box = svgEl('rect', { class: 'array-box', width: layout.width, height: layout.height, rx: boxR, ry: boxR });
     el.appendChild(box);
-    if (node.isSet && !isVerticalOrientation(node.orientation)) {
+    if (node.gridRow) {
+      // a linha sabe só as próprias células — o resto fica pra moldura
+    } else if (node.isSet && !isVerticalOrientation(node.orientation)) {
       const caption = svgEl('text', { class: 'array-index-label set-caption', x: SET_PAD + 2, y: ARRAY_INDEX_H - 4 });
       caption.textContent = node.cells.length === 0 ? 'set()' : 'set';
       el.appendChild(caption);
@@ -2468,7 +2694,7 @@ export class MicroCanvasView {
           ry: node.isSet ? (c.h - 2 * inset) / 2 : 4,
         }),
       );
-      if (!node.isSet) {
+      if (!node.isSet && !node.gridRow) {
         // faixa do índice: arrastar dali cria um cursor pra posição (ver
         // App#_findMicroArrayIndexAt) — só dá o cursor do mouse, o hit-test
         // é por coordenada
@@ -2649,6 +2875,38 @@ export class MicroCanvasView {
       });
       el.querySelectorAll('.matrix-row-label').forEach((l) => l.classList.toggle('matrix-index-active', activeRows.has(l.dataset.row)));
       el.querySelectorAll('.matrix-col-label').forEach((l) => l.classList.toggle('matrix-index-active', activeCols.has(l.dataset.col)));
+    });
+  }
+
+  /** Moldura de uma grade (ver `layoutGrids`): puxador, caixa, índice de
+   * cada coluna em cima e de cada linha à esquerda. As linhas embutidas são
+   * desenhadas pelas próprias listas de dentro, por cima (ver
+   * `_renderArrays`); aqui só entra o que ocupa uma linha sem lista
+   * embutida — None (∅) ou uma lista repetida (pino com seta até ela). */
+  _buildGridFrame(el, node) {
+    const layout = arrayLayout(node);
+    appendHandleAndHalo(el, layout.width, layout.height, arrayHandleRect(node), 8);
+    el.appendChild(svgEl('rect', { class: 'array-box', width: layout.width, height: layout.height, rx: 8, ry: 8 }));
+    layout.colLabels.forEach((l) => {
+      const t = svgEl('text', { class: 'array-index-label matrix-col-label', x: l.x, y: l.y, 'text-anchor': 'middle', 'data-col': l.col });
+      t.textContent = String(l.col);
+      el.appendChild(t);
+    });
+    layout.cells.forEach((c, i) => {
+      // faixa do índice da linha: é a "célula" i da lista de fora (destaque
+      // de "res[i]", ver `targetCellIndexes` em `_renderArrays`)
+      el.appendChild(svgEl('rect', { class: 'array-cell grid-row-band', x: c.x, y: c.y, width: c.w, height: c.h, rx: 4, ry: 4 }));
+      const t = svgEl('text', { class: 'array-index-label matrix-row-label', x: c.indexX, y: c.indexY, 'text-anchor': 'middle', 'data-row': i });
+      t.textContent = String(i);
+      el.appendChild(t);
+      if (node.gridGeom.embedded[i]) return;
+      if (!node.cells[i]) {
+        const nullMark = svgEl('text', { class: 'struct-null-mark', x: GRID_ROW_BAND_W + node.gridGeom.cellW / 2, y: c.y + c.h / 2 + 5, 'text-anchor': 'middle' });
+        nullMark.textContent = '∅';
+        el.appendChild(nullMark);
+      } else {
+        el.appendChild(svgEl('circle', { class: 'struct-port array-cell-port', cx: c.port.x, cy: c.port.y, r: PORT_R }));
+      }
     });
   }
 

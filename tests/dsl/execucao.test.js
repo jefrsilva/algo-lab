@@ -75,8 +75,6 @@ describe('avisos no console (⚠) em vez de exceção', () => {
     ['s = {1}\nprint(s[1:])', 'Set não tem posições'],
     ['x = ord("ab")', 'ord(c): c precisa ser UM caractere'],
     ['x = chr(-1)', 'chr(n): n precisa ser um inteiro'],
-    ['r = [[]] * 3', '"[[]] * n" faz todas as listas de dentro serem a MESMA lista'],
-    ['m = [[1, 2], [3, 4]]\nm.append([5, 6])', '"m" é uma matriz'],
     ['nums = [1, 2]\nnums.append([3])', 'nums: lista misturando listas com nós ou valores'],
     ['a = []\na.append(a)', 'Lista guardada dentro dela mesma'],
     ['from collections import deque\nq = deque()\nq.append([1])', 'q: deque de listas ainda não é suportado'],
@@ -337,10 +335,11 @@ describe('estado do modelo', () => {
     expect(steps.some((s) => s.kind === 'limit')).toBe(false);
   });
 
-  test('matriz guarda as linhas', () => {
+  test('"matriz" do código é uma lista de listas em grade, com as linhas como listas', () => {
     const { micro } = runDsl(linhas('m = [[0] * 2 for _ in range(2)]', 'm[1][0] = 7'));
-    const m = valores(micro.matrices).find((x) => x.name === 'm');
-    expect(m.cells).toEqual([
+    const m = array(micro, 'm');
+    expect(m).toMatchObject({ kind: 'arrayref', orientation: 'grid' });
+    expect(m.cells.map((id) => micro.arrays.get(id).cells)).toEqual([
       [0, 0],
       [7, 0],
     ]);
@@ -367,10 +366,25 @@ describe('lista de listas', () => {
     expect(primeira.name).toBe('m[0]');
   });
 
-  test('linhas do mesmo tamanho continuam virando matriz', () => {
-    const { micro } = runDsl('m = [[1, 2], [3, 4]]');
-    expect(micro.matrices.size).toBe(1);
-    expect(micro.arrays.size).toBe(0);
+  test('listas novas do mesmo tamanho nascem em grade; as outras, como lista com setas', () => {
+    const { micro } = runDsl(linhas('m = [[1, 2], [3, 4]]', 'r = [[1], [2, 3]]', 'v = [[]] + [[]]', 'a = [1, 2]', 'w = [a, [3, 4]]'));
+    expect(micro.matrices.size).toBe(0);
+    expect(array(micro, 'm').orientation).toBe('grid');
+    expect(['r', 'v', 'w'].map((n) => array(micro, n).orientation)).toEqual(['horizontal', 'horizontal', 'horizontal']);
+  });
+
+  test('a grade ganha linhas e as linhas mudam de tamanho, como em Python', () => {
+    const { micro, output } = runDsl(linhas('m = [[1, 2], [3, 4]]', 'm.append([5])', 'm[0].append(9)', 'print(m)'));
+    expect(output).toEqual(['[[1, 2, 9], [3, 4], [5]]']);
+    expect(array(micro, 'm').orientation).toBe('grid');
+  });
+
+  test('"[[0] * 3] * 3" é UMA lista repetida nas três linhas', () => {
+    const { micro, output } = runDsl(linhas('t = [[0] * 3] * 3', 't[0][0] = 1', 'print(t)'));
+    expect(output).toEqual(['[[1, 0, 0], [1, 0, 0], [1, 0, 0]]']);
+    const t = array(micro, 't');
+    expect(new Set(t.cells).size).toBe(1);
+    expect(micro.arrays.size).toBe(2);
   });
 
   test('lista vazia vira lista de listas no primeiro append de uma lista', () => {

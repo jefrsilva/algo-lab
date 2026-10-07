@@ -655,6 +655,38 @@ print(ord("a"), chr(98), ord("z") - ord("a"))
 `,
   },
   {
+    nome: "\"matriz\" é lista de listas: ganha linha, linha muda de tamanho, for row, alias de linha e [[0] * 3] * 3",
+    codigo: `
+m = [[1, 2], [3, 4]]
+m.append([5, 6])
+m[0].append(9)
+print(m, len(m), len(m[0]))
+for row in m:
+    print(row)
+row = m[1]
+row[0] = 30
+print(m)
+t = [[0] * 3] * 3
+t[0][0] = 1
+print(t)
+dp = [[0] * 3 for _ in range(2)]
+dp[1][2] = 7
+print(dp, dp == [[0, 0, 0], [0, 0, 7]])
+cubo = [[[1, 2], [3, 4]], [[5, 6], [7, 8]]]
+print(cubo[1][0][1])
+`,
+    saida: `
+[[1, 2, 9], [3, 4], [5, 6]] 3 3
+[1, 2, 9]
+[3, 4]
+[5, 6]
+[[1, 2, 9], [30, 4], [5, 6]]
+[[1, 0, 0], [1, 0, 0], [1, 0, 0]]
+[[0, 0, 0], [0, 0, 7]] True
+6
+`,
+  },
+  {
     nome: "lista de listas: irregular, append/pop/índice, aliasing, buckets, fatia, + e retorno de função",
     codigo: `
 m = [[1], [2, 3]]

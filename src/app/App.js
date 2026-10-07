@@ -21,7 +21,12 @@ import {
   variableValueRect,
   arrayLayout,
   arrayHandleRect,
+  arrayEndCaptions,
   arrayOuterBox,
+  layoutGrids,
+  GRID_ROW_BAND_W,
+  GRID_COL_BAND_H,
+  ARRAY_CELL,
   arrayDividers,
   isVerticalOrientation,
   dictHandleRect,
@@ -232,11 +237,15 @@ export class App {
     // ('prev'|'next', ou null num nó de grafo), toPt, targetId|null,
     // pending } — `pending` quando começou por clique (espera o clique no
     // destino, ver `_onMicroLinkPointerDown`), senão é um Shift + arraste
-    // (ver `_startMicroLinkDrag`)
+    // (ver `_startMicroLinkDrag`); `targetId`/`newNodeAt` dizem onde ela
+    // termina se concluída ali (ver `_microLinkDropAt`)
     this._microLinkDraft = null;
     // metade do nó sob o mouse com a ferramenta "Ligar nós" e nenhuma
     // ligação em andamento — { id, field }, ver `_updateMicroLinkHover`
     this._microLinkHover = null;
+    // o próximo contextmenu é o do botão direito que já cancelou um Shift +
+    // arraste de ligação — engolido, ver `_onMicroLinkDragContextMenu`
+    this._microSwallowContextMenu = false;
     this._microGroupDragPositions = null; // Map<id,{x,y}> durante um arraste de grupo (seleção múltipla)
     this._microSelectionPreview = null; // {x0,y0,x1,y1} durante um arraste de seleção em área
     // o Set `microSelectedIds` de uma seleção que COMEÇOU por retângulo (sem
@@ -249,6 +258,11 @@ export class App {
     this._boundKeyUp = (e) => this._onKeyUp(e);
     window.addEventListener('keydown', this._boundKeyDown);
     window.addEventListener('keyup', this._boundKeyUp);
+    // na captura, antes do contextmenu do canvas e fora dele também: o botão
+    // direito cancela o Shift + arraste de ligação (ver
+    // `_onMicroLinkDragContextMenu`)
+    this._boundLinkDragContextMenu = (e) => this._onMicroLinkDragContextMenu(e);
+    window.addEventListener('contextmenu', this._boundLinkDragContextMenu, true);
     // solta a barra de espaço "presa" se a janela perder o foco no meio do
     // pressionamento (ex: alt-tab) — sem isso o botão esquerdo continuaria
     // movendo o canvas indefinidamente.
@@ -554,6 +568,12 @@ export class App {
     // janela de Configurações é modal: ela mesma trata Esc/Tab, e nenhum
     // atalho do app vale por trás dela
     if (this.settingsDialog.isOpen) return;
+    // Esc no meio do Shift + arraste de ligação (botão ainda pressionado)
+    if (e.key === 'Escape' && this._microPointer?.hit === 'link-drag') {
+      e.preventDefault();
+      this._abortMicroLinkDrag();
+      return;
+    }
     // ligação pendente da ferramenta "Ligar nós" (ver
     // `_onMicroLinkPointerDown`): Tab troca o ponteiro (prev↔next,
     // left↔right) e Esc cancela — antes do Tab-pro-código logo abaixo, e
@@ -850,8 +870,11 @@ export class App {
    * está numa — os dois cursores da janela sempre na mesma cor do colchete
    * (sem cor na janela, os dois na cor padrão do tema). */
   _microEffectiveColors() {
-    if (!this.microWindows.length) return this.microColors;
+    const rows = [...this.micro.arrays.values()].filter((a) => a.gridRow && this.microColors.has(a.gridRow.hostId) && !this.microColors.has(a.id));
+    if (!this.microWindows.length && !rows.length) return this.microColors;
     const colors = new Map(this.microColors);
+    // linha embutida numa grade pega a cor da grade (sem cor própria)
+    rows.forEach((a) => colors.set(a.id, this.microColors.get(a.gridRow.hostId)));
     this.micro.pointers.forEach((p) => {
       const win = this._microPointerWindow(p);
       if (!win) return;
@@ -926,8 +949,8 @@ export class App {
   /** Recalcula a leitura (ver `chartReadout`) na última posição do mouse:
    * basta o hover (sem tecla), mas só sem botão pressionado (`idle`) nem
    * gesto em andamento (`_microPointer` — clique, arrasto, redimensionamento)
-   * e sobre a área de plotagem do gráfico de cima (o último desenhado) — o de
-   * baixo não é lido através do de cima. */
+   * e sobre o gráfico de cima (o último desenhado; fora da área de plotagem
+   * o n é preso nos limites do eixo) — o de baixo não é lido através do de cima. */
   _updateMicroChartReadout(idle) {
     let next = null;
     if (idle && this._microHoverScreen && !this._microPointer && this.microCharts.size) {
@@ -1280,9 +1303,9 @@ export class App {
     const key = microLayoutKey('array-label', { name: arrayNode.name, frameId: arrayNode.frameId });
     // o lugar do array foi escolhido só pelo tamanho da caixa: se os rótulos
     // de ponta dele ("início"/"fim" de um deque) caem em cima de outro
-    // elemento, ele procura outro lugar livre
+    // elemento, ele procura outro lugar livre (array sem rótulo de ponta não muda)
     const outer = this._microArrayOuterRect(arrayNode);
-    if (movable && !this._microFreeAt(outer, outer.w, outer.h, [arrayNode.id])) {
+    if (movable && arrayEndCaptions(arrayNode).length && !this._microFreeAt(outer, outer.w, outer.h, [arrayNode.id])) {
       this._microMoveBlock([arrayNode.id]);
       const arrayKey = microLayoutKey('array', { name: arrayNode.name, frameId: arrayNode.frameId });
       if (arrayKey && this.microLayout.has(arrayKey)) this.microLayout.set(arrayKey, { x: arrayNode.x, y: arrayNode.y });
@@ -1345,6 +1368,13 @@ export class App {
    * partir do centro do viewport (`_findFreeMicroPosition`) e, se houver
    * chave, registra a posição escolhida pra próxima vez. */
   _microCreatePosition(kind, size = 1, layoutKey = null, near = null) {
+    // linha de uma lista de listas desenhada em grade: vai direto pro lugar
+    // dela na grade (ver MicroCanvasView.js#layoutGrids) — sem posição
+    // lembrada, a grade é quem manda
+    const host = near?.belowArrayId ? this.micro.arrays.get(near.belowArrayId) : null;
+    if (kind === 'array' && host?.orientation === 'grid' && near.index != null) {
+      return { x: host.x + GRID_ROW_BAND_W, y: host.y + GRID_COL_BAND_H + near.index * ARRAY_CELL };
+    }
     const fresh = near && this._microFindById(near.id);
     if (layoutKey && this.microLayout.has(layoutKey)) {
       const pos = { ...this.microLayout.get(layoutKey), remembered: true };
@@ -1541,8 +1571,10 @@ export class App {
   /** Retângulos ocupados por todo elemento vivo do canvas micro (usado só
    * pra evitar sobreposição ao posicionar um elemento novo). */
   _microOccupiedRects(exceptIds = []) {
+    this._layoutMicroGrids();
     const rects = [];
-    const skip = new Set(exceptIds);
+    // linha embutida numa grade: o espaço dela já é o da grade
+    const skip = new Set([...exceptIds, ...[...this.micro.arrays.values()].filter((a) => a.gridRow).map((a) => a.id)]);
     const each = (map, rectOf) => map.forEach((n, id) => skip.has(id) || rects.push(rectOf(n)));
     each(this.micro.structs, (n) => ({ x: n.x, y: n.y, w: STRUCT_W, h: STRUCT_H }));
     each(this.micro.pointers, (n) => ({ x: n.x, y: n.y, w: pointerWidth(n, this.microFullNames), h: PTR_H }));
@@ -1748,24 +1780,46 @@ export class App {
       showSize,
       // pilha (índices crescendo pra cima) só faz sentido com posição — set não tem
       showStack: !node.isSet,
+      // grade: as listas de dentro como linhas de uma tabela
+      showGrid: node.kind === 'arrayref',
       onSave: ({ name, size, orientation }) => {
         this.micro.renameArray(node.id, name);
+        const wasGrid = node.orientation === 'grid';
         // orientação antes do tamanho: virando pilha, as células novas já
         // entram em cima (base parada, ver MicroModel#_keepStackBase)
         this.micro.setArrayOrientation(node.id, orientation);
         this.microRunner.updateOrientation(node.id, orientation);
+        if (wasGrid && node.orientation !== 'grid') this._microUnstackGridRows(node);
         if (size !== undefined) this.micro.resizeArray(node.id, size);
         if (this.microSelectedId === node.id) this._syncCodeEditorSelection('array', node.id);
         this._renderMicroOnly();
       },
       onRemove: () => {
-        this.micro.removeArray(node.id);
+        this.microRuntime.removeArray(node.id);
         if (this.microSelectedId === node.id) {
           this.microSelectedId = null;
           this._syncCodeEditorSelection(null, null);
         }
         this._renderMicroOnly();
       },
+    });
+  }
+
+  /** A grade `node` deixou de ser grade: as listas de dentro, que estavam
+   * no lugar das linhas dela, vão pra baixo dela, uma embaixo da outra (o
+   * mesmo lugar onde nasceriam, ver `_microCreatePosition`), com a seta de
+   * cada célula aparecendo. */
+  _microUnstackGridRows(node) {
+    const rows = [...new Set(node.cells)].map((id) => this.micro.arrays.get(id)).filter((a) => a?.gridRow?.hostId === node.id);
+    rows.forEach((a) => delete a.gridRow);
+    delete node.gridGeom;
+    const handle = arrayHandleRect({ cells: [0], orientation: 'horizontal' });
+    rows.forEach((a) => {
+      const { width, height } = arrayLayout(a);
+      const base = { x: node.x + handle.w, y: node.y + arrayLayout(node).height + MICRO_ARROW_GAP };
+      // fora da conta de espaço livre enquanto procura: ainda está em cima da lista
+      const pos = this._findFreeMicroPosition(base, width, height, 'below', [a.id]);
+      this._microSetNodePos(a.id, pos.x, pos.y);
     });
   }
 
@@ -2016,7 +2070,7 @@ export class App {
   _microRemoveById(id) {
     if (this.micro.structs.has(id)) this.micro.removeStruct(id);
     else if (this.micro.pointers.has(id)) this.micro.removePointer(id);
-    else if (this.micro.arrays.has(id)) this.micro.removeArray(id);
+    else if (this.micro.arrays.has(id)) this.microRuntime.removeArray(id); // leva as listas de dentro sem dono
     else if (this.micro.dicts.has(id)) this.micro.removeDict(id);
     else if (this.micro.matrices.has(id)) this.micro.removeMatrix(id);
     else if (this.micro.variables.has(id)) this.micro.removeVariable(id);
@@ -2121,6 +2175,8 @@ export class App {
     this.micro.structs.forEach((n) => { if (hits(n.x, n.y, STRUCT_W, STRUCT_H, n.id)) ids.push(n.id); });
     this.micro.pointers.forEach((n) => { if (hits(n.x, n.y, pointerWidth(n, this.microFullNames), PTR_H, n.id)) ids.push(n.id); });
     this.micro.arrays.forEach((n) => {
+      // linha embutida numa grade não é selecionável sozinha — é a grade
+      if (n.gridRow) return;
       const { width, height } = arrayLayout(n);
       if (hits(n.x, n.y, width, height, n.id)) ids.push(n.id);
     });
@@ -2415,7 +2471,9 @@ export class App {
   }
 
   _findMicroArrayAt(worldPt) {
-    for (const node of this.micro.arrays.values()) {
+    // linhas embutidas numa grade primeiro: ficam por cima da moldura
+    const arrays = [...this.micro.arrays.values()].sort((a, b) => !!b.gridRow - !!a.gridRow);
+    for (const node of arrays) {
       if (!this._microPickable(node)) continue;
       const { width, height } = arrayLayout(node);
       if (worldPt.x >= node.x && worldPt.x <= node.x + width && worldPt.y >= node.y && worldPt.y <= node.y + height) return node;
@@ -2487,7 +2545,17 @@ export class App {
    * célula: `c.y` (horizontal) / `c.x` (vertical) é justamente a altura/
    * largura dela. */
   _findMicroArrayIndexAt(node, worldPt) {
-    if (node.isSet) return null;
+    // linha embutida numa grade não tem faixa de índice; na grade, a faixa
+    // do índice de cada linha (à esquerda) é a "célula" daquela posição
+    if (node.isSet || node.gridRow) return null;
+    if (node.gridGeom) {
+      const c = arrayLayout(node).cells.find((cell) => {
+        const x = node.x + cell.x;
+        const y = node.y + cell.y;
+        return worldPt.x >= x && worldPt.x <= x + cell.w && worldPt.y >= y && worldPt.y <= y + cell.h;
+      });
+      return c ? c.index : null;
+    }
     const vertical = isVerticalOrientation(node.orientation);
     const lx = worldPt.x - node.x;
     const ly = worldPt.y - node.y;
@@ -3186,7 +3254,21 @@ export class App {
       const c = this._findMicroArrayCellAt(worldPt);
       if (c?.array.id === node.id) index = c.index;
     }
-    return index == null ? null : { index };
+    // `collectionId`: a lista da posição — numa linha de grade, não é a
+    // grade que o gesto seleciona/arrasta
+    return index == null ? null : { index, collectionId: node.id };
+  }
+
+  /** Expressão do código que lê a posição `index` da lista `arr` ("nums[2]";
+   * numa linha de grade, pela grade: "m[1][0]"), ou null se a lista não tem
+   * nome no código (vizinhos de um nó de grafo). */
+  _microCellExpr(arr, index) {
+    if (arr.gridRow) {
+      const host = this.micro.arrays.get(arr.gridRow.hostId);
+      const base = host ? this._microCellExpr(host, arr.gridRow.row) : null;
+      return base ? `${base}[${index}]` : null;
+    }
+    return arr.name && !arr.name.startsWith('__') ? `${arr.name}[${index}]` : null;
   }
 
   /** Cria o cursor de leitura da posição `cell` (ver _findMicroCursorCellAt)
@@ -3209,11 +3291,11 @@ export class App {
     } else {
       if (cell.index >= coll.cells.length) return null;
       target = { kind: 'arrayCell', arrayId: coll.id, index: cell.index };
-      expr = `${coll.name}[${cell.index}]`;
+      expr = this._microCellExpr(coll, cell.index);
     }
     const node = this.micro.addPointer(x, y, this._microFreeName('p'));
     this.micro.setPointerTarget(node.id, target);
-    if (!coll.name || coll.name.startsWith('__')) return node.id;
+    if (!expr) return node.id;
     const parsed = parseExpression(expr);
     return (parsed.ok && this.microRuntime.adoptReadCursor(node.id, parsed.ast)) || node.id;
   }
@@ -3238,7 +3320,7 @@ export class App {
     let expr = null;
     if (t?.kind === 'arrayCell') {
       const arr = this.micro.arrays.get(t.arrayId);
-      if (named(arr) && !arr.isSet) expr = `${arr.name}[${t.index}]`;
+      if (arr && !arr.isSet) expr = this._microCellExpr(arr, t.index);
     } else if (t?.kind === 'matrixCell') {
       const m = this.micro.matrices.get(t.matrixId);
       if (named(m)) expr = `${m.name}[${t.row}][${t.col}]`;
@@ -3273,7 +3355,7 @@ export class App {
     gesture.cursorCell = null;
     // segura o ponteiro pela ponta esquerda, na altura do meio
     const grabOffset = { x: 10, y: PTR_H / 2 };
-    const id = this._createMicroIndexCursor(gesture.id, cell, worldPt.x - grabOffset.x, worldPt.y - grabOffset.y);
+    const id = this._createMicroIndexCursor(cell.collectionId ?? gesture.id, cell, worldPt.x - grabOffset.x, worldPt.y - grabOffset.y);
     if (id == null) return;
     this._selectMicroElement('pointer', id);
     Object.assign(gesture, { hit: 'pointer', id, grabOffset, groupStart: null });
@@ -3291,6 +3373,19 @@ export class App {
     if (matrix) {
       const r = matrixCellRect(matrix, cell.row, cell.col);
       desired = { x: r.x + r.width / 2 - w / 2, y: matrix.y + matrixLayout(matrix).height + MICRO_ARROW_GAP };
+    } else if (arr?.gridRow || arr?.gridGeom) {
+      // grade: embaixo dela, alinhado com a coluna da célula — ou, pra faixa
+      // do índice de uma linha ("m[1]"), à esquerda da linha
+      const host = arr.gridRow ? this.micro.arrays.get(arr.gridRow.hostId) : arr;
+      const hostLayout = arrayLayout(host);
+      const c = arrayLayout(arr).cells[cell.index];
+      if (!host || !c) return;
+      if (arr === host) {
+        side = 'left';
+        desired = { x: host.x + arrayHandleRect(host).x - MICRO_ARROW_GAP - w, y: host.y + c.y + c.h / 2 - PTR_H / 2 };
+      } else {
+        desired = { x: arr.x + c.x + c.w / 2 - w / 2, y: host.y + hostLayout.height + MICRO_ARROW_GAP };
+      }
     } else if (arr) {
       const layout = arrayLayout(arr);
       const c = layout.cells[cell.index];
@@ -3359,13 +3454,7 @@ export class App {
    * anônimo, igual "GraphNode(v)" no código (ver MicroRuntimeAdapter#createStruct). */
   _quickNewNode(type) {
     const pos = this._microCreatePosition('struct');
-    const node = this.micro.addStruct(pos.x, pos.y, 0, type);
-    if (type === 'graph') {
-      const arrPos = this._microCreatePosition('array', 0);
-      const arr = this.micro.addArray(arrPos.x, arrPos.y, { kind: 'ref', size: 0, name: `__graph_neighbors_${node.id}` });
-      this.micro.setStructNeighborsArray(node.id, arr.id);
-      this._microTidyOwned(node.id);
-    }
+    const node = this._microAddNode(type, pos.x, pos.y);
     this._selectMicroElement('struct', node.id);
     this._renderMicroOnly();
     this._openMicroDataPopup(node, {
@@ -3374,6 +3463,21 @@ export class App {
         this._renderMicroOnly();
       },
     });
+  }
+
+  /** Cria um nó de lista/árvore/grafo (dado 0) em (x, y) — o de grafo com a
+   * lista de vizinhos ao lado (ver `_microTidyOwned`; com `movable: false` o
+   * nó fica onde está e só a lista procura lugar). Usado por "new node" e pela
+   * ligação solta em espaço vazio (`_createMicroLinkedNode`). */
+  _microAddNode(type, x, y, { movable = true } = {}) {
+    const node = this.micro.addStruct(x, y, 0, type);
+    if (type === 'graph') {
+      const arrPos = this._microCreatePosition('array', 0);
+      const arr = this.micro.addArray(arrPos.x, arrPos.y, { kind: 'ref', size: 0, name: `__graph_neighbors_${node.id}` });
+      this.micro.setStructNeighborsArray(node.id, arr.id);
+      this._microTidyOwned(node.id, { movable });
+    }
+    return node;
   }
 
   /** Lista, set, deque, dict ou matriz — com o ponteiro-rótulo de sempre (o nome
@@ -3395,15 +3499,20 @@ export class App {
       const pos = this._microCreatePosition('dict', 1);
       node = this.micro.addDict(pos.x, pos.y, { name: this._microFreeName('d') });
     } else {
-      const pos = this._microCreatePosition('matrix', { rows: 3, cols: 3 });
-      node = this.micro.addMatrix(pos.x, pos.y, { name: this._microFreeName('m'), cells: [[0, 0, 0], [0, 0, 0], [0, 0, 0]] });
+      // "matriz": lista de listas 3×3 de zeros, desenhada em grade — a mesma
+      // coisa que "m = [[0] * 3 for _ in range(3)]" cria (ver layoutGrids)
+      const pos = this._microCreatePosition('array', 3);
+      const name = this._microFreeName('m');
+      node = this.micro.addArray(pos.x, pos.y, { kind: 'arrayref', orientation: 'grid', size: 0, name });
+      const rows = [0, 1, 2].map((i) => this.micro.addArray(node.x + GRID_ROW_BAND_W, node.y + GRID_COL_BAND_H + i * ARRAY_CELL, { size: 3, name: `${name}[${i}]` }).id);
+      this.micro.setArrayContents(node.id, 'arrayref', rows);
     }
     const labelPos = this._microPointerSpotNear(node.id, node.name, { movable: true });
     const label = this.micro.addPointer(labelPos.x, labelPos.y, node.name);
     // o rótulo fica à esquerda da coleção: cresce pra ESQUERDA conforme o
     // nome é digitado, com a ponta direita (e a seta) parada
     const right = label.x + pointerWidth(label, this.microFullNames);
-    const modelKind = kind === 'set' || kind === 'deque' ? 'array' : kind;
+    const modelKind = kind === 'dict' ? 'dict' : 'array';
     if (modelKind === 'array') this.micro.linkArrayLabelPointer(node.id, label.id);
     else if (modelKind === 'dict') this.micro.linkDictLabelPointer(node.id, label.id);
     else this.micro.linkMatrixLabelPointer(node.id, label.id);
@@ -3865,8 +3974,10 @@ export class App {
 
   /** Há algum elemento do canvas sob o ponto? Com a ferramenta "Ligar nós",
    * clicar onde NÃO há nenhum volta pra Selecionar (ver
-   * `_onMicroLinkPointerDown`). */
-  _microElementAt(worldPt) {
+   * `_onMicroLinkPointerDown`). Com `ignoreAreas`, uma área (fundo que agrupa
+   * elementos) não conta — dentro dela ainda dá pra criar um nó pela ligação
+   * (ver `_microLinkDropAt`). */
+  _microElementAt(worldPt, { ignoreAreas = false } = {}) {
     return !!(
       this._findMicroStructAt(worldPt) ||
       this._findMicroPointerAt(worldPt) ||
@@ -3876,8 +3987,54 @@ export class App {
       this._findMicroMatrixAt(worldPt) ||
       this._findMicroLabelAt(worldPt) ||
       this._findMicroChartAt(worldPt) ||
-      this._findMicroAreaAt(worldPt)
+      (!ignoreAreas && this._findMicroAreaAt(worldPt))
     );
+  }
+
+  /** Aonde chega a ligação que sai do struct `fromId` se terminar em
+   * `worldPt`: `targetId` — um nó do mesmo tipo ali (ver
+   * `_findMicroLinkTarget`) — ou, em espaço vazio, `newNodeAt` — o ponto onde
+   * nasce um nó novo do mesmo tipo, já ligado (`_createMicroLinkedNode`; o
+   * círculo tracejado do rascunho marca o lugar). Sobre qualquer outro
+   * elemento (o próprio nó de origem inclusive), nenhum dos dois. */
+  _microLinkDropAt(fromId, worldPt) {
+    const target = this._findMicroLinkTarget(fromId, worldPt);
+    if (target) return { targetId: target.id, newNodeAt: null };
+    const free = !this._microElementAt(worldPt, { ignoreAreas: true });
+    return { targetId: null, newNodeAt: free ? { x: worldPt.x, y: worldPt.y } : null };
+  }
+
+  /** O que concluir a ligação `draft` no ponto atual faria — pro rótulo junto
+   * do cursor (`linkHint`): 'create' (nasce um nó novo já ligado, ver
+   * `_microLinkDropAt`), 'unlink' (o destino já é o alvo do ponteiro, ou já
+   * está em "neighbors" — `_applyMicroLink` desliga), 'link', ou null (nenhum
+   * destino sob o ponto). */
+  _microLinkAction(draft) {
+    if (draft.newNodeAt) return 'create';
+    if (!draft.targetId) return null;
+    const from = this.micro.structs.get(draft.fromId);
+    if (!from) return null;
+    if (draft.field == null) {
+      const cells = this.micro.arrays.get(from.neighborsArrayId)?.cells ?? [];
+      return cells.includes(draft.targetId) ? 'unlink' : 'link';
+    }
+    return from[draft.field] === draft.targetId ? 'unlink' : 'link';
+  }
+
+  /** Ligação solta em espaço vazio: cria ali (centrado em `worldPt`) um nó
+   * do mesmo tipo do de origem, liga a origem a ele pelo ponteiro `field`
+   * (`_applyMicroLink`), seleciona o novo e abre a edição do dado dele — Esc
+   * nessa edição só mantém o dado 0. */
+  _createMicroLinkedNode(fromId, field, worldPt) {
+    const from = this.micro.structs.get(fromId);
+    if (!from) return null;
+    const node = this._microAddNode(from.type, worldPt.x - STRUCT_W / 2, worldPt.y - STRUCT_H / 2, { movable: false });
+    this._applyMicroLink(fromId, field, node.id);
+    this.microSelectedIds = new Set();
+    this._selectMicroElement('struct', node.id);
+    this._renderMicroOnly();
+    this._openMicroDataPopup(node);
+    return node;
   }
 
   /** Clique esquerdo com a ferramenta "Ligar nós" (5/L). O padrão é clicar
@@ -3887,22 +4044,38 @@ export class App {
    * prev↔next, ver `_onKeyDown`), o segundo a conclui (`_applyMicroLink`).
    * Shift + arraste a partir do nó liga ao soltar (`_startMicroLinkDrag`).
    * Clicar de novo no nó de origem recomeça com a metade clicada; num
-   * elemento que não serve de destino, nada; em espaço vazio, volta pra
-   * Selecionar. O botão direito cancela a ligação pendente sem trocar de
-   * ferramenta (ver `_onMicroContextMenu`). */
+   * elemento que não serve de destino, nada; em espaço vazio, cria ali um nó
+   * do mesmo tipo já ligado (ver `_microLinkDropAt`). Sem ligação pendente,
+   * clicar em espaço vazio volta pra Selecionar. O botão direito (ver
+   * `_onMicroContextMenu`) e o Esc cancelam a ligação pendente sem trocar de
+   * ferramenta. */
   _onMicroLinkPointerDown(e, screenPt, worldPt) {
     const draft = this._microLinkDraft;
     if (draft?.pending) {
-      const target = this._findMicroLinkTarget(draft.fromId, worldPt);
+      const drop = this._microLinkDropAt(draft.fromId, worldPt);
       const from = this.micro.structs.get(draft.fromId);
-      if (target) {
-        this._applyMicroLink(draft.fromId, draft.field, target.id);
+      if (drop.targetId) {
+        this._applyMicroLink(draft.fromId, draft.field, drop.targetId);
         this._cancelMicroLink(worldPt);
       } else if (from && this._microStructContains(from, worldPt)) {
         this._microLinkDraft = { ...draft, field: this._microLinkFieldAt(from, worldPt), toPt: worldPt };
         this._renderMicroOnly();
-      } else if (!this._microElementAt(worldPt)) {
-        this._setMicroMode('select');
+      } else if (drop.newNodeAt) {
+        // cria ao SOLTAR o botão (ver `_onMicroPointerUpWindow`): abrir a
+        // edição do dado já no pointerdown a fecharia na hora, com o foco
+        // que o mousedown ainda leva pro canvas
+        this._microLinkDraft = null;
+        this._microPointer = {
+          downScreen: screenPt,
+          lastScreen: screenPt,
+          moved: false,
+          hit: 'link-new-node',
+          id: draft.fromId,
+          field: draft.field,
+          worldPtDown: worldPt,
+        };
+        window.addEventListener('pointermove', this._microBoundMove);
+        window.addEventListener('pointerup', this._microBoundUp);
       }
       return;
     }
@@ -3950,7 +4123,7 @@ export class App {
     if (this.microMode !== 'link' || this._microPointer) return;
     const draft = this._microLinkDraft;
     if (draft?.pending) {
-      this._microLinkDraft = { ...draft, toPt: worldPt, targetId: this._findMicroLinkTarget(draft.fromId, worldPt)?.id ?? null };
+      this._microLinkDraft = { ...draft, toPt: worldPt, ...this._microLinkDropAt(draft.fromId, worldPt) };
       this._renderMicroOnly();
       return;
     }
@@ -3965,7 +4138,9 @@ export class App {
   /** Começa o arraste de ligação a partir de `node`, pelo ponteiro `field`
    * — Shift + arraste com a ferramenta "Ligar nós" (5/L) ou no modo
    * Selecionar. A seta de rascunho (`_microLinkDraft`) segue o mouse; ao
-   * soltar sobre um nó do mesmo tipo, `_applyMicroLink` liga ou desliga.
+   * soltar sobre um nó do mesmo tipo, `_applyMicroLink` liga ou desliga; em
+   * espaço vazio, nasce ali um nó novo já ligado (`_createMicroLinkedNode`).
+   * Antes de soltar, Esc ou o botão direito desistem (`_abortMicroLinkDrag`).
    * Como os arrastes de pino (`_microPortDrag`), vale também durante a
    * reprodução da Simulação — a mudança fica no passo em exibição até a
    * reprodução trocar de passo. */
@@ -3982,6 +4157,35 @@ export class App {
     };
     window.addEventListener('pointermove', this._microBoundMove);
     window.addEventListener('pointerup', this._microBoundUp);
+  }
+
+  /** Desiste do Shift + arraste de ligação ainda com o botão pressionado
+   * (Esc, ou o botão direito — ver `_onMicroLinkDragContextMenu` e
+   * `_onMicroPointerMoveWindow`): some a seta de rascunho e soltar o botão
+   * depois não faz nada. A ferramenta continua escolhida. */
+  _abortMicroLinkDrag() {
+    if (this._microPointer?.hit !== 'link-drag') return false;
+    this._microPointer = null;
+    this._microLinkDraft = null;
+    this._microLinkHover = null;
+    window.removeEventListener('pointermove', this._microBoundMove);
+    window.removeEventListener('pointerup', this._microBoundUp);
+    this._renderMicroOnly();
+    return true;
+  }
+
+  /** `contextmenu` na janela (fase de captura) durante o Shift + arraste de
+   * ligação: o botão direito cancela o arraste em vez de abrir menu — o
+   * nativo ou um popup do canvas (ver `_onMicroContextMenu`). Também engole
+   * o `contextmenu` que chega DEPOIS de o arraste já ter sido cancelado pelo
+   * botão direito (no Windows ele só vem quando o botão é solto). */
+  _onMicroLinkDragContextMenu(e) {
+    const dragging = this._microPointer?.hit === 'link-drag';
+    if (!dragging && !this._microSwallowContextMenu) return;
+    this._microSwallowContextMenu = false;
+    e.preventDefault();
+    e.stopPropagation();
+    if (dragging) this._abortMicroLinkDrag();
   }
 
   /** Conclui uma ligação `fromId` → `toId` pelo ponteiro `field`: num Node/
@@ -4047,6 +4251,7 @@ export class App {
       return;
     }
     if (e.button !== 0) return;
+    this._microSwallowContextMenu = false;
 
     // modo texto: qualquer clique esquerdo sem arraste cria uma label ali —
     // não faz hit-test contra os demais elementos (ver _onMicroPointerUpWindow).
@@ -4103,6 +4308,13 @@ export class App {
     }
 
     const port = this._findMicroPortAt(worldPt);
+    // Shift no pino prev/next de um nó (na borda dele): o mesmo Shift +
+    // arraste de ligação do corpo do nó (ver abaixo), por esse ponteiro —
+    // sem Shift, segue o arraste de pino de sempre
+    if (port?.ownerKind === 'struct' && e.shiftKey && !e.ctrlKey && !e.metaKey) {
+      this._startMicroLinkDrag(this.micro.structs.get(port.ownerId), port.field, screenPt, worldPt);
+      return;
+    }
     const structNode = !port ? this._findMicroStructAt(worldPt) : null;
     const arrayNode = !port && !structNode ? this._findMicroArrayAt(worldPt) : null;
     const dictNode = !port && !structNode && !arrayNode ? this._findMicroDictAt(worldPt) : null;
@@ -4135,9 +4347,12 @@ export class App {
       id = structNode.id;
       grabOffset = { x: worldPt.x - structNode.x, y: worldPt.y - structNode.y };
     } else if (arrayNode) {
+      // linha embutida numa grade: selecionar/arrastar é a grade inteira (a
+      // célula da linha continua valendo pro cursor, abaixo, e pro duplo clique)
+      const owner = (arrayNode.gridRow && this.micro.arrays.get(arrayNode.gridRow.hostId)) || arrayNode;
       hit = 'array';
-      id = arrayNode.id;
-      grabOffset = { x: worldPt.x - arrayNode.x, y: worldPt.y - arrayNode.y };
+      id = owner.id;
+      grabOffset = { x: worldPt.x - owner.x, y: worldPt.y - owner.y };
     } else if (dictNode) {
       hit = 'dict';
       id = dictNode.id;
@@ -4236,6 +4451,13 @@ export class App {
 
   _onMicroPointerMoveWindow(e) {
     if (!this._microPointer) return;
+    // botão direito pressionado no meio do Shift + arraste de ligação: só
+    // chega como pointermove (botões "encadeados"), não como pointerdown
+    if (this._microPointer.hit === 'link-drag' && e.buttons & 2) {
+      this._abortMicroLinkDrag();
+      this._microSwallowContextMenu = true;
+      return;
+    }
     const screenPt = this._microScreenPointFromEvent(e);
     const dx = screenPt.x - this._microPointer.downScreen.x;
     const dy = screenPt.y - this._microPointer.downScreen.y;
@@ -4293,7 +4515,7 @@ export class App {
         fromId: this._microPointer.id,
         field: this._microPointer.field,
         toPt: worldPt,
-        targetId: this._findMicroLinkTarget(this._microPointer.id, worldPt)?.id ?? null,
+        ...this._microLinkDropAt(this._microPointer.id, worldPt),
         pending: false,
       };
       this._renderMicroOnly();
@@ -4361,11 +4583,16 @@ export class App {
       const area = this._microResizableById(id);
       if (moved && area && this._microAreaResize?.id === id) Object.assign(area, this._microAreaResize.rect);
       this._microAreaResize = null;
+    } else if (hit === 'link-new-node') {
+      // clique em espaço vazio com a ligação pendente (ver
+      // `_onMicroLinkPointerDown`)
+      this._createMicroLinkedNode(id, this._microPointer.field, worldPtDown);
     } else if (hit === 'link-drag') {
       const draft = this._microLinkDraft;
       this._microLinkDraft = null;
       if (moved) {
         if (draft?.targetId) this._applyMicroLink(id, draft.field, draft.targetId);
+        else if (draft?.newNodeAt) this._createMicroLinkedNode(id, draft.field, draft.newNodeAt);
       } else if (this.microMode === 'link') {
         // Shift + clique sem arraste na ferramenta: o mesmo que um clique —
         // a ligação fica pendente esperando o destino
@@ -4381,7 +4608,7 @@ export class App {
     } else if (shift && cursorCell && !moved) {
       // Shift+clique numa célula: o mesmo cursor que o arraste criaria, num
       // lugar livre logo abaixo da célula
-      this._createMicroIndexCursorNearCell(id, cursorCell);
+      this._createMicroIndexCursorNearCell(cursorCell.collectionId ?? id, cursorCell);
     } else if (groupStart) {
       if (moved && this._microGroupDragPositions) {
         groupStart.forEach((start, gid) => {
@@ -4726,7 +4953,16 @@ export class App {
 
   // ---- modo micro: render ----
 
+  /** Grades (lista de listas na orientação 'grid'): põe cada lista de
+   * dentro no lugar da sua linha e guarda a geometria derivada (ver
+   * MicroCanvasView.js#layoutGrids). Antes de desenhar e de procurar
+   * espaço livre; os cliques usam o que o último render deixou. */
+  _layoutMicroGrids() {
+    layoutGrids(this.micro.arrays);
+  }
+
   _renderMicroOnly() {
+    this._layoutMicroGrids();
     // arraste de um elemento ou de um grupo: desliga a transição do traçado
     // das setas (ver `.dragging-elements` em canvas.css), senão elas ficam
     // atrás do elemento arrastado
@@ -4879,7 +5115,15 @@ export class App {
     const arrays = Array.from(this.micro.arrays.values())
       .filter((n) => !(this.microSimplifiedNodes && graphNeighborsArrayIds.has(n.id)))
       .map((n) => {
-      const { pos, dragging } = this._microNodePos(n);
+      let { pos, dragging } = this._microNodePos(n);
+      // linha embutida numa grade: no lugar da linha dela na grade, que pode
+      // estar sendo arrastada agora (ver MicroCanvasView.js#layoutGrids)
+      const host = n.gridRow ? this.micro.arrays.get(n.gridRow.hostId) : null;
+      if (host) {
+        const live = this._microNodePos(host);
+        pos = { x: live.pos.x + GRID_ROW_BAND_W, y: live.pos.y + GRID_COL_BAND_H + n.gridRow.row * ARRAY_CELL };
+        dragging = live.dragging;
+      }
       return {
         id: n.id,
         x: pos.x,
@@ -4888,6 +5132,8 @@ export class App {
         orientation: n.orientation,
         cells: n.cells,
         name: n.name,
+        ...(n.gridRow ? { gridRow: n.gridRow } : {}),
+        ...(n.gridGeom ? { gridGeom: n.gridGeom } : {}),
         isSet: !!n.isSet,
         isDeque: !!n.isDeque,
         maxlen: n.maxlen ?? null,
@@ -5191,6 +5437,9 @@ export class App {
       const layout = arrayLayout(n);
       n.cells.forEach((targetId, i) => {
         if (!targetId) return;
+        // grade: a lista da linha está desenhada ali mesmo — só uma lista
+        // repetida (embutida em outra linha) ganha seta
+        if (n.gridGeom?.embedded[i]) return;
         const c = layout.cells[i];
         const base = {
           id: `${n.id}-cell${i}`,
@@ -5342,6 +5591,8 @@ export class App {
     });
 
     let previewEdge = null;
+    let newNodeGhost = null;
+    let linkHint = null;
     if (this._microPortDrag) {
       previewEdge = {
         x1: this._microPortDrag.fromPt.x,
@@ -5362,7 +5613,21 @@ export class App {
           draft.field === 'prev'
             ? structPrevPort({ ...from, prevAnchor: draft.toPt }, this.microSimplifiedNodes)
             : structNextPort({ ...from, nextAnchor: draft.toPt }, this.microSimplifiedNodes);
-        previewEdge = { x1: start.x, y1: start.y, x2: draft.toPt.x, y2: draft.toPt.y, valid: !!draft.targetId };
+        // em espaço vazio, um círculo tracejado marca o nó novo que nasce ali
+        // (ver `_microLinkDropAt`), e a seta para na borda dele
+        let end = draft.toPt;
+        if (draft.newNodeAt) {
+          newNodeGhost = { cx: draft.newNodeAt.x, cy: draft.newNodeAt.y, r: STRUCT_CIRCLE_R };
+          const d = Math.hypot(start.x - end.x, start.y - end.y);
+          if (d > STRUCT_CIRCLE_R) {
+            const k = STRUCT_CIRCLE_R / d;
+            end = { x: end.x + (start.x - end.x) * k, y: end.y + (start.y - end.y) * k };
+          }
+        }
+        previewEdge = { x1: start.x, y1: start.y, x2: end.x, y2: end.y, valid: !!(draft.targetId || draft.newNodeAt) };
+        // rótulo junto do cursor dizendo o que concluir a ligação ali faz
+        const action = this._microLinkAction(draft);
+        if (action) linkHint = { x: draft.toPt.x, y: draft.toPt.y, action, scale: this.microViewport.scale };
       } else {
         // o nó de origem sumiu (apagado, ou a reprodução trocou de passo)
         this._microLinkDraft = null;
@@ -5393,6 +5658,8 @@ export class App {
       charts,
       edges,
       previewEdge,
+      newNodeGhost,
+      linkHint,
       linkSource,
       selectionRect: this._microSelectionPreview,
       simplifiedNodes: this.microSimplifiedNodes,

@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { desmontarApp, montarApp, tecla } from '../helpers/dom.js';
 import { linhas } from '../helpers/runDsl.js';
-import { ARRAY_CELL, PTR_H, STRUCT_H, STRUCT_W, arrayHandleRect, arrayLayout, chartLayout, dictHandleRect, matrixHandleRect, pointerWidth } from '../../src/render/MicroCanvasView.js';
+import { ARRAY_CELL, PTR_H, STRUCT_H, STRUCT_W, arrayHandleRect, arrayLayout, arrayOuterBox, chartLayout, dictHandleRect, matrixHandleRect, pointerWidth } from '../../src/render/MicroCanvasView.js';
 
 let app;
 const $ = (sel) => document.querySelector(sel);
@@ -1520,6 +1520,37 @@ describe('popup de configurações da lista (botão direito no puxador)', () => 
     campo('Tamanho').value = '10';
     salvar();
     expect(f.cells).toEqual([1, 2, 0]);
+  });
+
+  test('deque mostra "início"/"fim" e nasce sem esconder os rótulos debaixo de outro elemento', () => {
+    escreverCodigo(linhas('from collections import deque', 'a = deque([1, 2])', 'b = deque([3])', 'c = deque([4, 5, 6])'));
+    [0, 1, 2, 3].forEach((i) => ctrlEnterNaLinha(i));
+    const textos = [...document.querySelectorAll('.array-end-caption')].map((t) => t.textContent);
+    expect(textos).toEqual(['início', 'fim', 'início', 'fim', 'início', 'fim']);
+    expect(document.querySelector('.deque-caption')).toBeNull();
+    // ninguém (outro array, rótulo com o nome) cai em cima do espaço dos rótulos
+    const fora = (n) => {
+      const b = arrayOuterBox(n);
+      return { x: n.x + b.x, y: n.y + b.y, w: b.w, h: b.h };
+    };
+    const outros = [
+      ...[...app.micro.arrays.values()].map((n) => ({ id: n.id, ...fora(n) })),
+      ...[...app.micro.pointers.values()].map((n) => ({ id: n.id, x: n.x, y: n.y, w: pointerWidth(n, app.microFullNames), h: PTR_H })),
+    ];
+    const cruza = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+    app.micro.arrays.forEach((n) => {
+      const r = fora(n);
+      outros.filter((o) => o.id !== n.id).forEach((o) => expect(cruza(r, o)).toBe(false));
+    });
+  });
+
+  test('lista em Pilha ganha o rótulo "topo"', () => {
+    const pilha = criarNoSandbox('pilha = [1, 2, 3]');
+    expect(document.querySelector('.array-end-caption')).toBeNull();
+    botaoDireitoNoPuxador(pilha);
+    botaoOrientacao('Pilha').click();
+    salvar();
+    expect([...document.querySelectorAll('.array-end-caption')].map((t) => t.textContent)).toEqual(['topo']);
   });
 
   const botaoOrientacao = (texto) => [...popup().querySelectorAll('.array-orient-btn')].find((b) => b.textContent.includes(texto));

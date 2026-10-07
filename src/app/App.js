@@ -21,6 +21,7 @@ import {
   variableValueRect,
   arrayLayout,
   arrayHandleRect,
+  arrayOuterBox,
   arrayDividers,
   isVerticalOrientation,
   dictHandleRect,
@@ -974,7 +975,7 @@ export class App {
     this.micro.structs.forEach((n) => rects.push({ x: n.x, y: n.y, w: STRUCT_W, h: STRUCT_H }));
     this.micro.pointers.forEach((n) => rects.push({ x: n.x, y: n.y, w: pointerWidth(n, this.microFullNames), h: PTR_H }));
     this.micro.variables.forEach((n) => rects.push({ x: n.x, y: n.y, w: variableWidth(n, this.microFullNames), h: VAR_H }));
-    this.micro.arrays.forEach((n) => rects.push(this._microBoundsWithHandle(n, arrayLayout(n), arrayHandleRect(n))));
+    this.micro.arrays.forEach((n) => rects.push(this._microArrayOuterRect(n)));
     this.micro.dicts.forEach((n) => rects.push(this._microBoundsWithHandle(n, dictLayout(n), dictHandleRect(n))));
     this.micro.matrices.forEach((n) => rects.push(this._microBoundsWithHandle(n, matrixLayout(n), matrixHandleRect(n))));
     this.microLabels.forEach((n) => {
@@ -1277,6 +1278,15 @@ export class App {
    * direto pra lá, mesmo espírito de `_microCreatePosition`. */
   _createArrayLabelPointer(arrayNode, { movable = true } = {}) {
     const key = microLayoutKey('array-label', { name: arrayNode.name, frameId: arrayNode.frameId });
+    // o lugar do array foi escolhido só pelo tamanho da caixa: se os rótulos
+    // de ponta dele ("início"/"fim" de um deque) caem em cima de outro
+    // elemento, ele procura outro lugar livre
+    const outer = this._microArrayOuterRect(arrayNode);
+    if (movable && !this._microFreeAt(outer, outer.w, outer.h, [arrayNode.id])) {
+      this._microMoveBlock([arrayNode.id]);
+      const arrayKey = microLayoutKey('array', { name: arrayNode.name, frameId: arrayNode.frameId });
+      if (arrayKey && this.microLayout.has(arrayKey)) this.microLayout.set(arrayKey, { x: arrayNode.x, y: arrayNode.y });
+    }
     let pos = key ? this.microLayout.get(key) : null;
     if (!pos) {
       pos = this._microPointerSpotNear(arrayNode.id, arrayNode.name, {
@@ -1490,7 +1500,7 @@ export class App {
    * eles e `extraRects`, que ainda vão nascer), pro espaço livre mais
    * próximo. Devolve o deslocamento aplicado. */
   _microMoveBlock(ids, extraRects = []) {
-    const rects = [...ids.map((id) => this._microElementRect(id)), ...extraRects];
+    const rects = [...ids.map((id) => this._microOccupiedRect(id)), ...extraRects];
     const x0 = Math.min(...rects.map((r) => r.x));
     const y0 = Math.min(...rects.map((r) => r.y));
     const x1 = Math.max(...rects.map((r) => r.x + r.w));
@@ -1517,7 +1527,7 @@ export class App {
     const dy = pointerPos.y - ideal.y;
     if (!dx && !dy) return;
     const fits = ids.every((id) => {
-      const r = this._microElementRect(id);
+      const r = this._microOccupiedRect(id);
       return this._microFreeAt({ x: r.x + dx, y: r.y + dy }, r.w, r.h, ids);
     });
     if (!fits) return;
@@ -1537,7 +1547,7 @@ export class App {
     each(this.micro.structs, (n) => ({ x: n.x, y: n.y, w: STRUCT_W, h: STRUCT_H }));
     each(this.micro.pointers, (n) => ({ x: n.x, y: n.y, w: pointerWidth(n, this.microFullNames), h: PTR_H }));
     each(this.micro.variables, (n) => ({ x: n.x, y: n.y, w: variableWidth(n, this.microFullNames), h: VAR_H }));
-    each(this.micro.arrays, (n) => this._microBoundsWithHandle(n, arrayLayout(n), arrayHandleRect(n)));
+    each(this.micro.arrays, (n) => this._microArrayOuterRect(n));
     each(this.micro.dicts, (n) => this._microBoundsWithHandle(n, dictLayout(n), dictHandleRect(n)));
     each(this.micro.matrices, (n) => this._microBoundsWithHandle(n, matrixLayout(n), matrixHandleRect(n)));
     return rects;
@@ -2435,6 +2445,22 @@ export class App {
   _microBoundsWithHandle(n, { width, height }, handle) {
     const b = boxWithHandle(width, height, handle);
     return { x: n.x + b.x, y: n.y + b.y, w: b.w, h: b.h };
+  }
+
+  /** Espaço que um array ocupa no canvas: caixa + aba + os rótulos de ponta
+   * ("início"/"fim" de um deque, "topo" de uma pilha — ver
+   * MicroCanvasView#arrayOuterBox). Só pra achar espaço livre e enquadrar a
+   * vista; alinhar usa a caixa (`_microElementRect`). */
+  _microArrayOuterRect(n) {
+    const b = arrayOuterBox(n);
+    return { x: n.x + b.x, y: n.y + b.y, w: b.w, h: b.h };
+  }
+
+  /** `_microElementRect`, mas com o espaço dos rótulos de ponta de um array
+   * (ver `_microArrayOuterRect`) — pra mover/achar lugar sem cobri-los. */
+  _microOccupiedRect(id) {
+    const arr = this.micro.arrays.get(id);
+    return arr ? this._microArrayOuterRect(arr) : this._microElementRect(id);
   }
 
   /** Retorna {array, index} da célula de QUALQUER array (valores ou refs) sob o ponto — usado

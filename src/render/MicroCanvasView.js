@@ -1,7 +1,7 @@
 import { svgEl } from './svgUtils.js';
 import { ARRAY_CELL_H } from '../core/micro/MicroModel.js';
 import { labelLayout, LABEL_PAD_X, LABEL_CODE_PAD } from './labelMarkdown.js';
-import { textMeasureGeneration } from './textMeasure.js';
+import { measureText, textMeasureGeneration } from './textMeasure.js';
 
 // ---- geometria dos nós de estrutura (caixa prev | data | next) ----
 export const STRUCT_W = 138;
@@ -815,6 +815,87 @@ export function arrayDividers(node) {
       ? { at: c.index, x: c.x, y: (stack ? c.y + c.h : c.y) - half, w: c.w, h: ARRAY_DIVIDER_HIT }
       : { at: c.index, x: c.x - half, y: c.y, w: ARRAY_DIVIDER_HIT, h: c.h },
   );
+}
+
+/** Distância entre as linhas dos rótulos de ponta (ver `arrayEndCaptions`). */
+const END_CAPTION_LINE = 13;
+
+/** Rótulos discretos das pontas de uma lista, relativos ao canto da caixa
+ * (`{text, x, y}`, `y` = linha de base, sempre centralizados em `x`):
+ * - deque: "início" na posição 0 e "fim" na última (-1); com um elemento só,
+ *   os dois juntos, um acima do outro. `maxlen`, se houver, num rótulo à
+ *   parte;
+ * - lista em pilha (`orientation: 'stack'`): "topo" no último elemento.
+ * Ficam do lado de FORA, onde nada mais mora: na horizontal acima da faixa
+ * de índices (embaixo saem os pinos e chegam os cursores, à esquerda ficam o
+ * puxador e o rótulo com o nome); na vertical acima do puxador (ponta de
+ * cima) ou abaixo da caixa (ponta de baixo) — à direita chegam os cursores e
+ * fica o colchete de janela, à esquerda o rótulo com o nome. Fora do layout:
+ * hit-test não muda, e longe o bastante pra não encostar no halo de
+ * seleção. Set não tem pontas. */
+export function arrayEndCaptions(node) {
+  if (node.isSet || (!node.isDeque && node.orientation !== 'stack')) return [];
+  const layout = arrayLayout(node);
+  const n = node.cells.length;
+  // textos de cada posição (índice -> linhas, de cima pra baixo)
+  const ends = new Map();
+  if (n > 0) {
+    if (node.isDeque) {
+      if (n === 1) ends.set(0, ['início', 'fim']);
+      else {
+        ends.set(0, ['início']);
+        ends.set(n - 1, ['fim']);
+      }
+    } else ends.set(n - 1, ['topo']);
+  }
+  const maxlen = node.isDeque && node.maxlen != null ? `maxlen=${node.maxlen}` : null;
+  const out = [];
+  // linhas empilhadas pra cima a partir da linha de base `baseY`
+  const above = (lines, x, baseY) =>
+    lines.forEach((text, k) => out.push({ text, x, y: baseY - (lines.length - 1 - k) * END_CAPTION_LINE }));
+  if (!isVerticalOrientation(node.orientation)) {
+    ends.forEach((lines, i) => {
+      const c = layout.cells[i];
+      above(lines, c.x + c.w / 2, -HALO_GAP - 4);
+    });
+    if (maxlen) out.push({ text: maxlen, x: layout.width + 6, y: layout.height / 2 + 4, anchor: 'start' });
+    return out;
+  }
+  const midX = ARRAY_INDEX_W + (layout.width - ARRAY_INDEX_W) / 2;
+  const top = [];
+  const bottom = [];
+  ends.forEach((lines, i) => {
+    // com um elemento só, os dois rótulos vão juntos pra ponta de cima
+    const atTop = n === 1 || layout.cells[i].y === 0;
+    (atTop ? top : bottom).push(...lines);
+  });
+  if (maxlen) bottom.push(maxlen);
+  const handle = arrayHandleRect(node);
+  above(top, midX, handle.y - HALO_GAP - 4);
+  bottom.forEach((text, k) => out.push({ text, x: midX, y: layout.height + HALO_GAP + 13 + k * END_CAPTION_LINE }));
+  return out;
+}
+
+/** Caixa + puxador + rótulos de ponta de um array (relativo ao canto da
+ * caixa) — o espaço que ele ocupa no canvas, pra (App) achar espaço livre
+ * sem esconder um "início"/"topo" debaixo de outro elemento. */
+export function arrayOuterBox(node) {
+  const layout = arrayLayout(node);
+  const b = boxWithHandle(layout.width, layout.height, arrayHandleRect(node));
+  let x0 = b.x;
+  let y0 = b.y;
+  let x1 = b.x + b.w;
+  let y1 = b.y + b.h;
+  arrayEndCaptions(node).forEach((c) => {
+    // .array-end-caption: 11px mono, peso 500
+    const w = measureText(c.text, { size: 11, mono: true });
+    const left = c.anchor === 'start' ? c.x : c.x - w / 2;
+    x0 = Math.min(x0, left);
+    x1 = Math.max(x1, left + w);
+    y0 = Math.min(y0, c.y - 10);
+    y1 = Math.max(y1, c.y + 3);
+  });
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 
 /** `arrayLayout` de um set — mesmo formato de retorno (quem desenha, clica
@@ -2277,6 +2358,10 @@ export class MicroCanvasView {
     const vertical = isVerticalOrientation(node.orientation);
     const g = svgEl('g', { class: 'window-brackets' });
     const levels = { default: 0, flipped: 0 };
+    // na horizontal, o colchete virado (em cima) passa por cima dos rótulos de
+    // ponta de um deque (ver arrayEndCaptions), não por baixo deles
+    const captionYs = vertical ? [] : arrayEndCaptions(node).filter((c) => c.y < 0).map((c) => c.y);
+    const flippedBase = captionYs.length ? Math.max(WINDOW_BRACKET_GAP, -Math.min(...captionYs) + 13) : WINDOW_BRACKET_GAP;
     node.windows.forEach((w) => {
       // `a`/`b`: as pontas de cima/esquerda e de baixo/direita NA TELA — na
       // pilha a posição `lo` fica embaixo
@@ -2285,7 +2370,7 @@ export class MicroCanvasView {
       if (!a || !b) return;
       if (a.y > b.y) [a, b] = [b, a];
       const side = this._windowBracketSide(node, layout, w, pointerEdges);
-      const off = WINDOW_BRACKET_GAP + levels[side] * WINDOW_BRACKET_STEP;
+      const off = (side === 'flipped' ? flippedBase : WINDOW_BRACKET_GAP) + levels[side] * WINDOW_BRACKET_STEP;
       levels[side] += 1;
       const inset = 4; // colchetes de janelas vizinhas não se encostam
       const D = WINDOW_BRACKET_DEPTH;
@@ -2358,20 +2443,17 @@ export class MicroCanvasView {
       caption.textContent = node.cells.length === 0 ? 'set()' : 'set';
       el.appendChild(caption);
     }
-    // deque (`isDeque`): igual lista (tem índice), com o rótulo "⇄ deque"
-    // (+ maxlen) do lado de fora — à direita na horizontal, embaixo na
-    // vertical (a aba fica à esquerda/em cima, ver arrayHandleRect). Fora do
-    // layout: hit-test não muda.
-    if (node.isDeque) {
-      const vertical = isVerticalOrientation(node.orientation);
+    // deque: "início"/"fim" nas pontas; lista em pilha: "topo" (ver arrayEndCaptions)
+    arrayEndCaptions(node).forEach((c) => {
       const caption = svgEl('text', {
-        class: 'array-index-label deque-caption',
-        x: vertical ? 0 : layout.width + 6,
-        y: vertical ? layout.height + 14 : layout.height / 2 + 4,
+        class: 'array-index-label array-end-caption',
+        x: c.x,
+        y: c.y,
+        'text-anchor': c.anchor ?? 'middle',
       });
-      caption.textContent = `⇄ deque${node.maxlen != null ? ` · maxlen=${node.maxlen}` : ''}`;
+      caption.textContent = c.text;
       el.appendChild(caption);
-    }
+    });
 
     layout.cells.forEach((c, i) => {
       const inset = node.isSet ? 3 : 0;

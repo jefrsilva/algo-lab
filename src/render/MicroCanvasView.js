@@ -92,9 +92,13 @@ export const MATRIX_ROW_BAND_W = 26; // faixa à esquerda com o índice de cada 
 export const MATRIX_COL_BAND_H = 18; // faixa em cima com o índice de cada COLUNA
 
 export const PORT_R = 6; // raio visual/alvo de clique dos "pinos" de ligação
-// afastamento do contorno de destaque (`.node-halo`, ver canvas.css) em
-// relação à borda do nó — só visual, não entra em hit-test nem layout.
-const HALO_GAP = 5;
+// afastamento do eixo do contorno de destaque (`.node-halo`, ver canvas.css)
+// em relação à borda do nó — só visual, não entra em hit-test nem layout. O
+// halo é desenhado POR CIMA da caixa (logo depois dela, antes do conteúdo e
+// dos pinos), colado nela: com o traço de 4px, cobre de 1px pra dentro (o
+// traço de 2px da própria caixa) até 3px pra fora — vira a borda do elemento
+// em vez de um terceiro contorno afastado (borda, vão, halo).
+const HALO_GAP = 1;
 // ponta de seta em unidades de mundo (markerUnits userSpaceOnUse): mesmo
 // tamanho com traço normal ou selecionado (mais grosso), em vez de escalar
 // junto com a espessura do traço.
@@ -715,13 +719,31 @@ export function boxWithHandle(width, height, handle) {
   return { x: x0, y: y0, w: width - x0, h: height - y0 };
 }
 
-/** Desenha o halo de seleção em volta de caixa + puxador, e o puxador em si
- * (com três pontinhos de "pegada"). Chamado ANTES de desenhar a caixa: o
- * puxador entra `boxR` por baixo dela, então só a aba de fora aparece,
- * colada na borda. */
-function appendHandleAndHalo(el, width, height, handle, boxR) {
-  const b = boxWithHandle(width, height, handle);
-  el.appendChild(haloRect(b.w, b.h, boxR, b.x, b.y));
+/** Caminho de um retângulo com raio próprio em cada canto (`r` = [sup.
+ * esq., sup. dir., inf. dir., inf. esq.]). */
+function roundedRectPath(x, y, w, h, [tl, tr, br, bl]) {
+  return [
+    `M ${x + tl} ${y}`,
+    `H ${x + w - tr}`,
+    `A ${tr} ${tr} 0 0 1 ${x + w} ${y + tr}`,
+    `V ${y + h - br}`,
+    `A ${br} ${br} 0 0 1 ${x + w - br} ${y + h}`,
+    `H ${x + bl}`,
+    `A ${bl} ${bl} 0 0 1 ${x} ${y + h - bl}`,
+    `V ${y + tl}`,
+    `A ${tl} ${tl} 0 0 1 ${x + tl} ${y}`,
+    'Z',
+  ].join(' ');
+}
+
+/** Raio dos cantos de fora do puxador (`.array-handle`). */
+const HANDLE_R = 4;
+
+/** Desenha o puxador (com três pontinhos de "pegada"). Chamado ANTES de
+ * desenhar a caixa: o puxador entra `boxR` por baixo dela, então só a aba de
+ * fora aparece, colada na borda — e a borda esquerda (ou de cima) da caixa
+ * vira a divisória entre aba e conteúdo. */
+function appendHandle(el, width, height, handle, boxR) {
   const vertical = handle.y < 0;
   el.appendChild(
     svgEl('rect', {
@@ -730,8 +752,8 @@ function appendHandleAndHalo(el, width, height, handle, boxR) {
       y: handle.y,
       width: handle.w + (vertical ? 0 : boxR),
       height: handle.h + (vertical ? boxR : 0),
-      rx: 4,
-      ry: 4,
+      rx: HANDLE_R,
+      ry: HANDLE_R,
     }),
   );
   const gripX = handle.x + handle.w / 2;
@@ -739,6 +761,41 @@ function appendHandleAndHalo(el, width, height, handle, boxR) {
   [-5, 0, 5].forEach((d) =>
     el.appendChild(svgEl('circle', { class: 'array-handle-grip', cx: vertical ? gripX + d : gripX, cy: vertical ? gripY : gripY + d, r: 1.3 })),
   );
+}
+
+/** Contorno das células destacadas (`.array-cell-target`, alvo de um
+ * ponteiro/cursor) num grupo próprio, POR CIMA de todas as células: o
+ * contorno de 3px fica metade pra fora da célula, e a célula seguinte
+ * (desenhada depois, com preenchimento) cobria o lado direito — ou de baixo,
+ * na vertical / na matriz. A célula em si continua só com o fundo tingido;
+ * não dá pra trazê-la pra frente porque o preenchimento cobriria o próprio
+ * valor. Refeito a cada render (o destaque muda sem as células mudarem). */
+function renderCellTargetOutlines(el) {
+  el.querySelector(':scope > .array-cell-outlines')?.remove();
+  const targets = el.querySelectorAll('.array-cell.array-cell-target');
+  if (!targets.length) return;
+  const group = svgEl('g', { class: 'array-cell-outlines' });
+  targets.forEach((cellEl) => {
+    const attrs = { class: 'array-cell-outline' };
+    for (const a of ['x', 'y', 'width', 'height', 'rx', 'ry']) {
+      if (cellEl.hasAttribute(a)) attrs[a] = cellEl.getAttribute(a);
+    }
+    group.appendChild(svgEl('rect', attrs));
+  });
+  el.appendChild(group);
+}
+
+/** Halo de seleção em volta de caixa + puxador, como um contorno só.
+ * Chamado DEPOIS da caixa (cobre a borda de fora dela e do puxador; a
+ * divisória entre os dois fica com a cor normal) e antes das células. Os
+ * cantos do lado do puxador seguem o raio dele, os outros o da caixa. */
+function appendCollectionHalo(el, width, height, handle, boxR) {
+  const b = boxWithHandle(width, height, handle);
+  const g = HALO_GAP;
+  const hr = HANDLE_R + g;
+  const br = boxR + g;
+  const radii = handle.y < 0 ? [hr, hr, br, br] : [hr, br, br, hr];
+  el.appendChild(svgEl('path', { class: 'node-halo', d: roundedRectPath(b.x - g, b.y - g, b.w + g * 2, b.h + g * 2, radii) }));
 }
 
 /** Layout puro (não depende de x/y do nó) das células de um array, conforme orientação. */
@@ -1931,8 +1988,8 @@ export class MicroCanvasView {
           // structNextPort com simplified=true); a posição de conexão
           // continua existindo pro arraste manual (_findMicroPortAt em
           // App.js), só não é desenhada.
-          el.appendChild(halo);
           el.appendChild(circle);
+          el.appendChild(halo);
           el.appendChild(dataLabel);
         } else if (isGraph) {
           // caixa de 2 células (data | neighbors) — diferente da de 3
@@ -1974,8 +2031,8 @@ export class MicroCanvasView {
           });
           neighborsNull.textContent = '∅';
 
-          el.appendChild(haloRect(STRUCT_W, STRUCT_H, 8));
           el.appendChild(box);
+          el.appendChild(haloRect(STRUCT_W, STRUCT_H, 8));
           el.appendChild(divider);
           el.appendChild(dataCap);
           el.appendChild(neighborsCap);
@@ -2049,8 +2106,8 @@ export class MicroCanvasView {
           });
           nextNull.textContent = '∅';
 
-          el.appendChild(haloRect(STRUCT_W, STRUCT_H, 8));
           el.appendChild(box);
+          el.appendChild(haloRect(STRUCT_W, STRUCT_H, 8));
           el.appendChild(prevDivider);
           el.appendChild(nextDivider);
           el.appendChild(prevCap);
@@ -2124,8 +2181,8 @@ export class MicroCanvasView {
         const port = svgEl('circle', { class: 'struct-port pointer-port', cx: PTR_W, cy: PTR_H / 2, r: PORT_R });
         const title = svgEl('title');
         el.appendChild(title);
-        el.appendChild(haloRect(PTR_W, PTR_H, 16));
         el.appendChild(box);
+        el.appendChild(haloRect(PTR_W, PTR_H, 16));
         el.appendChild(label);
         el.appendChild(port);
         this.pointersLayer.appendChild(el);
@@ -2189,10 +2246,10 @@ export class MicroCanvasView {
           'text-anchor': 'middle',
         });
         el.appendChild(svgEl('title'));
-        el.appendChild(haloRect(VAR_W, VAR_H, 8));
         el.appendChild(box);
         el.appendChild(header);
         el.appendChild(headerFix);
+        el.appendChild(haloRect(VAR_W, VAR_H, 8));
         el.appendChild(nameLabel);
         el.appendChild(valueLabel);
         this.variablesLayer.appendChild(el);
@@ -2257,6 +2314,7 @@ export class MicroCanvasView {
       el.querySelectorAll('.array-cell').forEach((cellEl, i) => {
         cellEl.classList.toggle('array-cell-target', !!node.targetCellIndexes?.has(i));
       });
+      renderCellTargetOutlines(el);
       this._renderWindowBrackets(el, node, pointerEdges);
     });
   }
@@ -2350,9 +2408,10 @@ export class MicroCanvasView {
     // "set" na faixa onde ficariam os índices (só na horizontal, a vertical
     // não tem largura pra isso).
     const boxR = node.isSet ? 14 : 8;
-    appendHandleAndHalo(el, layout.width, layout.height, arrayHandleRect(node), boxR);
+    appendHandle(el, layout.width, layout.height, arrayHandleRect(node), boxR);
     const box = svgEl('rect', { class: 'array-box', width: layout.width, height: layout.height, rx: boxR, ry: boxR });
     el.appendChild(box);
+    appendCollectionHalo(el, layout.width, layout.height, arrayHandleRect(node), boxR);
     if (node.isSet && !isVerticalOrientation(node.orientation)) {
       const caption = svgEl('text', { class: 'array-index-label set-caption', x: SET_PAD + 2, y: ARRAY_INDEX_H - 4 });
       caption.textContent = node.cells.length === 0 ? 'set()' : 'set';
@@ -2465,6 +2524,7 @@ export class MicroCanvasView {
       el.querySelectorAll('.array-cell').forEach((cellEl, i) => {
         cellEl.classList.toggle('array-cell-target', !!node.targetCellKeys?.has(node.cells[i]?.key));
       });
+      renderCellTargetOutlines(el);
     });
   }
 
@@ -2480,8 +2540,9 @@ export class MicroCanvasView {
     const layout = dictLayout(node);
 
     const box = svgEl('rect', { class: 'array-box', width: layout.width, height: layout.height, rx: 8, ry: 8 });
-    appendHandleAndHalo(el, layout.width, layout.height, dictHandleRect(node), 8);
+    appendHandle(el, layout.width, layout.height, dictHandleRect(node), 8);
     el.appendChild(box);
+    appendCollectionHalo(el, layout.width, layout.height, dictHandleRect(node), 8);
 
     layout.cells.forEach((c, i) => {
       const cellModel = node.cells[i];
@@ -2565,6 +2626,7 @@ export class MicroCanvasView {
           activeCols.add(cellEl.dataset.col);
         }
       });
+      renderCellTargetOutlines(el);
       el.querySelectorAll('.matrix-row-label').forEach((l) => l.classList.toggle('matrix-index-active', activeRows.has(l.dataset.row)));
       el.querySelectorAll('.matrix-col-label').forEach((l) => l.classList.toggle('matrix-index-active', activeCols.has(l.dataset.col)));
     });
@@ -2577,8 +2639,9 @@ export class MicroCanvasView {
     el.innerHTML = '';
 
     const layout = matrixLayout(node);
-    appendHandleAndHalo(el, layout.width, layout.height, matrixHandleRect(node), 8);
+    appendHandle(el, layout.width, layout.height, matrixHandleRect(node), 8);
     el.appendChild(svgEl('rect', { class: 'array-box', width: layout.width, height: layout.height, rx: 8, ry: 8 }));
+    appendCollectionHalo(el, layout.width, layout.height, matrixHandleRect(node), 8);
 
     layout.colLabels.forEach((l) => {
       const t = svgEl('text', { class: 'array-index-label matrix-col-label', x: l.x, y: l.y, 'text-anchor': 'middle', 'data-col': l.col });

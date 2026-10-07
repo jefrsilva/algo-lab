@@ -30,6 +30,7 @@ Se o elemento **não** passa pelo interpretador nem pelos snapshots (só desenho
 - `App`: `_microNodeMaps`, `_microRemoveById`, `_isMicroModelElement`, posição, `_microFindIdsInRect`, `_microOccupiedRects`, `_microCreatePosition`, `_fitMicroViewport`/`_hasMicroContent`; hit testing na ordem certa em `_onMicroPointerDown`, `_onMicroDblClick`, `_onMicroContextMenu`, `_resolveMicroDropTarget`; filtrado por `_microPickable`.
 - Geometria usada no desenho **e** no clique exportada de `MicroCanvasView.js` (num lugar só).
 - `_applyColors`/`_applyDimming`/pulso de seleção e `.micro-colored` em `canvas.css`, com tokens de `variables.css` (dois temas).
+- Halo de seleção (`haloRect`, ou `appendCollectionHalo` se tiver puxador) **depois** da caixa e de tudo que encosta na borda dela (células), antes dos pinos: ele cobre a borda — o `.selected` só tinge o preenchimento, não muda o traço.
 - Elementos do modelo não podem ser criados pela UI durante a Simulação — a quick action usa o helper `model(...)` (skill `nova-quick-action`).
 - Coleção nomeada: ponteiro-rótulo (`_create*LabelPointer`, `MicroModel#link*LabelPointer`, flag `is*Label` no ponteiro e no `toJSON`/`loadFrom`).
 - Tipo de nó (8.4): a normalização de `type` aparece repetida em `addStruct`, `toJSON` e `loadFrom`; mapear nomes de campo para `next`/`prev` físicos em `MicroRuntimeAdapter#_structFieldForAttr`/`getAttr`/`assignAttr`; portas em `MicroCanvasView` (inclusive modo simplificado) e `App#_findMicroPortAt`/`_microPortWorldPos`.

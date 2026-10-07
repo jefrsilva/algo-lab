@@ -1925,6 +1925,110 @@ describe('labels de texto com markdown', () => {
   });
 });
 
+describe('halo de seleção colado no elemento', () => {
+  const el = (id) => $(`[data-id="${id}"]`);
+  /** Classes dos filhos diretos do <g>, na ordem do SVG. */
+  const ordem = (g) => [...g.children].map((c) => c.getAttribute('class') ?? c.tagName);
+  const depois = (g, a, b) => ordem(g).findIndex((c) => c.includes(b)) === ordem(g).findIndex((c) => c.includes(a)) + 1;
+
+  test('o halo vem logo DEPOIS da caixa (por cima da borda) e antes dos pinos', () => {
+    const no = app.micro.addStruct(300, 200, 1);
+    const p = app.micro.addPointer(100, 200, 'p');
+    const v = app.micro.addVariable(100, 400, 'i', 2);
+    const arr = app.micro.addArray(300, 400, { name: 'nums', size: 3 });
+    app._renderMicroOnly();
+    expect(depois(el(no.id), 'struct-box', 'node-halo')).toBe(true);
+    expect(ordem(el(no.id)).findIndex((c) => c.includes('node-halo'))).toBeLessThan(ordem(el(no.id)).findIndex((c) => c.includes('struct-port')));
+    expect(depois(el(p.id), 'pointer-box', 'node-halo')).toBe(true);
+    expect(ordem(el(p.id)).findIndex((c) => c.includes('node-halo'))).toBeLessThan(ordem(el(p.id)).findIndex((c) => c.includes('pointer-port')));
+    // variável: depois do cabeçalho, que também pinta o topo da caixa
+    const ov = ordem(el(v.id));
+    expect(ov.findIndex((c) => c.includes('node-halo'))).toBeGreaterThan(ov.lastIndexOf('variable-header'));
+  });
+
+  test('numa coleção o halo vem DEPOIS das células (que encostam na borda) e antes dos pinos', () => {
+    const valores = app.micro.addArray(300, 400, { name: 'nums', size: 3 });
+    const refs = app.micro.addArray(300, 600, { name: 'nos', size: 2, kind: 'ref' });
+    const m = app.micro.addMatrix(600, 400, { name: 'm', cells: [[1, 2], [3, 4]] });
+    const d = app.micro.addDict(600, 600, { name: 'd', cells: [{ key: 'a', kind: 'value', value: 1 }] });
+    app._renderMicroOnly();
+    for (const c of [valores, refs, m, d]) {
+      const o = ordem(el(c.id));
+      const halo = o.indexOf('node-halo');
+      const celula = (k) => k.split(' ').includes('array-cell');
+      expect(o.some(celula), c.name).toBe(true);
+      expect(halo, c.name).toBeGreaterThan(o.findLastIndex(celula));
+      const pinos = o.map((k, i) => (k.includes('struct-port') ? i : -1)).filter((i) => i >= 0);
+      if (c === refs) expect(pinos).toHaveLength(2);
+      pinos.forEach((i) => expect(i, c.name).toBeGreaterThan(halo));
+    }
+  });
+
+  test('numa coleção o halo é um contorno só em volta de caixa + puxador, 1px pra fora', () => {
+    const arr = app.micro.addArray(300, 400, { name: 'nums', size: 3 });
+    const vertical = app.micro.addArray(600, 400, { name: 'v', size: 3, orientation: 'vertical' });
+    app._renderMicroOnly();
+    for (const a of [arr, vertical]) {
+      const { width, height } = arrayLayout(a);
+      const h = arrayHandleRect(a);
+      const x0 = Math.min(0, h.x) - 1;
+      const y0 = Math.min(0, h.y) - 1;
+      const d = el(a.id).querySelector('.node-halo').getAttribute('d');
+      // canto superior esquerdo arredondado com o raio do puxador (4 + 1)
+      expect(d.startsWith(`M ${x0 + 5} ${y0}`)).toBe(true);
+      // canto superior direito: do puxador se ele está em cima, senão da caixa (8 + 1)
+      expect(d).toContain(`H ${width + 1 - (h.y < 0 ? 5 : 9)}`);
+      expect(d).toContain(`V ${height + 1 - 9}`); // inferior direito: sempre o da caixa
+    }
+  });
+
+  test('no CSS, seleção e alvo não mudam mais o traço da caixa (o halo vira a borda)', () => {
+    const css = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../../src/styles/canvas.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const corpo = (seletor) =>
+      [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].find(([, sel]) => sel.split(',').some((s) => s.trim() === seletor))?.[2];
+    expect(corpo('.node-halo')).toMatch(/fill:\s*none/);
+    expect(corpo('.selected > .node-halo')).not.toMatch(/fill:/);
+    for (const sel of [
+      '.struct-node.selected .struct-box',
+      '.struct-node.linked .struct-box',
+      '.pointer-node.selected .pointer-box',
+      '.variable-node.selected .variable-box',
+      '.array-node.selected .array-box',
+      '.array-node.linked .array-box',
+    ]) {
+      expect(corpo(sel), sel).toBeDefined();
+      expect(corpo(sel), sel).not.toMatch(/stroke/);
+    }
+  });
+});
+
+describe('contorno da célula destacada por um cursor', () => {
+  test('fica num grupo por cima de todas as células (a vizinha não cobre o lado direito)', () => {
+    rodarNaSimulacao(linhas('nums = [3, 1, 4, 1, 5]', 'i = 2', 'x = nums[i]'));
+    botao('.playback-btn', '⏭').click();
+    const arr = [...app.micro.arrays.values()].find((a) => a.name === 'nums');
+    const cursor = [...app.micro.pointers.values()].find((p) => p.label === 'nums[i]');
+    app._toggleMicroSelection(cursor.id);
+    app._renderMicroOnly();
+    const g = $(`[data-id="${arr.id}"]`);
+    const celulas = [...g.querySelectorAll('.array-cell')];
+    const alvo = g.querySelector('.array-cell-target');
+    expect(celulas.indexOf(alvo)).toBe(2);
+    const contornos = g.querySelectorAll('.array-cell-outline');
+    expect(contornos).toHaveLength(1);
+    for (const a of ['x', 'y', 'width', 'height']) expect(contornos[0].getAttribute(a)).toBe(alvo.getAttribute(a));
+    // depois de TODAS as células (ordem do documento = ordem de desenho)
+    const ultima = celulas.at(-1);
+    expect(ultima.compareDocumentPosition(contornos[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    // refeito a cada render: sem célula destacada, sem contorno (nem sobra)
+    app.micro.removePointer(cursor.id);
+    app._renderMicroOnly();
+    expect(g.querySelectorAll('.array-cell-target')).toHaveLength(0);
+    expect(g.querySelectorAll('.array-cell-outline')).toHaveLength(0);
+  });
+});
+
 describe('lista de listas em grade', () => {
   const svg = () => $('.micro-canvas');
   const popup = () => $('.array-settings-popup');
@@ -2020,5 +2124,34 @@ describe('lista de listas em grade', () => {
     expect(app.micro.matrices.size).toBe(0);
     app._microRemoveById(m.id);
     expect(app.micro.arrays.size).toBe(0);
+  });
+});
+
+describe('halo de uma grade por cima das linhas embutidas', () => {
+  test('a cópia do halo fica numa camada acima das listas, com o estado e a posição da moldura', () => {
+    rodarNaSimulacao(linhas('m = [[0] * 3 for _ in range(2)]', 'i = 1', 'x = m[i]'));
+    botao('.playback-btn', '⏭').click();
+    const grade = [...app.micro.arrays.values()].find((a) => a.name === 'm');
+    expect(grade.orientation).toBe('grid');
+    app._toggleMicroSelection(grade.id);
+    app._renderMicroOnly();
+    const moldura = $(`.arrays-layer > [data-id="${grade.id}"]`);
+    const copia = $('.grid-halos-layer > .grid-halo-overlay');
+    expect(copia).not.toBeNull();
+    // a camada vem depois da das listas (as linhas embutidas ficam embaixo dela)
+    expect($('.arrays-layer').compareDocumentPosition(copia) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(copia.getAttribute('transform')).toBe(moldura.getAttribute('transform'));
+    expect(copia.classList.contains('selected')).toBe(true);
+    expect(copia.querySelector('.node-halo').getAttribute('d')).toBe(moldura.querySelector(':scope > .node-halo').getAttribute('d'));
+    // a faixa da linha lida por "m[i]" tem o contorno copiado também
+    expect(copia.querySelectorAll('.array-cell-outline')).toHaveLength(moldura.querySelectorAll('.array-cell-outline').length);
+
+    app._toggleMicroSelection(grade.id);
+    app._renderMicroOnly();
+    expect(copia.classList.contains('selected')).toBe(false);
+    // sem a grade, sem cópia
+    app._microRemoveById(grade.id);
+    app._renderMicroOnly();
+    expect($('.grid-halo-overlay')).toBeNull();
   });
 });

@@ -37,48 +37,59 @@
    Seleção e "alvo do ponteiro" eram marcados com brilho difuso
    (drop-shadow), que borrava a borda e o valor escrito dentro do nó —
    especialmente em vídeo comprimido. Agora cada nó tem um contorno externo
-   (`.node-halo`, criado em MicroCanvasView, afastado alguns px da caixa)
-   que só aparece nesses estados: nítido, sem desfoque. */
+   (`.node-halo`, criado em MicroCanvasView) que só aparece nesses estados:
+   nítido, sem desfoque. Fica POR CIMA da caixa (numa coleção, também das
+   células, que encostam na borda — só os pinos ficam na frente) e colado nela (cobre o traço
+   da própria caixa e cresce pra fora), então o elemento selecionado tem UMA
+   borda grossa — e não borda + vão + halo. Por isso a seleção/alvo não muda
+   mais o traço da caixa (nem do puxador de uma coleção, nem a divisória
+   entre aba e conteúdo): só o preenchimento é tingido. */
 
 .node-halo {
   fill: none;
   stroke: transparent;
-  stroke-width: 2;
+  stroke-width: 4;
   pointer-events: none;
   transition: stroke 0.2s ease, opacity 0.2s ease;
 }
 
-/* selecionado: o halo vira uma faixa cheia (preenchimento translúcido no
-   vão entre a caixa e o contorno + contorno sólido de 3px) — junto com o
-   fundo tingido da própria caixa, a seleção salta à vista num relance. */
+/* selecionado: o halo vira a borda (4px, de 1px pra dentro a 3px pra fora
+   da borda da caixa) — junto com o fundo tingido da própria caixa, a
+   seleção salta à vista num relance. */
 .selected > .node-halo {
   stroke: var(--sel);
-  stroke-width: 3;
-  fill: color-mix(in srgb, var(--sel) 35%, transparent);
 }
 
 .linked > .node-halo {
   stroke: var(--target);
-  stroke-width: 2;
-  opacity: 0.7;
 }
 
 /* pulso ao selecionar (struct / ponteiro / array / variável): o halo
    engrossa e volta, uma vez só (ver MicroCanvasView#_pulseSelect) */
 @keyframes micro-select-pulse {
   0% {
-    stroke-width: 3;
+    stroke-width: 4;
   }
   35% {
     stroke-width: 9;
   }
   100% {
-    stroke-width: 3;
+    stroke-width: 4;
   }
 }
 
 .select-flash > .node-halo {
   animation: micro-select-pulse 0.6s ease-out;
+}
+
+/* cópia do halo de uma grade por cima das linhas embutidas (ver
+   MicroCanvasView#_syncGridHalos) — só visual, acompanha a moldura */
+.grid-halo-overlay {
+  pointer-events: none;
+}
+
+.grid-halo-overlay:not(.dragging) {
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* ---- modo micro: nós de estrutura (prev | data | next) ---- */
@@ -117,8 +128,6 @@
 }
 
 .struct-node.selected .struct-box {
-  stroke: var(--sel);
-  stroke-width: 3;
   fill: var(--node-selected-fill);
 }
 
@@ -129,8 +138,6 @@
 
 /* alvo do ponteiro selecionado (destaque secundário) */
 .struct-node.linked .struct-box {
-  stroke: var(--target);
-  stroke-width: 3;
   fill: var(--node-linked-fill);
 }
 
@@ -145,8 +152,6 @@
 }
 
 .struct-node.selected .struct-circle {
-  stroke: var(--sel);
-  stroke-width: 3;
   fill: var(--node-selected-fill);
 }
 
@@ -156,8 +161,6 @@
 }
 
 .struct-node.linked .struct-circle {
-  stroke: var(--target);
-  stroke-width: 3;
   fill: var(--node-linked-fill);
 }
 
@@ -221,12 +224,9 @@
   stroke: var(--text-2);
 }
 
-/* selecionado: traço contínuo (sem tracejado) + halo — dá pra distinguir
-   de um ponteiro comum mesmo sem depender só da cor. */
+/* selecionado: o halo (contínuo) cobre a borda tracejada — dá pra
+   distinguir de um ponteiro comum mesmo sem depender só da cor. */
 .pointer-node.selected .pointer-box {
-  stroke: var(--sel);
-  stroke-width: 3;
-  stroke-dasharray: none;
   fill: color-mix(in srgb, var(--sel) 40%, var(--bg-0));
 }
 
@@ -266,13 +266,11 @@
 }
 
 .pointer-node.cursor.selected .pointer-box {
-  stroke: var(--cursor);
   fill: color-mix(in srgb, var(--cursor) 40%, var(--bg-0));
 }
 
 .pointer-node.cursor.selected > .node-halo {
   stroke: var(--cursor);
-  fill: color-mix(in srgb, var(--cursor) 35%, transparent);
 }
 
 /* ponteiro-rótulo de um array (ver App#_createArrayLabelPointer) — mostra o
@@ -307,8 +305,6 @@
 }
 
 .variable-node.selected .variable-box {
-  stroke: var(--sel);
-  stroke-width: 3;
   fill: var(--node-selected-fill);
 }
 
@@ -403,8 +399,6 @@
 }
 
 .array-node.selected .array-box {
-  stroke: var(--sel);
-  stroke-width: 3;
   fill: var(--node-selected-fill);
 }
 
@@ -414,14 +408,11 @@
 
 .array-node.dragging .array-box {
   filter: drop-shadow(0 6px 14px var(--shadow-color));
-  stroke: var(--sel);
 }
 
 /* array apontado pelo ponteiro-rótulo selecionado (ver App#_createArrayLabelPointer) —
    mesmo destaque secundário "alvo do ponteiro selecionado" usado pros structs. */
 .array-node.linked .array-box {
-  stroke: var(--target);
-  stroke-width: 3;
   fill: var(--node-linked-fill);
 }
 
@@ -432,11 +423,21 @@
   transition: stroke 0.2s ease, fill 0.2s ease;
 }
 
-/* alvo do ponteiro selecionado (destaque secundário) */
+/* alvo do ponteiro selecionado (destaque secundário): a célula ganha o
+   fundo tingido, e o contorno vem de `.array-cell-outline`, desenhado por
+   cima de TODAS as células (ver MicroCanvasView#renderCellTargetOutlines) —
+   no traço da própria célula, a vizinha desenhada depois cobria o lado
+   direito/de baixo. */
 .array-cell.array-cell-target {
   fill: color-mix(in srgb, var(--target) 22%, var(--cell-fill));
   stroke: var(--target);
+}
+
+.array-cell-outline {
+  fill: none;
+  stroke: var(--target);
   stroke-width: 3;
+  pointer-events: none;
 }
 
 .array-cell-value {
@@ -505,10 +506,6 @@
    pra dar pra distinguir de um array num relance. */
 .dict-node .array-box {
   stroke: var(--accent);
-}
-
-.dict-node.selected .array-box {
-  stroke: var(--sel);
 }
 
 /* ---- modo micro: cor manual de um elemento (Alt+1…Alt+9; Alt+0 volta à
@@ -906,7 +903,8 @@
 /* puxador do array (ver MicroCanvasView#arrayHandleRect): aba à esquerda
    (horizontal) ou em cima (vertical), como a barra de título de uma janela —
    soltar o pino de um ponteiro nela liga ao array inteiro; arrastar move o
-   array. Acompanha a borda da caixa (seleção, alvo de ponteiro). */
+   array. Selecionado / alvo de ponteiro: a borda de fora fica sob o halo
+   (ver .node-halo), na mesma cor dele pra não sobrar cantinho cinza. */
 .array-handle {
   fill: var(--node-header);
   stroke: var(--node-stroke);

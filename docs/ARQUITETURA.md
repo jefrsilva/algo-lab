@@ -330,7 +330,7 @@ Leitura de gráfico Big-O (mouse sobre o gráfico, sem tecla e sem botão pressi
 
 Antes disso, o item 1 também liga/desliga a classe `dragging-elements` no `.micro-container` enquanto há um arraste de elemento ou de grupo (`_microDragId`/`_microGroupDragPositions`): o CSS tira dela a transição do traçado (`d`) das setas, que fica só para a reprodução passo a passo — com a transição durante o arraste, cada `pointermove` recomeçava a animação e a seta ficava atrás do elemento (o próprio elemento arrastado já não anima `transform`, por estar com `.dragging`).
 
-`MicroCanvasView#render` faz um **diff por id**: cada `_render<Tipo>` mantém um `Map<id, <g>>`, remove os que sumiram, cria os novos e atualiza atributos e classes dos existentes. As camadas SVG, de trás pra frente, são: grid → áreas → gráficos → setas → arrays → dicts → matrizes → structs → ponteiros → variáveis → labels → alças de redimensionamento.
+`MicroCanvasView#render` faz um **diff por id**: cada `_render<Tipo>` mantém um `Map<id, <g>>`, remove os que sumiram, cria os novos e atualiza atributos e classes dos existentes. As camadas SVG, de trás pra frente, são: grid → áreas → gráficos → setas → arrays → cópias do halo das grades (`_syncGridHalos`) → dicts → matrizes → structs → ponteiros → variáveis → labels → alças de redimensionamento.
 
 ### 6.5 Salvar e carregar projeto
 
@@ -483,7 +483,7 @@ Cada widget é uma classe independente, sem classe base. Recebe um container e c
 ### 7.7 `src/styles/`
 
 - `variables.css`: **tokens**. Há uma cor por significado: `--sel` (selecionado), `--target` (alvo do selecionado), `--exec` (em execução), `--cursor` (cursor de leitura), `--danger`. O tema claro só redefine tokens em `:root[data-theme='light']`; tons translúcidos usam `color-mix()`. Pra mudar uma cor, mude o token, não a regra.
-- `canvas.css`: classes dos elementos SVG (`.struct-node`, `.pointer-node`, `.array-node`, `.node-halo`, `.selected`, `.linked`, `.micro-colored` com `--node-color`…).
+- `canvas.css`: classes dos elementos SVG (`.struct-node`, `.pointer-node`, `.array-node`, `.node-halo`, `.selected`, `.linked`, `.micro-colored` com `--node-color`…). O `.node-halo` (contorno de seleção / alvo) é desenhado **depois** da caixa e colado nela, cobrindo a borda dela (`haloRect`, antes dos textos e pinos; numa coleção, `appendCollectionHalo` contorna caixa + puxador como uma peça só e vem depois das células — que encostam na borda —, com os pinos movidos pra frente dele) — por isso `.selected`/`.linked` só tingem o preenchimento da caixa, sem mudar o traço. O contorno das células destacadas (`renderCellTargetOutlines`) também fica num grupo por cima das células e atrás dos pinos. Numa grade (lista de listas), as linhas embutidas são listas à parte desenhadas por cima da moldura; por isso `_syncGridHalos` põe uma cópia do halo da moldura (e do contorno das faixas de índice destacadas) numa camada logo acima das listas, com as mesmas classes de estado, e `_pulseSelect` pulsa a cópia junto.
 - `controls.css`: botões, popups (`.array-settings-*`, reaproveitado por todos os popups de configurações), menu, diálogos, toolbar, quick actions.
 - `codeEditor.css`: painel de código, divisórias, barra de reprodução, árvore de chamadas, console.
 - `main.css`: reset e layout de página.
@@ -548,7 +548,7 @@ Esse é o caso mais extenso. Siga a **matriz** (`matrices`) como modelo, porque 
 **Render**
 - [ ] `MicroCanvasView`: constantes de geometria, `xLayout(node)` exportado (e `xHandleRect`, se ele tiver puxador), camada (`this.xLayer`, inserida na ordem certa), `this.xEls`, `_renderX` com diff por id, inclusão em `render({... xs = []})`, `_applyColors`/`_applyDimming` e no pulso de seleção.
 - [ ] Setas que chegam nele: `_renderEdges` (ponto de chegada) e o `targetKind` correspondente.
-- [ ] `canvas.css`: classes do novo elemento usando os tokens (`--node-fill`, `--sel`…) e suporte a `.micro-colored`.
+- [ ] `canvas.css`: classes do novo elemento usando os tokens (`--node-fill`, `--sel`…) e suporte a `.micro-colored`; a seleção vem do `.node-halo` (desenhado depois da caixa e de tudo que encosta na borda dela, antes dos pinos) — não mude o traço da caixa no `.selected`.
 
 **App**
 - [ ] `_microNodeMaps`, `_microRemoveById`, `_isMicroModelElement`, `_microSetNodePos`/`_microNodePos`, `_microFindIdsInRect`, `_microOccupiedRects`, `_microCreatePosition` (um `kind` novo), `_fitMicroViewport`/`_hasMicroContent`.

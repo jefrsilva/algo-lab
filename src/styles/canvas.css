@@ -472,6 +472,14 @@
   user-select: none;
 }
 
+/* "início"/"fim" de um deque, "topo" de uma pilha (ver arrayEndCaptions) —
+   discretos, menores que os índices */
+.array-index-label.array-end-caption {
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0.85;
+}
+
 .array-value-label {
   fill: var(--text-0);
   font-family: var(--font-mono);

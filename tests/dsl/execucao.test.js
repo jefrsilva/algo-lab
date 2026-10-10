@@ -32,6 +32,15 @@ describe('passos', () => {
     expect(steps[1].touched).toEqual([{ kind: 'array', id: array(micro, 'nums').id }]);
   });
 
+  test('print(ponteiro) destaca o ponteiro e o elemento apontado', () => {
+    const { steps, micro } = runDsl(linhas('raiz = TreeNode(1)', 'print(raiz)'));
+    const ponteiro = [...micro.pointers.values()].find((p) => p.label === 'raiz');
+    expect(steps[1].touched).toEqual([
+      { kind: 'pointer', id: ponteiro.id },
+      { kind: 'struct', id: ponteiro.target.id },
+    ]);
+  });
+
   test('programa vazio não gera passos nem erro', () => {
     const { steps, error } = runDsl('');
     expect(error).toBeNull();

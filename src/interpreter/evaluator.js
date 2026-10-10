@@ -1742,6 +1742,9 @@ export function evaluate(node, env) {
             const v = evaluate(a, env);
             if (v === undefined) return undefined;
             values.push(v);
+            // destaca no passo os ponteiros/elementos citados (opcional)
+            if (a.type === 'Name') env.noteNameRead?.(a.name);
+            else env.noteValueRead?.(v);
           }
           values.forEach((v) => parts.push(valueText(v, env, false)));
           env.print?.(parts.join(' '));

@@ -190,6 +190,22 @@ describe('nós como círculos', () => {
   });
 });
 
+describe('destacar nós ao selecionar', () => {
+  test('é preferência do usuário, não do passo', () => {
+    const { micro, env, runner } = novo();
+    runner.run(linhas('a = Node(1)', 'fila = [a]', 'fila.append(a)', 'fila.pop()'), env);
+    runner.goToStep(2);
+    const id = [...micro.arrays.values()][0].id;
+    micro.setArrayHighlightNodes(id, true);
+    runner.updateHighlightNodes(id, true);
+    runner.goToStep(1);
+    expect(micro.arrays.get(id).highlightNodes).toBe(true);
+    runner.updateHighlightNodes(id, false);
+    runner.goToStep(3);
+    expect(micro.arrays.get(id).highlightNodes).toBeUndefined();
+  });
+});
+
 describe('array em pilha: cresce pra cima com a base parada', () => {
   const PILHA = linhas('pilha = [1]', 'pilha.append(2)', 'pilha.append(3)', 'pilha.pop()');
   const base = (arr) => arr.y + ARRAY_CELL_H * Math.max(1, arr.cells.length);

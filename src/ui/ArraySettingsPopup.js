@@ -161,6 +161,30 @@ export class ArraySettingsPopup {
     circlesRow.appendChild(circlesLabel);
     circlesRow.appendChild(circlesBtn);
 
+    // alternância "destacar nós": ao selecionar a coleção, todos os nós que
+    // ela guarda acendem na cor dela (ex: fila de nós a visitar, em vermelho)
+    let highlightNodes = !!node.highlightNodes;
+    const highlightRow = document.createElement('div');
+    highlightRow.className = 'array-settings-row';
+    const highlightLabel = document.createElement('label');
+    highlightLabel.textContent = 'Seleção';
+    const highlightBtn = document.createElement('button');
+    highlightBtn.type = 'button';
+    highlightBtn.className = 'array-orient-btn array-highlight-toggle';
+    highlightBtn.textContent = '✦ Destacar nós';
+    highlightBtn.title = 'Ao selecionar a coleção, destaca todos os nós dela na cor da coleção';
+    const syncHighlightBtn = () => {
+      highlightBtn.setAttribute('aria-pressed', String(highlightNodes));
+      highlightBtn.classList.toggle('active', highlightNodes);
+    };
+    syncHighlightBtn();
+    highlightBtn.addEventListener('click', () => {
+      highlightNodes = !highlightNodes;
+      syncHighlightBtn();
+    });
+    highlightRow.appendChild(highlightLabel);
+    highlightRow.appendChild(highlightBtn);
+
     const actions = document.createElement('div');
     actions.className = 'array-settings-actions';
     const removeBtn = document.createElement('button');
@@ -179,6 +203,7 @@ export class ArraySettingsPopup {
     extraSizeInputs.forEach(({ row }) => el.appendChild(row));
     if (showOrientation) el.appendChild(orientRow);
     if (showNodeCircles) el.appendChild(circlesRow);
+    if (showNodeCircles) el.appendChild(highlightRow);
     el.appendChild(actions);
     this.container.appendChild(el);
     this.el = el;
@@ -190,7 +215,10 @@ export class ArraySettingsPopup {
     const save = () => {
       const name = nameInput.value.trim() || node.name;
       const payload = { name, orientation };
-      if (showNodeCircles) payload.nodeCircles = nodeCircles;
+      if (showNodeCircles) {
+        payload.nodeCircles = nodeCircles;
+        payload.highlightNodes = highlightNodes;
+      }
       if (sizeInput) {
         // campo em branco mantém o tamanho atual (Number('') daria 0 e esvaziaria a lista)
         const rawSize = sizeInput.value.trim() === '' ? NaN : Number(sizeInput.value);

@@ -8,7 +8,7 @@ describe('peso do texto das labels', () => {
   test('.label-text em canvas.css usa LABEL_BASE_WEIGHT', () => {
     const css = readFileSync(new URL('../../src/styles/canvas.css', import.meta.url), 'utf8');
     const bloco = css.match(/\.label-text \{[\s\S]*?\n\}/)[0];
-    expect(bloco).toMatch(new RegExp(`font-weight:\s*${LABEL_BASE_WEIGHT}\b`));
+    expect(bloco).toContain(`font-weight: ${LABEL_BASE_WEIGHT};`);
   });
 
   test('negrito é mais largo que o texto normal na estimativa sem canvas', () => {

@@ -987,7 +987,7 @@ describe('ferramenta Ligar nós', () => {
     const { tx, ty } = app.microViewport;
     alvo.dispatchEvent(new MouseEvent(tipo, { clientX: x + tx, clientY: y + ty, button: 0, bubbles: true, ...opts }));
   }
-  const meio = (n) => ({ x: n.x + 20, y: n.y + 20 });
+  const meio = (n) => ({ x: n.x + STRUCT_W / 2, y: n.y + STRUCT_H / 2 });
   /** Arraste do meio de `de` até o meio de `para` (nós ou pontos soltos). */
   function arrastar(de, para, opts = {}) {
     const a = meio(de);
@@ -1006,8 +1006,8 @@ describe('ferramenta Ligar nós', () => {
   /** Mouse andando sobre o canvas sem botão pressionado. */
   const pairar = (x, y) => evento(svg(), 'pointermove', x, y, { buttons: 0 });
   /** Clique na metade esquerda/direita de um nó. */
-  const naEsquerda = (n) => ({ x: n.x + 15, y: n.y + 28 });
-  const naDireita = (n) => ({ x: n.x + STRUCT_W - 15, y: n.y + 28 });
+  const naEsquerda = (n) => ({ x: n.x + 50, y: n.y + 28 });
+  const naDireita = (n) => ({ x: n.x + STRUCT_W - 50, y: n.y + 28 });
   function botaoDireito(x, y) {
     const { tx, ty } = app.microViewport;
     const ev = new MouseEvent('contextmenu', { clientX: x + tx, clientY: y + ty, button: 2, bubbles: true, cancelable: true });
@@ -1373,7 +1373,7 @@ describe('ferramenta Ligar nós', () => {
   test('Shift + arrastar até o vazio cria um nó de grafo já ligado (no modo Selecionar também)', () => {
     const [a] = doisNos();
     const antes = new Set(app.micro.structs.keys());
-    arrastar(a, { x: 130, y: 230 }, { shiftKey: true }); // solta em (150, 250)
+    arrastar(a, { x: 81, y: 222 }, { shiftKey: true }); // solta em (150, 250)
     const [n] = novos(antes);
     expect(n).toMatchObject({ type: 'graph', x: 150 - STRUCT_W / 2, y: 250 - STRUCT_H / 2 });
     expect(app.micro.arrays.has(n.neighborsArrayId)).toBe(true); // ganhou a lista de vizinhos
@@ -2214,5 +2214,19 @@ describe('roda de cores (Ctrl+Shift)', () => {
     solta('Shift');
     expect(app.colorWheel.isOpen).toBe(false);
     expect(app.microAreaColor).toBe(antes);
+  });
+});
+
+describe('seleção de nós no modo simplificado', () => {
+  test('só o círculo pega cliques; fora dele, dentro da caixa detalhada, não', () => {
+    app.micro.addStruct(100, 100);
+    const cx = 100 + STRUCT_W / 2;
+    const cy = 100 + STRUCT_H / 2;
+    const canto = { x: 101, y: 101 };
+    expect(app._findMicroStructAt(canto)).not.toBeNull();
+    app._applySetting('simplifiedNodes', true);
+    expect(app._findMicroStructAt(canto)).toBeNull();
+    expect(app._findMicroStructAt({ x: cx, y: cy })).not.toBeNull();
+    expect(app._microFindIdsInRect({ x0: 90, y0: 90, x1: 102, y1: 102 })).toHaveLength(0);
   });
 });

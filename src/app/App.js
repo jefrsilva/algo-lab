@@ -2211,7 +2211,10 @@ export class App {
     // labels/áreas nunca ficam inertes (ver `_microPickable`)
     const hits = (x, y, w, h, id) => hitBox(x, y, w, h) && !this._microInertIds?.has(id);
     const ids = [];
-    this.micro.structs.forEach((n) => { if (hits(n.x, n.y, STRUCT_W, STRUCT_H, n.id)) ids.push(n.id); });
+    this.micro.structs.forEach((n) => {
+      const r = this._microElementRect(n.id);
+      if (hits(r.x, r.y, r.w, r.h, n.id)) ids.push(n.id);
+    });
     this.micro.pointers.forEach((n) => { if (hits(n.x, n.y, pointerWidth(n, this.microFullNames), PTR_H, n.id)) ids.push(n.id); });
     this.micro.arrays.forEach((n) => {
       // linha embutida numa grade não é selecionável sozinha — é a grade
@@ -2479,7 +2482,7 @@ export class App {
   _findMicroStructAt(worldPt) {
     for (const node of this.micro.structs.values()) {
       if (!this._microPickable(node)) continue;
-      if (worldPt.x >= node.x && worldPt.x <= node.x + STRUCT_W && worldPt.y >= node.y && worldPt.y <= node.y + STRUCT_H) return node;
+      if (this._microStructContains(node, worldPt)) return node;
     }
     return null;
   }
@@ -3990,7 +3993,13 @@ export class App {
 
   // ---- modo micro: ferramenta "Ligar nós" ----
 
+  /** O nó ocupa a caixa detalhada ou, no modo simplificado, só o círculo. */
   _microStructContains(node, worldPt) {
+    if (this.microSimplifiedNodes) {
+      const dx = worldPt.x - (node.x + STRUCT_W / 2);
+      const dy = worldPt.y - (node.y + STRUCT_H / 2);
+      return dx * dx + dy * dy <= STRUCT_CIRCLE_R * STRUCT_CIRCLE_R;
+    }
     return worldPt.x >= node.x && worldPt.x <= node.x + STRUCT_W && worldPt.y >= node.y && worldPt.y <= node.y + STRUCT_H;
   }
 

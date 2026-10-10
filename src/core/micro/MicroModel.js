@@ -648,6 +648,16 @@ export class MicroModel {
     else delete node.nodeCircles;
   }
 
+  /** Lista/set/deque de nós (`kind: 'ref'`) que, ao ser selecionada, destaca
+   * todos os nós que contém na própria cor (preferência visual, como
+   * `nodeCircles`). Não vale pra lista de valores nem de listas. */
+  setArrayHighlightNodes(arrayId, on) {
+    const node = this.arrays.get(arrayId);
+    if (!node || node.kind === 'arrayref') return;
+    if (on) node.highlightNodes = true;
+    else delete node.highlightNodes;
+  }
+
   /** Pilha que mudou de tamanho (tinha `oldLen` células): `y` é o TOPO da
    * caixa, então ele anda o quanto a altura mudou — a base fica onde estava
    * e a célula nova aparece em cima (o `pop` tira de cima), levando junto o
@@ -805,6 +815,7 @@ export class MicroModel {
       ...(n.hashTable ? { hashTable: n.hashTable } : {}),
       ...(n.isDeque ? { isDeque: true, maxlen: n.maxlen ?? null } : {}),
       ...(n.nodeCircles ? { nodeCircles: true } : {}),
+      ...(n.highlightNodes ? { highlightNodes: true } : {}),
     });
     const dict = (n) => ({
       id: n.id,
@@ -891,6 +902,7 @@ export class MicroModel {
         // hash (texto/nó), é refeita (ver MicroRuntimeAdapter#_setTableOf)
         ...(n.isSet && n.hashTable && typeof n.hashTable === 'object' ? { hashTable: n.hashTable } : {}),
         ...(n.nodeCircles && arrayKind(n.kind) !== 'arrayref' ? { nodeCircles: true } : {}),
+        ...(n.highlightNodes && arrayKind(n.kind) !== 'arrayref' ? { highlightNodes: true } : {}),
       });
     });
     (data.dicts || []).forEach((n) => {

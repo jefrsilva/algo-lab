@@ -547,6 +547,14 @@
   --cell-selected-fill: color-mix(in srgb, var(--node-color) 30%, var(--bg-0));
 }
 
+/* elemento colorido E destacado como alvo (ex.: nós de uma lista com
+   "Destacar nós" selecionada): o halo e o preenchimento de "alvo" também
+   seguem a cor, em vez do verde padrão */
+.micro-colored.linked {
+  --target: var(--node-color);
+  --node-linked-fill: color-mix(in srgb, var(--node-color) 38%, var(--bg-1));
+}
+
 /* ---- modo micro: labels de texto soltas (modo "Texto" da barra inferior) ---- */
 
 .label-node {

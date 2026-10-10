@@ -892,8 +892,15 @@ export class App {
    * (sem cor na janela, os dois na cor padrão do tema). */
   _microEffectiveColors() {
     const rows = [...this.micro.arrays.values()].filter((a) => a.gridRow && this.microColors.has(a.gridRow.hostId) && !this.microColors.has(a.id));
-    if (!this.microWindows.length && !rows.length) return this.microColors;
+    const hosts = this._microNodeHighlightHosts();
+    if (!this.microWindows.length && !rows.length && !hosts.length) return this.microColors;
     const colors = new Map(this.microColors);
+    // lista/set/deque de nós selecionada com "Destacar nós": os nós dela
+    // ganham a cor da coleção (sem cor própria, só o destaque padrão)
+    hosts.forEach((a) => {
+      const color = this.microColors.get(a.id);
+      if (color) a.cells.forEach((id) => id && colors.set(id, color));
+    });
     // linha embutida numa grade pega a cor da grade (sem cor própria)
     rows.forEach((a) => colors.set(a.id, this.microColors.get(a.gridRow.hostId)));
     this.micro.pointers.forEach((p) => {
@@ -903,6 +910,12 @@ export class App {
       else colors.delete(p.id);
     });
     return colors;
+  }
+
+  /** Listas/sets/deques de nós com "Destacar nós" ligado que estão
+   * selecionadas agora (clique, área ou toque do passo da Simulação). */
+  _microNodeHighlightHosts() {
+    return [...this.micro.arrays.values()].filter((a) => a.highlightNodes && a.kind === 'ref' && this._isMicroHighlighted(a.id));
   }
 
   /** A label selecionada, quando a seleção inteira é exatamente UMA label. */
@@ -1823,7 +1836,7 @@ export class App {
       showGrid: node.kind === 'arrayref',
       // nós como círculos nas células: lista/set/deque de nós (ou ainda vazia)
       showNodeCircles: node.kind === 'ref' || (node.kind === 'value' && node.cells.length === 0),
-      onSave: ({ name, size, orientation, nodeCircles }) => {
+      onSave: ({ name, size, orientation, nodeCircles, highlightNodes }) => {
         this.micro.renameArray(node.id, name);
         const wasGrid = node.orientation === 'grid';
         // orientação antes do tamanho: virando pilha, as células novas já
@@ -1833,6 +1846,10 @@ export class App {
         if (nodeCircles !== undefined) {
           this.micro.setArrayNodeCircles(node.id, nodeCircles);
           this.microRunner.updateNodeCircles(node.id, nodeCircles);
+        }
+        if (highlightNodes !== undefined) {
+          this.micro.setArrayHighlightNodes(node.id, highlightNodes);
+          this.microRunner.updateHighlightNodes(node.id, highlightNodes);
         }
         if (wasGrid && node.orientation !== 'grid') this._microUnstackGridRows(node);
         if (size !== undefined) this.micro.resizeArray(node.id, size);
@@ -5071,6 +5088,8 @@ export class App {
     const highlightedIds = new Set(
       [this.microSelectedId, ...this.microSelectedIds, ...this._activeRunHighlightIds()].filter((id) => id != null),
     );
+    // coleção de nós selecionada com "Destacar nós": acende todos os nós dela
+    this._microNodeHighlightHosts().forEach((a) => a.cells.forEach((id) => id && linkedStructIds.add(id)));
     highlightedIds.forEach((id) => {
       const pointer = this.micro.pointers.get(id);
       if (!pointer?.target || pointer.readCursorHidden) return;

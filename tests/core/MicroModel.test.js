@@ -14,6 +14,8 @@ describe('structs e ponteiros', () => {
     expect(m.addStruct(0, 0, 1).type).toBe('list');
     expect(m.addStruct(0, 0, 1, 'tree').type).toBe('tree');
     expect(m.addStruct(0, 0, 1, 'graph').type).toBe('graph');
+    expect(m.addStruct(0, 0, 1, 'slist').type).toBe('slist');
+    expect(m.addStruct(0, 0, 1, 'outro').type).toBe('list');
     expect(m.addStruct(0, 0, 1, 'qualquer').type).toBe('list');
   });
 

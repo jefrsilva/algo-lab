@@ -987,7 +987,7 @@ describe('ferramenta Ligar nós', () => {
     const { tx, ty } = app.microViewport;
     alvo.dispatchEvent(new MouseEvent(tipo, { clientX: x + tx, clientY: y + ty, button: 0, bubbles: true, ...opts }));
   }
-  const meio = (n) => ({ x: n.x + 20, y: n.y + 20 });
+  const meio = (n) => ({ x: n.x + STRUCT_W / 2, y: n.y + STRUCT_H / 2 });
   /** Arraste do meio de `de` até o meio de `para` (nós ou pontos soltos). */
   function arrastar(de, para, opts = {}) {
     const a = meio(de);
@@ -1006,8 +1006,8 @@ describe('ferramenta Ligar nós', () => {
   /** Mouse andando sobre o canvas sem botão pressionado. */
   const pairar = (x, y) => evento(svg(), 'pointermove', x, y, { buttons: 0 });
   /** Clique na metade esquerda/direita de um nó. */
-  const naEsquerda = (n) => ({ x: n.x + 15, y: n.y + 28 });
-  const naDireita = (n) => ({ x: n.x + STRUCT_W - 15, y: n.y + 28 });
+  const naEsquerda = (n) => ({ x: n.x + 50, y: n.y + 28 });
+  const naDireita = (n) => ({ x: n.x + STRUCT_W - 50, y: n.y + 28 });
   function botaoDireito(x, y) {
     const { tx, ty } = app.microViewport;
     const ev = new MouseEvent('contextmenu', { clientX: x + tx, clientY: y + ty, button: 2, bubbles: true, cancelable: true });
@@ -1156,6 +1156,26 @@ describe('ferramenta Ligar nós', () => {
     clicarEm(meio(a).x, meio(a).y);
     expect(vizinhos(b)).toEqual([a.id]);
     expect(vizinhos(a)).toEqual([]);
+  });
+
+  test('modo simplificado: arrastar pelo pino de um nó não religa o ponteiro (só a ferramenta ou Shift)', () => {
+    const [a, b] = doisStructs('list');
+    const pino = () => app._microPortWorldPos({ ownerKind: 'struct', ownerId: a.id, field: 'next' });
+    // detalhado: o pino é arrastável
+    expect(app._findMicroPortAt(pino())).toMatchObject({ ownerId: a.id, field: 'next' });
+    tecla(document.body, 'a', { ctrlKey: true });
+    expect(app.microSimplifiedNodes).toBe(true);
+    expect(app._findMicroPortAt(pino())).toBeNull();
+    const p = pino();
+    evento(svg(), 'pointerdown', p.x, p.y);
+    evento(window, 'pointermove', meio(b).x, meio(b).y);
+    evento(window, 'pointerup', meio(b).x, meio(b).y);
+    expect(a.next).toBeNull();
+    // Shift + arraste continua ligando (o arraste simples só moveu o nó)
+    a.x = 0;
+    a.y = 0;
+    arrastar(a, b, { shiftKey: true });
+    expect(a.next === b.id || a.prev === b.id).toBe(true);
   });
 
   test('nó de grafo sem lista de vizinhos ganha uma no primeiro link', () => {
@@ -1353,7 +1373,7 @@ describe('ferramenta Ligar nós', () => {
   test('Shift + arrastar até o vazio cria um nó de grafo já ligado (no modo Selecionar também)', () => {
     const [a] = doisNos();
     const antes = new Set(app.micro.structs.keys());
-    arrastar(a, { x: 130, y: 230 }, { shiftKey: true }); // solta em (150, 250)
+    arrastar(a, { x: 81, y: 222 }, { shiftKey: true }); // solta em (150, 250)
     const [n] = novos(antes);
     expect(n).toMatchObject({ type: 'graph', x: 150 - STRUCT_W / 2, y: 250 - STRUCT_H / 2 });
     expect(app.micro.arrays.has(n.neighborsArrayId)).toBe(true); // ganhou a lista de vizinhos
@@ -2153,5 +2173,60 @@ describe('halo de uma grade por cima das linhas embutidas', () => {
     app._microRemoveById(grade.id);
     app._renderMicroOnly();
     expect($('.grid-halo-overlay')).toBeNull();
+  });
+});
+
+describe('roda de cores (Ctrl+Shift)', () => {
+  const cx = window.innerWidth / 2;
+  const cy = window.innerHeight / 2;
+  const solta = (key) => window.dispatchEvent(new KeyboardEvent('keyup', { key, bubbles: true, ctrlKey: key !== 'Control', shiftKey: key !== 'Shift' }));
+  const move = (x, y) => window.dispatchEvent(new PointerEvent('pointermove', { clientX: x, clientY: y, bubbles: true }));
+  const segura = () => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control', ctrlKey: true, bubbles: true }));
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift', ctrlKey: true, shiftKey: true, bubbles: true }));
+  };
+
+  test('segurar Ctrl+Shift abre a roda; apontar uma faixa e soltar aplica a cor', () => {
+    segura();
+    expect(app.colorWheel.isOpen).toBe(true);
+    move(cx + 60, cy - 10); // direita, um pouco acima = faixa 3 (azul)
+    solta('Shift');
+    expect(app.colorWheel.isOpen).toBe(false);
+    expect(app.microAreaColor).toBe('#3b82f6');
+  });
+
+  test('soltar sem sair do centro cancela, e a 1ª faixa é o vermelho', () => {
+    const antes = app.microAreaColor;
+    segura();
+    solta('Control');
+    expect(app.microAreaColor).toBe(antes);
+    segura();
+    move(cx, cy - 60);
+    solta('Control');
+    expect(app.microAreaColor).toBe('#ef4444');
+  });
+
+  test('outra tecla com a roda aberta cancela', () => {
+    const antes = app.microAreaColor;
+    segura();
+    move(cx + 60, cy - 10);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, shiftKey: true, bubbles: true }));
+    solta('Shift');
+    expect(app.colorWheel.isOpen).toBe(false);
+    expect(app.microAreaColor).toBe(antes);
+  });
+});
+
+describe('seleção de nós no modo simplificado', () => {
+  test('só o círculo pega cliques; fora dele, dentro da caixa detalhada, não', () => {
+    app.micro.addStruct(100, 100);
+    const cx = 100 + STRUCT_W / 2;
+    const cy = 100 + STRUCT_H / 2;
+    const canto = { x: 101, y: 101 };
+    expect(app._findMicroStructAt(canto)).not.toBeNull();
+    app._applySetting('simplifiedNodes', true);
+    expect(app._findMicroStructAt(canto)).toBeNull();
+    expect(app._findMicroStructAt({ x: cx, y: cy })).not.toBeNull();
+    expect(app._microFindIdsInRect({ x0: 90, y0: 90, x1: 102, y1: 102 })).toHaveLength(0);
   });
 });

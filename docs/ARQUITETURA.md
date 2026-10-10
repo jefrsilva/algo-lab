@@ -391,7 +391,7 @@ Grade no App: `_layoutMicroGrids` (ver `layoutGrids` em 7.5) roda no começo de 
 
 **`MicroRuntimeAdapter.js`**: implementa o `Environment` sobre o `MicroModel`. É o único lugar que traduz valor tipado ↔ entidade do modelo.
 
-- Construtor: `new MicroRuntimeAdapter(micro, {createPosition, onChange, onStructCreated, onArrayCreated, onDictCreated, onMatrixCreated})` (`onStructCreated(node)`: todo `Node(v)`/`TreeNode(v)`/`GraphNode(v)` novo, o de grafo já com a lista de vizinhos). Não sabe nada de canvas; pede a posição pra quem o criou (`createPosition(kind, size, layoutKey, near)` — `near` = `{kind:'struct', id, label, global}` no ponteiro de um nó recém-criado; uma posição devolvida com `remembered: true` faz `on*Created(node, {movable: false})`) e avisa mudanças por `onChange`.
+- Construtor: `new MicroRuntimeAdapter(micro, {createPosition, onChange, onStructCreated, onArrayCreated, onDictCreated, onMatrixCreated})` (`onStructCreated(node)`: todo `Node(v)`/`ListNode(v)`/`TreeNode(v)`/`GraphNode(v)` novo, o de grafo já com a lista de vizinhos). Não sabe nada de canvas; pede a posição pra quem o criou (`createPosition(kind, size, layoutKey, near)` — `near` = `{kind:'struct', id, label, global}` no ponteiro de um nó recém-criado; uma posição devolvida com `remembered: true` faz `on*Created(node, {movable: false})`) e avisa mudanças por `onChange`.
 - Estado: `touched` (toques desde a última leitura), `frameStack` (pilha de frames, sempre com `'global'` na base), `output` (linhas de `print`), semente de hash de set.
 - Resolução de nomes por frame: `_bindingIn(frameId, name)` diz o que o nome é num frame (ponteiro, variável, lista, dict ou matriz; rótulos e cursores não contam). `_lookup` procura no frame atual e depois no global, e um nome local de qualquer tipo esconde o global. `_resolveArrayByName`/`_resolveDictByName`/`_resolveMatrixByName` acham a coleção pelo id, pelo nome canônico ou por um ponteiro-alias. Na escrita (`assignName`), só o frame atual conta: dentro de uma função, atribuir sempre cria ou atualiza um nome local, igual Python (a DSL não tem `global`).
 - `assignName(name, value)`: o nome passa a ser o valor, seja lá o que era antes, igual Python. `_bindingKindOf` decide o tipo da ligação (variável, ponteiro, alias de coleção, lista/set/deque, dict ou matriz). Se o nome já tem esse tipo, `_assignInPlace` atualiza no lugar: religa o ponteiro, troca o valor da variável ou reescreve a coleção, mantendo a mesma caixa, cor e cursores (`MicroModel#replaceArray`/`clearDict`/`setMatrixContents`, como em `x = x + [2]` ou `d = {}` de novo), desde que mais ninguém a enxergue (`_isShared`). Senão, `_releaseBinding` tira a ligação antiga: uma coleção compartilhada continua viva, sem nome, e passa o rótulo pra coleção nova do mesmo tipo. Depois, `_createBinding` cria a nova. Coleção sem nome que ninguém mais alcança some (`_dropIfOrphan`). As listas novas saem de `_listSpec` (lista, lista de nós, set e deque num formato só). Em `a, b = b, a`, `evaluator.js#assignTuple` segura os valores (`holdValues`) até o fim da troca.
@@ -523,9 +523,9 @@ Nenhuma mudança no lexer ou no parser é necessária: qualquer `nome(args)` já
 
 ### 8.4 Novo tipo de nó de estrutura (ex.: nó com 3 filhos)
 
-Os tipos de struct são `'list'`, `'tree'` e `'graph'`, todos no mesmo `Map` `structs`.
+Os tipos de struct são `'list'` (`Node`: prev/next), `'slist'` (`ListNode`: só `next`, caixa de 2 células data|next igual à do grafo, sem pino prev), `'tree'` e `'graph'`, todos no mesmo `Map` `structs`.
 
-1. `MicroModel#addStruct`, `toJSON`, `loadFrom`: aceitar o novo `type` (hoje há uma normalização `type === 'tree' ? ... : 'list'` repetida nos três lugares).
+1. `MicroModel#addStruct`, `toJSON`, `loadFrom`: aceitar o novo `type` (a normalização está em `normalizeStructType`, usada nos três lugares).
 2. `evaluator.js`, `case 'Call'`: um construtor (`if (fname === 'TernaryNode' ...)`) que chama `env.createStruct(valor, 'ternary')`.
 3. `MicroRuntimeAdapter#createStruct`, `_structFieldForAttr`, `getAttr`/`assignAttr`: mapear os nomes de campo pros campos físicos.
 4. `MicroCanvasView`: geometria e portas dos campos novos e a variante em `_renderStructs` (incluindo o modo simplificado).
@@ -628,7 +628,7 @@ Adicione `{ id, label, color, f: (n) => ..., from }` a `CHART_FUNCTIONS` em `Mic
 ### 8.13 Cores e tema
 
 - Uma cor nova de significado vai como token em `variables.css`, nos dois temas.
-- As paletas Alt+1…Alt+0 são `AREA_COLORS`/`TEXT_COLORS`/`ELEMENT_COLORS`, no topo de `App.js`.
+- As paletas Alt+1…Alt+0 são `AREA_COLORS`/`TEXT_COLORS`/`ELEMENT_COLORS`, no topo de `App.js` (ordem: 1 vermelho, 2 verde, 3 azul, 4 amarelo…). Alternativa: segurar Ctrl+Shift abre a roda de cores (`ui/ColorWheel.js`, `App#_openColorWheel`) ao redor do mouse; apontar uma faixa e soltar aplica a mesma `_applyMicroPaletteColor(índice)`; soltar no centro ou apertar outra tecla cancela.
 - Cor manual de elementos do modelo: `App#microColors` → `MicroCanvasView#_applyColors` → `.micro-colored` em `canvas.css`.
 
 ### 8.14 Novo campo no arquivo de projeto

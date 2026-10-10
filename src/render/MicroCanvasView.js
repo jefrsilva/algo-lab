@@ -647,7 +647,7 @@ export function structLinkFieldPath(node, field, simplified) {
  * círculo inteiro). */
 export function structDataRect(node, simplified) {
   if (simplified) return { x: node.x, y: node.y, width: STRUCT_W, height: STRUCT_H };
-  if (node.type === 'graph') return { x: node.x, y: node.y, width: STRUCT_PREV_W + STRUCT_DATA_W, height: STRUCT_H };
+  if (node.type === 'graph' || node.type === 'slist') return { x: node.x, y: node.y, width: STRUCT_PREV_W + STRUCT_DATA_W, height: STRUCT_H };
   return { x: node.x + STRUCT_PREV_W, y: node.y, width: STRUCT_DATA_W, height: STRUCT_H };
 }
 
@@ -1503,7 +1503,7 @@ export class MicroCanvasView {
   }
 
   /**
-   * @param structs [{id,x,y,data,type:'list'|'tree'|'graph',selected}] `type` troca os rótulos
+   * @param structs [{id,x,y,data,type:'list'|'slist'|'tree'|'graph',selected}] `type` troca os rótulos
    *   prev/next -> left/right ('tree') ou a caixa inteira por data|neighbors ('graph'), ver `_renderStructs`
    * @param pointers [{id,x,y,label,selected}]
    * @param arrays [{id,x,y,kind,orientation,cells,selected}]
@@ -2273,20 +2273,23 @@ export class MicroCanvasView {
       let el = this.structEls.get(node.id);
       const isTree = node.type === 'tree';
       const isGraph = node.type === 'graph';
+      const isSlist = node.type === 'slist';
+      // GraphNode e ListNode têm a mesma caixa de 2 células (data | nbrs/next)
+      const twoCells = isGraph || isSlist;
       // variante decide a ESTRUTURA interna do SVG (círculo x caixa de 3
       // células prev/left|data|next/right x caixa de 2 células
       // data|neighbors) — troca rara (só no Ctrl+A global, que afeta TODOS os
       // structs de uma vez, ou na criação — o tipo nunca muda depois), então
       // é mais simples reconstruir do zero do que tentar migrar os filhos de
       // uma variante pra outra in place.
-      const variant = simplified ? 'simple' : isTree ? 'tree' : isGraph ? 'graph' : 'list';
+      const variant = simplified ? 'simple' : isTree ? 'tree' : isGraph ? 'graph' : isSlist ? 'slist' : 'list';
       if (el && el.dataset.variant !== variant) {
         el.remove();
         this.structEls.delete(node.id);
         el = undefined;
       }
       if (!el) {
-        const structClass = isTree ? 'struct-node struct-node-tree' : isGraph ? 'struct-node struct-node-graph' : 'struct-node';
+        const structClass = isTree ? 'struct-node struct-node-tree' : isGraph ? 'struct-node struct-node-graph' : isSlist ? 'struct-node struct-node-slist' : 'struct-node';
         el = svgEl('g', { class: structClass, 'data-id': node.id });
         el.dataset.variant = variant;
         if (simplified) {
@@ -2306,7 +2309,7 @@ export class MicroCanvasView {
           el.appendChild(circle);
           el.appendChild(halo);
           el.appendChild(dataLabel);
-        } else if (isGraph) {
+        } else if (twoCells) {
           // caixa de 2 células (data | neighbors) — diferente da de 3
           // (prev/left | data | next/right) porque `neighbors` é uma LISTA
           // (grau arbitrário, ver MicroModel#setStructNeighborsArray), não
@@ -2329,7 +2332,7 @@ export class MicroCanvasView {
           // "neighbors" não cabe na largura estreita da célula (mesma de
           // prev/next) — abreviado, mesmo espírito de prev/next/left/right
           // já serem palavras curtas de propósito.
-          neighborsCap.textContent = 'nbrs';
+          neighborsCap.textContent = isSlist ? 'next' : 'nbrs';
           const dataLabel = svgEl('text', {
             class: 'struct-data-label',
             x: GRAPH_DATA_W / 2,
@@ -2447,7 +2450,7 @@ export class MicroCanvasView {
       // modo simplificado não tem pino desenhado (ver criação acima) — a
       // linha/seta em si (ver App.js, _renderEdges) já sai direto da borda
       // do círculo, não há mais nada pra posicionar aqui.
-      if (!simplified && node.type === 'graph') {
+      if (!simplified && twoCells) {
         // caixa de 2 células — só o pino "neighbors" (mesma célula/posição
         // física de "next", ver criação acima), sem prev/left NENHUM.
         const neighborsPortEl = el.querySelector('.struct-port-next');

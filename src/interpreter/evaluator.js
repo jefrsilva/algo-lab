@@ -102,7 +102,7 @@
  *
  * `evaluate` retorna `undefined` quando a expressão não pôde ser resolvida
  * (nome desconhecido, campo/índice inválido, chamada de função que não seja
- * uma das reconhecidas — "Node(valor)", "TreeNode(valor)", "GraphNode(valor)", "len(nome)", "range(...)",
+ * uma das reconhecidas — "Node(valor)", "ListNode(valor)", "TreeNode(valor)", "GraphNode(valor)", "len(nome)", "range(...)",
  * "sum(...)", "min(...)", "max(...)", "sorted(...)", "enumerate(...)",
  * "list(...)", "set(...)", "tuple(...)", "deque(...)" (e os métodos de deque,
  * ver `callDequeMethod`), "str(valor)", "abs(x)", "int(x[, base])", "ord(c)", "chr(n)",
@@ -1443,6 +1443,15 @@ export function evaluate(node, env) {
           const arg = evaluate(node.args[0], env);
           if (arg === undefined || (arg.kind !== 'scalar' && arg.kind !== 'string')) return undefined;
           const id = env.createStruct(arg.value, 'list');
+          return id == null ? undefined : StructRef(id);
+        }
+
+        // "ListNode(valor)" — nó de lista simplesmente ligada: struct de tipo
+        // 'slist', com `data` e só `next` (sem `prev`).
+        if (fname === 'ListNode' && node.args.length === 1) {
+          const arg = evaluate(node.args[0], env);
+          if (arg === undefined || (arg.kind !== 'scalar' && arg.kind !== 'string')) return undefined;
+          const id = env.createStruct(arg.value, 'slist');
           return id == null ? undefined : StructRef(id);
         }
 

@@ -1158,6 +1158,26 @@ describe('ferramenta Ligar nós', () => {
     expect(vizinhos(a)).toEqual([]);
   });
 
+  test('modo simplificado: arrastar pelo pino de um nó não religa o ponteiro (só a ferramenta ou Shift)', () => {
+    const [a, b] = doisStructs('list');
+    const pino = () => app._microPortWorldPos({ ownerKind: 'struct', ownerId: a.id, field: 'next' });
+    // detalhado: o pino é arrastável
+    expect(app._findMicroPortAt(pino())).toMatchObject({ ownerId: a.id, field: 'next' });
+    tecla(document.body, 'a', { ctrlKey: true });
+    expect(app.microSimplifiedNodes).toBe(true);
+    expect(app._findMicroPortAt(pino())).toBeNull();
+    const p = pino();
+    evento(svg(), 'pointerdown', p.x, p.y);
+    evento(window, 'pointermove', meio(b).x, meio(b).y);
+    evento(window, 'pointerup', meio(b).x, meio(b).y);
+    expect(a.next).toBeNull();
+    // Shift + arraste continua ligando (o arraste simples só moveu o nó)
+    a.x = 0;
+    a.y = 0;
+    arrastar(a, b, { shiftKey: true });
+    expect(a.next === b.id || a.prev === b.id).toBe(true);
+  });
+
   test('nó de grafo sem lista de vizinhos ganha uma no primeiro link', () => {
     const [, b] = doisNos();
     const velho = app.micro.addStruct(0, 150, 7, 'graph');

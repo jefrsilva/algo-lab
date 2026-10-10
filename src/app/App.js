@@ -3828,6 +3828,10 @@ export class App {
       // `model.next` (campo que graph nunca usa/desenha) através do caminho
       // genérico de baixo, um estado fantasma que nada mais leria de volta.
       if (node.type === 'graph') continue;
+      // No modo simplificado os pinos ficam na borda do círculo e um arraste
+      // ali religaria por engano: só a ferramenta "Ligar nós" ou Shift +
+      // arraste no nó (que usa `_microLinkFieldAt`) mudam os ponteiros.
+      if (this.microSimplifiedNodes) continue;
       // ListNode (lista simples) só tem o pino next
       const prev = node.type === 'slist' ? null : structPrevPort(
         {

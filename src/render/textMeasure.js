@@ -14,9 +14,13 @@
  * redesenha o canvas).
  */
 
+/** Peso do texto corrido das labels (o negrito é 700) — igual ao
+ * `.label-text` de canvas.css. */
+export const LABEL_BASE_WEIGHT = 600;
+
 /** Largura média de um caractere, em fração do tamanho da fonte — só para a
  * estimativa sem canvas. A mono é exata (JetBrains Mono: 0,6 em). */
-const FALLBACK_CHAR_W = { mono: 0.6, sans: 0.55, sansBold: 0.58 };
+const FALLBACK_CHAR_W = { mono: 0.6, sans: 0.57, sansBold: 0.59 };
 
 const FALLBACK_FAMILY = {
   sans: "'Atkinson Hyperlegible Next', 'Segoe UI', system-ui, sans-serif",
@@ -74,7 +78,7 @@ export function measureText(text, { size, bold = false, italic = false, mono = f
     return str.length * size * charW;
   }
   const fam = fontFamilies();
-  const font = `${italic ? 'italic ' : ''}${bold ? 700 : 400} ${size}px ${mono ? fam.mono : fam.sans}`;
+  const font = `${italic ? 'italic ' : ''}${bold ? 700 : LABEL_BASE_WEIGHT} ${size}px ${mono ? fam.mono : fam.sans}`;
   const key = `${font}|${str}`;
   const hit = cache.get(key);
   if (hit !== undefined) return hit;

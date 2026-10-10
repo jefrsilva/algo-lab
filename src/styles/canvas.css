@@ -584,12 +584,13 @@
 
 .label-text {
   /* markdown das labels (ver labelMarkdown.js): texto corrido na fonte da
-     interface, regular — negrito/itálico/tamanho de título vêm como
+     interface, em semibold (600, mais legível em tamanho pequeno; LABEL_BASE_WEIGHT
+     em textMeasure.js) — negrito/itálico/tamanho de título vêm como
      atributos de cada <tspan> (MicroCanvasView#_fillLabelText). A geometria
      é medida com estas mesmas fontes (textMeasure.js). O editor in place
      mostra o markdown cru, em mono (.inline-value-editor.multiline). */
   font-family: var(--font-sans);
-  font-weight: 400;
+  font-weight: 600;
   text-anchor: start;
   dominant-baseline: middle;
   white-space: pre;

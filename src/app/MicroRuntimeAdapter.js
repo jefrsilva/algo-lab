@@ -245,6 +245,23 @@ export class MicroRuntimeAdapter {
     this.touched.push({ kind, id });
   }
 
+  /** "print(nome)" — leitura que destaca (seleciona no passo) o que o nome
+   * é: o ponteiro/variável/coleção e, se for ponteiro, o elemento para onde
+   * ele aponta. Só marca, não muda nada no modelo (sem `onChange`). */
+  noteNameRead(name) {
+    const binding = this._lookup(name);
+    if (!binding) return;
+    const { type, node } = binding;
+    this._note(type, node.id);
+    if (type === 'pointer' && node.target) this._note(node.target.kind, node.target.id);
+  }
+
+  /** "print(p.next)", "print(a[0])"…: destaca o elemento que o valor
+   * referencia (nó de estrutura). */
+  noteValueRead(value) {
+    if (value?.kind === 'struct') this._note('struct', value.id);
+  }
+
   /** O que "nome" é DENTRO do frame `frameId` — `{type, node}`, com `type`
    * 'pointer' | 'variable' | 'array' | 'dict' | 'matrix' —, ou `undefined`.
    * Um nome tem UMA ligação por frame (atribuir troca a anterior, ver

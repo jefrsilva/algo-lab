@@ -490,6 +490,21 @@
   user-select: none;
 }
 
+/* nó desenhado como círculo dentro da célula de uma lista/set/deque (opção
+   "Como círculos" do ArraySettingsPopup) — mesma aparência do nó simplificado */
+.array-node-circle {
+  pointer-events: none;
+}
+
+.array-node-circle-label {
+  fill: var(--text-0);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 700;
+  pointer-events: none;
+  user-select: none;
+}
+
 /* matriz (ver MicroCanvasView#_renderMatrices) — índices da linha e da
    coluna da célula lida por um cursor "m[i][j]" (ou apontada pelo ponteiro
    selecionado) acendem na cor de "alvo", junto com a própria célula: é o que

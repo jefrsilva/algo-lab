@@ -9,7 +9,8 @@ import { fitPopupInContainer } from './fitPopup.js';
  * matriz, ver `showOrientation`; a "pilha" — vertical com os índices
  * crescendo pra cima, o último elemento no topo — só pra lista/deque, ver
  * `showStack`; a "grade" — as listas de dentro como linhas de uma tabela
- * — só pra lista de listas, ver `showGrid`), além da ação de remover. Aberto pelo
+ * — só pra lista de listas, ver `showGrid`; "nós como círculos" — lista/set/
+ * deque de nós, ver `showNodeCircles`), além da ação de remover. Aberto pelo
  * botão direito no puxador da coleção (modo micro, ver
  * App#_onMicroContextMenu).
  */
@@ -23,7 +24,7 @@ export class ArraySettingsPopup {
     screenX,
     screenY,
     node,
-    { maxSize = 24, showSize = true, sizeFields = null, showOrientation = true, showStack = false, showGrid = false, removeLabel = 'Remover array', onSave, onRemove, returnFocusTo },
+    { maxSize = 24, showSize = true, sizeFields = null, showOrientation = true, showStack = false, showGrid = false, showNodeCircles = false, removeLabel = 'Remover array', onSave, onRemove, returnFocusTo },
   ) {
     this.close();
     this._returnFocusTo = returnFocusTo || null;
@@ -136,6 +137,30 @@ export class ArraySettingsPopup {
     orientRow.appendChild(orientLabel);
     orientRow.appendChild(orientButtons);
 
+    // alternância "nós como círculos": os nós da coleção são desenhados dentro
+    // das células, sem seta — limpa o desenho de filas/pilhas de nós (ex: BFS)
+    let nodeCircles = !!node.nodeCircles;
+    const circlesRow = document.createElement('div');
+    circlesRow.className = 'array-settings-row';
+    const circlesLabel = document.createElement('label');
+    circlesLabel.textContent = 'Nós';
+    const circlesBtn = document.createElement('button');
+    circlesBtn.type = 'button';
+    circlesBtn.className = 'array-orient-btn array-circles-toggle';
+    circlesBtn.textContent = '◯ Como círculos';
+    circlesBtn.title = 'Mostra os nós como círculos dentro das células, em vez de setas apontando para eles';
+    const syncCirclesBtn = () => {
+      circlesBtn.setAttribute('aria-pressed', String(nodeCircles));
+      circlesBtn.classList.toggle('active', nodeCircles);
+    };
+    syncCirclesBtn();
+    circlesBtn.addEventListener('click', () => {
+      nodeCircles = !nodeCircles;
+      syncCirclesBtn();
+    });
+    circlesRow.appendChild(circlesLabel);
+    circlesRow.appendChild(circlesBtn);
+
     const actions = document.createElement('div');
     actions.className = 'array-settings-actions';
     const removeBtn = document.createElement('button');
@@ -153,6 +178,7 @@ export class ArraySettingsPopup {
     if (sizeRow) el.appendChild(sizeRow);
     extraSizeInputs.forEach(({ row }) => el.appendChild(row));
     if (showOrientation) el.appendChild(orientRow);
+    if (showNodeCircles) el.appendChild(circlesRow);
     el.appendChild(actions);
     this.container.appendChild(el);
     this.el = el;
@@ -164,6 +190,7 @@ export class ArraySettingsPopup {
     const save = () => {
       const name = nameInput.value.trim() || node.name;
       const payload = { name, orientation };
+      if (showNodeCircles) payload.nodeCircles = nodeCircles;
       if (sizeInput) {
         // campo em branco mantém o tamanho atual (Number('') daria 0 e esvaziaria a lista)
         const rawSize = sizeInput.value.trim() === '' ? NaN : Number(sizeInput.value);

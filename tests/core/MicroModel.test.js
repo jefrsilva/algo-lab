@@ -253,6 +253,20 @@ describe('arrays', () => {
     expect(arr.orientation).toBe('vertical');
   });
 
+  test('nós como círculos: vale pra lista/set/deque, não pra lista de listas, e vai pro projeto salvo', () => {
+    const fila = m.addArray(0, 0, { kind: 'ref', size: 0 });
+    m.setArrayNodeCircles(fila.id, true);
+    expect(fila.nodeCircles).toBe(true);
+    const listas = m.addArray(0, 0, { kind: 'arrayref', size: 0 });
+    m.setArrayNodeCircles(listas.id, true);
+    expect(listas.nodeCircles).toBeUndefined();
+    const m2 = new MicroModel();
+    m2.loadFrom(JSON.parse(JSON.stringify(m.toJSON())));
+    expect(m2.arrays.get(fila.id).nodeCircles).toBe(true);
+    m.setArrayNodeCircles(fila.id, false);
+    expect(fila.nodeCircles).toBeUndefined();
+  });
+
   test('orientação pilha: só lista/deque, não set', () => {
     const arr = m.addArray(0, 0, {});
     m.setArrayOrientation(arr.id, 'stack');

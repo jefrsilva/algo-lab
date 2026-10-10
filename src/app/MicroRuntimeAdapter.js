@@ -427,6 +427,8 @@ export class MicroRuntimeAdapter {
       return undefined;
     }
     if (struct.type === 'graph') return undefined;
+    // ListNode (lista simplesmente ligada): só `next`, sem `prev`
+    if (struct.type === 'slist') return attr === 'next' ? 'next' : undefined;
     return attr === 'prev' || attr === 'next' ? attr : undefined;
   }
 

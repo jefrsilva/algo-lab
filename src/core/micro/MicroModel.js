@@ -5,6 +5,13 @@ import { reviveRaw } from '../../interpreter/pytuple.js';
 export const MAX_ARRAY_SIZE = 32;
 export const MAX_DICT_SIZE = 24;
 
+/** Tipos de struct: 'list' (Node: prev/next), 'slist' (ListNode: só next, lista
+ * simplesmente ligada), 'tree' (TreeNode: left/right) e 'graph' (GraphNode:
+ * neighbors). Qualquer outro valor vira 'list'. */
+export function normalizeStructType(type) {
+  return type === 'tree' || type === 'graph' || type === 'slist' ? type : 'list';
+}
+
 /** Lado de uma célula de array no canvas (= `ARRAY_CELL` de
  * MicroCanvasView.js, que importa daqui). O modelo não desenha nada, mas
  * precisa dela pra manter parada a BASE de um array em pilha quando ele
@@ -80,7 +87,7 @@ function arrayKind(kind) {
  */
 export class MicroModel {
   constructor() {
-    this.structs = new Map(); // id -> {id, x, y, data, type:'list'|'tree'|'graph', next, prev, neighborsArrayId}
+    this.structs = new Map(); // id -> {id, x, y, data, type:'list'|'slist'|'tree'|'graph', next, prev, neighborsArrayId}
     this.pointers = new Map(); // id -> {id, x, y, label, target, frameId}
     this.arrays = new Map(); // id -> {id, x, y, kind:'value'|'ref', orientation:'horizontal'|'vertical'|'stack', cells}
     this.dicts = new Map(); // id -> {id, x, y, orientation:'horizontal'|'vertical', cells: {key, kind:'value'|'ref', value}[], name}
@@ -96,6 +103,9 @@ export class MicroModel {
   // deste arquivo (setField/removeStruct/toGraph implícito via App.js)
   // precisa saber sobre 'tree'.
   //
+  // 'slist' (ListNode) guarda só `next` (a célula prev fica sempre null e não é
+  // desenhada) — lista simplesmente ligada.
+  //
   // 'graph' é diferente dos outros dois: não usa next/prev NENHUM — o campo
   // `neighbors` é uma LISTA (grau arbitrário, não um único vizinho fixo por
   // campo), então é armazenado como um array de verdade à parte (kind:'ref',
@@ -109,7 +119,7 @@ export class MicroModel {
       x,
       y,
       data,
-      type: type === 'tree' ? 'tree' : type === 'graph' ? 'graph' : 'list',
+      type: normalizeStructType(type),
       next: null,
       prev: null,
       neighborsArrayId: null,
@@ -753,7 +763,7 @@ export class MicroModel {
       x: n.x,
       y: n.y,
       data: n.data,
-      type: n.type === 'tree' ? 'tree' : n.type === 'graph' ? 'graph' : 'list',
+      type: normalizeStructType(n.type),
       next: n.next,
       prev: n.prev,
       ...(n.neighborsArrayId ? { neighborsArrayId: n.neighborsArrayId } : {}),
@@ -827,7 +837,7 @@ export class MicroModel {
         x: n.x || 0,
         y: n.y || 0,
         data: n.data,
-        type: n.type === 'tree' ? 'tree' : n.type === 'graph' ? 'graph' : 'list',
+        type: normalizeStructType(n.type),
         next: n.next ?? null,
         prev: n.prev ?? null,
         neighborsArrayId: n.neighborsArrayId ?? null,

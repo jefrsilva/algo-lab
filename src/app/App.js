@@ -77,6 +77,7 @@ import { ChartSettingsPopup } from '../ui/ChartSettingsPopup.js';
 import { AppMenu } from '../ui/AppMenu.js';
 import { Dialog } from '../ui/Dialog.js';
 import { ConsoleWindow } from '../ui/ConsoleWindow.js';
+import { ColorWheel } from '../ui/ColorWheel.js';
 import { QuickActionPalette } from '../ui/QuickActionPalette.js';
 import { SettingsDialog } from '../ui/SettingsDialog.js';
 import { applyTheme } from './theme.js';
@@ -101,9 +102,9 @@ const MICRO_MODES = [
  * ver _applyMicroPaletteColor. Tons médios, legíveis tanto no tema escuro quanto
  * no claro (a área é translúcida, então a cor sempre aparece atenuada). */
 const AREA_COLORS = [
-  '#3b82f6', // 1 azul
-  '#ef4444', // 2 vermelho
-  '#22c55e', // 3 verde
+  '#ef4444', // 1 vermelho
+  '#22c55e', // 2 verde
+  '#3b82f6', // 3 azul
   '#eab308', // 4 amarelo
   '#a855f7', // 5 roxo
   '#f97316', // 6 laranja
@@ -256,6 +257,18 @@ export class App {
 
     this._boundKeyDown = (e) => this._onKeyDown(e);
     this._boundKeyUp = (e) => this._onKeyUp(e);
+    // roda de cores (Ctrl+Shift segurados, ver `_openColorWheel`): precisa da
+    // última posição do mouse na tela, mesmo antes de a roda abrir
+    this.colorWheel = new ColorWheel();
+    this._lastPointerScreen = null;
+    window.addEventListener(
+      'pointermove',
+      (e) => {
+        this._lastPointerScreen = { x: e.clientX, y: e.clientY };
+        this.colorWheel.move(e.clientX, e.clientY);
+      },
+      true,
+    );
     window.addEventListener('keydown', this._boundKeyDown);
     window.addEventListener('keyup', this._boundKeyUp);
     // na captura, antes do contextmenu do canvas e fora dele também: o botão
@@ -268,6 +281,7 @@ export class App {
     // movendo o canvas indefinidamente.
     window.addEventListener('blur', () => {
       this._setSpaceDown(false);
+      this._closeColorWheel(false);
       this._setMicroChartReadout(null);
     });
 
@@ -568,6 +582,8 @@ export class App {
     // janela de Configurações é modal: ela mesma trata Esc/Tab, e nenhum
     // atalho do app vale por trás dela
     if (this.settingsDialog.isOpen) return;
+    // roda de cores aberta: qualquer outra tecla (ex.: Ctrl+Shift+Enter) cancela
+    if (this.colorWheel.isOpen && e.key !== 'Control' && e.key !== 'Shift') this._closeColorWheel(false);
     // Esc no meio do Shift + arraste de ligação (botão ainda pressionado)
     if (e.key === 'Escape' && this._microPointer?.hit === 'link-drag') {
       e.preventDefault();
@@ -666,6 +682,11 @@ export class App {
       return;
     }
     if (isTyping || this.microPopup.isOpen) return;
+    // Ctrl+Shift segurados — roda de cores (ver _openColorWheel)
+    if ((e.key === 'Control' || e.key === 'Shift') && e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey && !e.repeat && !this.dialog.isOpen) {
+      this._openColorWheel();
+      return;
+    }
     // Ctrl+A — alterna a visualização simplificada dos nós de estrutura
     // (círculo só com "data", ver _toggleMicroSimplifiedNodes). DEPOIS do
     // `isTyping` acima (ao contrário de Ctrl+H/Ctrl+,/Ctrl+.) de propósito:
@@ -923,6 +944,24 @@ export class App {
 
   _onKeyUp(e) {
     if (e.code === 'Space') this._setSpaceDown(false);
+    // soltar Ctrl ou Shift fecha a roda e aplica a cor apontada
+    if ((e.key === 'Control' || e.key === 'Shift') && this.colorWheel.isOpen) this._closeColorWheel(true);
+  }
+
+  /** Abre a roda de cores ao redor do mouse: as faixas seguem a ordem do
+   * Alt+1…Alt+0 (mesmo `_applyMicroPaletteColor`). Mover o mouse na direção
+   * de uma faixa e soltar Ctrl+Shift aplica; soltar sem sair do centro (ou
+   * apertar outra tecla) cancela. */
+  _openColorWheel() {
+    const at = this._lastPointerScreen ?? { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+    const labels = AREA_COLORS.map((_, i) => String((i + 1) % 10));
+    this.colorWheel.open(at.x, at.y, AREA_COLORS, labels);
+  }
+
+  _closeColorWheel(apply) {
+    if (!this.colorWheel.isOpen) return;
+    const index = this.colorWheel.close();
+    if (apply && index != null) this._applyMicroPaletteColor(index);
   }
 
   /** Barra de espaço pressionada/solta: a classe `space-pan` no container

@@ -2175,3 +2175,44 @@ describe('halo de uma grade por cima das linhas embutidas', () => {
     expect($('.grid-halo-overlay')).toBeNull();
   });
 });
+
+describe('roda de cores (Ctrl+Shift)', () => {
+  const cx = window.innerWidth / 2;
+  const cy = window.innerHeight / 2;
+  const solta = (key) => window.dispatchEvent(new KeyboardEvent('keyup', { key, bubbles: true, ctrlKey: key !== 'Control', shiftKey: key !== 'Shift' }));
+  const move = (x, y) => window.dispatchEvent(new PointerEvent('pointermove', { clientX: x, clientY: y, bubbles: true }));
+  const segura = () => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control', ctrlKey: true, bubbles: true }));
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift', ctrlKey: true, shiftKey: true, bubbles: true }));
+  };
+
+  test('segurar Ctrl+Shift abre a roda; apontar uma faixa e soltar aplica a cor', () => {
+    segura();
+    expect(app.colorWheel.isOpen).toBe(true);
+    move(cx + 60, cy - 10); // direita, um pouco acima = faixa 3 (azul)
+    solta('Shift');
+    expect(app.colorWheel.isOpen).toBe(false);
+    expect(app.microAreaColor).toBe('#3b82f6');
+  });
+
+  test('soltar sem sair do centro cancela, e a 1ª faixa é o vermelho', () => {
+    const antes = app.microAreaColor;
+    segura();
+    solta('Control');
+    expect(app.microAreaColor).toBe(antes);
+    segura();
+    move(cx, cy - 60);
+    solta('Control');
+    expect(app.microAreaColor).toBe('#ef4444');
+  });
+
+  test('outra tecla com a roda aberta cancela', () => {
+    const antes = app.microAreaColor;
+    segura();
+    move(cx + 60, cy - 10);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, shiftKey: true, bubbles: true }));
+    solta('Shift');
+    expect(app.colorWheel.isOpen).toBe(false);
+    expect(app.microAreaColor).toBe(antes);
+  });
+});

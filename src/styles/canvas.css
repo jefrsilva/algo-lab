@@ -939,3 +939,36 @@
 .micro-container.panning .micro-canvas * {
   cursor: grabbing !important;
 }
+
+/* roda de cores (Ctrl+Shift segurados, ver App#_openColorWheel e
+   ColorWheel.js): overlay fixo ao redor do mouse, sem capturar o ponteiro */
+.color-wheel {
+  position: fixed;
+  z-index: 1000;
+  pointer-events: none;
+  filter: drop-shadow(0 4px 14px rgba(0, 0, 0, 0.45));
+}
+
+.color-wheel-slice {
+  stroke: var(--bg-0);
+  stroke-width: 1.5;
+  opacity: 0.85;
+  transition: opacity 0.08s;
+}
+
+.color-wheel-slice.selected {
+  opacity: 1;
+  stroke: var(--text-0);
+  stroke-width: 3;
+}
+
+.color-wheel-label {
+  fill: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  text-anchor: middle;
+  dominant-baseline: central;
+  paint-order: stroke;
+  stroke: rgba(0, 0, 0, 0.55);
+  stroke-width: 2.5px;
+}

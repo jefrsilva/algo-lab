@@ -628,7 +628,7 @@ Adicione `{ id, label, color, f: (n) => ..., from }` a `CHART_FUNCTIONS` em `Mic
 ### 8.13 Cores e tema
 
 - Uma cor nova de significado vai como token em `variables.css`, nos dois temas.
-- As paletas Alt+1…Alt+0 são `AREA_COLORS`/`TEXT_COLORS`/`ELEMENT_COLORS`, no topo de `App.js`.
+- As paletas Alt+1…Alt+0 são `AREA_COLORS`/`TEXT_COLORS`/`ELEMENT_COLORS`, no topo de `App.js` (ordem: 1 vermelho, 2 verde, 3 azul, 4 amarelo…). Alternativa: segurar Ctrl+Shift abre a roda de cores (`ui/ColorWheel.js`, `App#_openColorWheel`) ao redor do mouse; apontar uma faixa e soltar aplica a mesma `_applyMicroPaletteColor(índice)`; soltar no centro ou apertar outra tecla cancela.
 - Cor manual de elementos do modelo: `App#microColors` → `MicroCanvasView#_applyColors` → `.micro-colored` em `canvas.css`.
 
 ### 8.14 Novo campo no arquivo de projeto

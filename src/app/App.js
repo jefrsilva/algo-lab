@@ -3145,6 +3145,7 @@ export class App {
       model('new pointer', ['new ptr'], 'ponteiro solto — pede o nome', () => this._quickNewPointer()),
       model('new variable', ['new var'], 'variável — pede o nome', () => this._quickNewVariable()),
       model('new node', [], 'nó de lista, Node(v) — pede o dado', () => this._quickNewNode('list')),
+      model('new list node', [], 'nó de lista simples, ListNode(v) — pede o dado', () => this._quickNewNode('slist')),
       model('new tree node', [], 'nó de árvore, TreeNode(v) — pede o dado', () => this._quickNewNode('tree')),
       model('new graph node', [], 'nó de grafo, GraphNode(v) — pede o dado', () => this._quickNewNode('graph')),
       model('new array', ['new list'], 'lista com 4 posições — pede o nome', () => this._quickNewCollection('array')),
@@ -3450,7 +3451,7 @@ export class App {
     });
   }
 
-  /** Nó de lista/árvore/grafo — nó de grafo ganha o array de vizinhos
+  /** Nó de lista/lista simples/árvore/grafo — nó de grafo ganha o array de vizinhos
    * anônimo, igual "GraphNode(v)" no código (ver MicroRuntimeAdapter#createStruct). */
   _quickNewNode(type) {
     const pos = this._microCreatePosition('struct');
@@ -3827,7 +3828,8 @@ export class App {
       // `model.next` (campo que graph nunca usa/desenha) através do caminho
       // genérico de baixo, um estado fantasma que nada mais leria de volta.
       if (node.type === 'graph') continue;
-      const prev = structPrevPort(
+      // ListNode (lista simples) só tem o pino next
+      const prev = node.type === 'slist' ? null : structPrevPort(
         {
           ...node,
           prevAnchor: this._structFieldAnchor(node.prev),
@@ -3835,7 +3837,7 @@ export class App {
         },
         this.microSimplifiedNodes,
       );
-      if (Math.hypot(prev.x - worldPt.x, prev.y - worldPt.y) <= HIT_R) return { ownerKind: 'struct', ownerId: node.id, field: 'prev' };
+      if (prev && Math.hypot(prev.x - worldPt.x, prev.y - worldPt.y) <= HIT_R) return { ownerKind: 'struct', ownerId: node.id, field: 'prev' };
       const next = structNextPort(
         {
           ...node,
@@ -3951,10 +3953,12 @@ export class App {
 
   /** Ponteiro que a ferramenta "Ligar nós" usa começando no ponto `worldPt`
    * de `node`: a metade esquerda é 'prev' (prev do Node, left do TreeNode) e
-   * a direita 'next' (next/right) — `null` num nó de grafo, que liga pela
+   * a direita 'next' (next/right); num ListNode sempre 'next' — `null` num nó de grafo, que liga pela
    * lista "neighbors" (ver `_applyMicroLink`). */
   _microLinkFieldAt(node, worldPt) {
     if (node.type === 'graph') return null;
+    // ListNode (lista simples): só existe o ponteiro next, em qualquer ponto do nó
+    if (node.type === 'slist') return 'next';
     return worldPt.x < node.x + STRUCT_W / 2 ? 'prev' : 'next';
   }
 
@@ -4110,6 +4114,8 @@ export class App {
   _toggleMicroLinkField() {
     const draft = this._microLinkDraft;
     if (!draft?.pending || draft.field == null) return false;
+    // ListNode só tem next: nada a alternar (a tecla é tratada, mas sem efeito)
+    if (this.micro.structs.get(draft.fromId)?.type === 'slist') return true;
     this._microLinkDraft = { ...draft, field: draft.field === 'prev' ? 'next' : 'prev' };
     this._renderMicroOnly();
     return true;

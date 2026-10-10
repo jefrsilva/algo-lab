@@ -291,6 +291,17 @@ describe('estado do modelo', () => {
     expect(micro.structs.get(raiz.prev ?? raiz.next).data).toBe(3);
   });
 
+  test('ListNode expõe só data e next (sem prev)', () => {
+    const { micro, output } = runDsl(
+      linhas('a = ListNode(1)', 'a.next = ListNode(2)', 'print(a.data, a.next.data, a.next.next)', 'a.prev = a.next'),
+    );
+    expect(output[0]).toBe('1 2 None');
+    const a = valores(micro.structs).find((s) => s.data === 1);
+    expect(a.type).toBe('slist');
+    expect(a.prev).toBeNull();
+    expect(micro.structs.get(a.next).data).toBe(2);
+  });
+
   test('set é um array marcado isSet com a tabela hash', () => {
     const { micro } = runDsl('s = {3, 1, 2}');
     const s = array(micro, 's');

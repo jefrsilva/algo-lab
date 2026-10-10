@@ -636,6 +636,18 @@ export class MicroModel {
     if (ok) node.orientation = orientation;
   }
 
+  /** Lista/set/deque de nós (`kind: 'ref'`) desenhada com os nós como
+   * círculos dentro das células, sem setas (preferência visual — não muda o
+   * que o programa enxerga). Não vale pra lista de valores nem de listas. */
+  setArrayNodeCircles(arrayId, on) {
+    const node = this.arrays.get(arrayId);
+    // lista vazia ainda é 'value' até o 1º nó entrar (ver _fitArrayKind) —
+    // a preferência já vale pra quando ele chegar; só o desenho a filtra
+    if (!node || node.kind === 'arrayref') return;
+    if (on) node.nodeCircles = true;
+    else delete node.nodeCircles;
+  }
+
   /** Pilha que mudou de tamanho (tinha `oldLen` células): `y` é o TOPO da
    * caixa, então ele anda o quanto a altura mudou — a base fica onde estava
    * e a célula nova aparece em cima (o `pop` tira de cima), levando junto o
@@ -792,6 +804,7 @@ export class MicroModel {
       ...(n.isSet ? { isSet: true } : {}),
       ...(n.hashTable ? { hashTable: n.hashTable } : {}),
       ...(n.isDeque ? { isDeque: true, maxlen: n.maxlen ?? null } : {}),
+      ...(n.nodeCircles ? { nodeCircles: true } : {}),
     });
     const dict = (n) => ({
       id: n.id,
@@ -877,6 +890,7 @@ export class MicroModel {
         // conferida contra as células no primeiro uso — com outra semente de
         // hash (texto/nó), é refeita (ver MicroRuntimeAdapter#_setTableOf)
         ...(n.isSet && n.hashTable && typeof n.hashTable === 'object' ? { hashTable: n.hashTable } : {}),
+        ...(n.nodeCircles && arrayKind(n.kind) !== 'arrayref' ? { nodeCircles: true } : {}),
       });
     });
     (data.dicts || []).forEach((n) => {

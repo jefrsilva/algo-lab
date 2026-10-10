@@ -2764,7 +2764,9 @@ export class MicroCanvasView {
   _buildArrayContent(el, node) {
     const kindTag = node.isSet ? 'set' : node.isDeque ? `deque:${node.maxlen ?? ''}` : '';
     const gridTag = node.gridRow ? `row:${node.gridRow.cellW}` : node.gridGeom ? `grid:${node.gridGeom.cellW}:${node.gridGeom.cols}:${node.gridGeom.embedded.join('')}` : '';
-    const sig = `${node.kind}|${node.orientation}|${kindTag}|${gridTag}|${node.cells.join(',')}`;
+    // nós como círculos (`cellNodes`: o `data` de cada nó, na ordem das células)
+    const circlesTag = node.nodeCircles ? `circles:${(node.cellNodes ?? []).join(',')}` : '';
+    const sig = `${node.kind}|${node.orientation}|${kindTag}|${gridTag}|${circlesTag}|${node.cells.join(',')}`;
     if (el.dataset.sig === sig) return;
     el.dataset.sig = sig;
     el.innerHTML = '';
@@ -2860,7 +2862,16 @@ export class MicroCanvasView {
           nullMark.textContent = '∅';
           el.appendChild(nullMark);
         }
-        el.appendChild(svgEl('circle', { class: 'struct-port array-cell-port', cx: c.port.x, cy: c.port.y, r: PORT_R }));
+        if (node.nodeCircles && node.cells[i]) {
+          // o nó dentro da célula, no lugar da seta (e do pino): círculo com o data
+          const r = Math.min(c.w, c.h) / 2 - 6;
+          el.appendChild(svgEl('circle', { class: 'struct-circle array-node-circle', cx: c.x + c.w / 2, cy: c.y + c.h / 2, r }));
+          const label = svgEl('text', { class: 'array-node-circle-label', x: c.x + c.w / 2, y: c.y + c.h / 2 + 5, 'text-anchor': 'middle' });
+          label.textContent = cellText(node.cellNodes?.[i] ?? '');
+          el.appendChild(label);
+        } else {
+          el.appendChild(svgEl('circle', { class: 'struct-port array-cell-port', cx: c.port.x, cy: c.port.y, r: PORT_R }));
+        }
       }
     });
     // divisórias entre células, por cima delas: só dão o cursor de "dividir"

@@ -74,6 +74,9 @@ export class MicroProgramRunner {
     this._playTimer = null;
     this.positions = new Map();
     this.orientations = new Map();
+    // id de array -> true quando os nós aparecem como círculos nas células
+    // (`nodeCircles`): preferência visual, igual à orientação
+    this.nodeCircles = new Map();
     // quadros-chave de posição: chave estável -> [{step, x, y}] em ordem de
     // passo. Sobrevive a "Rodar" de novo (só some com `clearStepLayout` —
     // projeto novo/carregado); vai junto no arquivo do projeto.
@@ -164,6 +167,7 @@ export class MicroProgramRunner {
     this.error = null;
     this.positions = new Map();
     this.orientations = new Map();
+    this.nodeCircles = new Map();
     if (this._playTimer) {
       clearTimeout(this._playTimer);
       this._playTimer = null;
@@ -291,6 +295,11 @@ export class MicroProgramRunner {
     frames.forEach((f) => convert(f, f.step));
   }
 
+  /** Idem `updateOrientation`, pra preferência "nós como círculos". */
+  updateNodeCircles(id, on) {
+    if (this.nodeCircles.has(id)) this.nodeCircles.set(id, !!on);
+  }
+
   goToStep(i) {
     if (!this.steps.length) return;
     const clamped = Math.max(0, Math.min(i, this.steps.length - 1));
@@ -343,7 +352,7 @@ export class MicroProgramRunner {
 
   _snapshot() {
     const dropPos = ({ x, y, ...rest }) => rest;
-    const dropArrayPrefs = ({ x, y, orientation, ...rest }) => rest;
+    const dropArrayPrefs = ({ x, y, orientation, nodeCircles, ...rest }) => rest;
     return {
       structs: new Map([...this.micro.structs].map(([id, n]) => [id, dropPos(n)])),
       pointers: new Map([...this.micro.pointers].map(([id, n]) => [id, { ...dropPos(n), target: n.target ? { ...n.target } : null }])),
@@ -384,6 +393,7 @@ export class MicroProgramRunner {
     note(this.micro.matrices);
     this.micro.arrays.forEach((n, id) => {
       if (!this.orientations.has(id)) this.orientations.set(id, n.orientation);
+      if (!this.nodeCircles.has(id)) this.nodeCircles.set(id, !!n.nodeCircles);
     });
     this.micro.dicts.forEach((n, id) => {
       if (!this.orientations.has(id)) this.orientations.set(id, n.orientation);
@@ -429,6 +439,7 @@ export class MicroProgramRunner {
       ...withPos(id, n),
       cells: [...n.cells],
       orientation: this.orientations.get(id) ?? 'horizontal',
+      ...(this.nodeCircles.get(id) && n.kind !== 'arrayref' ? { nodeCircles: true } : {}),
     });
     const withDictPrefs = (id, n) => ({
       ...withPos(id, n),

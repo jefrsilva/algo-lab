@@ -1821,13 +1821,19 @@ export class App {
       showStack: !node.isSet,
       // grade: as listas de dentro como linhas de uma tabela
       showGrid: node.kind === 'arrayref',
-      onSave: ({ name, size, orientation }) => {
+      // nós como círculos nas células: lista/set/deque de nós (ou ainda vazia)
+      showNodeCircles: node.kind === 'ref' || (node.kind === 'value' && node.cells.length === 0),
+      onSave: ({ name, size, orientation, nodeCircles }) => {
         this.micro.renameArray(node.id, name);
         const wasGrid = node.orientation === 'grid';
         // orientação antes do tamanho: virando pilha, as células novas já
         // entram em cima (base parada, ver MicroModel#_keepStackBase)
         this.micro.setArrayOrientation(node.id, orientation);
         this.microRunner.updateOrientation(node.id, orientation);
+        if (nodeCircles !== undefined) {
+          this.micro.setArrayNodeCircles(node.id, nodeCircles);
+          this.microRunner.updateNodeCircles(node.id, nodeCircles);
+        }
         if (wasGrid && node.orientation !== 'grid') this._microUnstackGridRows(node);
         if (size !== undefined) this.micro.resizeArray(node.id, size);
         if (this.microSelectedId === node.id) this._syncCodeEditorSelection('array', node.id);
@@ -3901,7 +3907,7 @@ export class App {
     }
     for (const node of this.micro.arrays.values()) {
       if (!this._microPickable(node)) continue;
-      if (node.kind !== 'ref') continue;
+      if (node.kind !== 'ref' || node.nodeCircles) continue;
       const layout = arrayLayout(node);
       for (const c of layout.cells) {
         const p = { x: node.x + c.port.x, y: node.y + c.port.y };
@@ -5195,6 +5201,9 @@ export class App {
         isSet: !!n.isSet,
         isDeque: !!n.isDeque,
         maxlen: n.maxlen ?? null,
+        ...(n.nodeCircles && n.kind === 'ref'
+          ? { nodeCircles: true, cellNodes: n.cells.map((id) => (id ? this.micro.structs.get(id)?.data ?? null : null)) }
+          : {}),
         selected: this._isMicroHighlighted(n.id),
         linked: linkedArrayIds.has(n.id),
         targetCellIndexes: linkedArrayCellIndexes.get(n.id) ?? null,
@@ -5498,6 +5507,8 @@ export class App {
         // grade: a lista da linha está desenhada ali mesmo — só uma lista
         // repetida (embutida em outra linha) ganha seta
         if (n.gridGeom?.embedded[i]) return;
+        // nós como círculos dentro da célula: sem seta
+        if (n.nodeCircles) return;
         const c = layout.cells[i];
         const base = {
           id: `${n.id}-cell${i}`,

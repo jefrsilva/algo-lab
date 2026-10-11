@@ -2782,7 +2782,7 @@ export class MicroCanvasView {
     const layout = arrayLayout(node);
     // set (ver MicroModel#addArray, `isSet`): mesma geometria de array (hit-
     // tests/pinos não mudam), mas sem índices — elemento de set não tem
-    // posição — com caixa mais arredondada, células em "pílula" e o rótulo
+    // posição — com caixa mais arredondada, células retangulares (em "pílula" só no set de nós) e o rótulo
     // "set" na faixa onde ficariam os índices (só na horizontal, a vertical
     // não tem largura pra isso).
     // linha embutida numa grade: só a fileira de células, sem puxador nem
@@ -2812,6 +2812,9 @@ export class MicroCanvasView {
 
     layout.cells.forEach((c, i) => {
       const inset = node.isSet ? 3 : 0;
+      // set de valores (números, textos, bools): caixa retangular; só o set de
+      // nós mantém a "pílula" (os nós são círculos)
+      const pill = node.isSet && node.kind !== 'value';
       el.appendChild(
         svgEl('rect', {
           class: `array-cell ${node.kind === 'value' ? 'array-cell-value' : 'array-cell-ref'}`,
@@ -2819,8 +2822,8 @@ export class MicroCanvasView {
           y: c.y + inset,
           width: c.w - 2 * inset,
           height: c.h - 2 * inset,
-          rx: node.isSet ? (c.h - 2 * inset) / 2 : 4,
-          ry: node.isSet ? (c.h - 2 * inset) / 2 : 4,
+          rx: pill ? (c.h - 2 * inset) / 2 : 4,
+          ry: pill ? (c.h - 2 * inset) / 2 : 4,
         }),
       );
       if (!node.isSet && !node.gridRow) {

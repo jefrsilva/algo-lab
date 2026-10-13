@@ -60,6 +60,7 @@ import { MicroRuntimeAdapter } from './MicroRuntimeAdapter.js';
 import { microLayoutKey } from './microLayoutKey.js';
 import { MicroProgramRunner } from './MicroProgramRunner.js';
 import { alignRects, distributeRects } from './microAlign.js';
+import { frameScope } from './frameScope.js';
 import { TREE_GAPS, treeLayout } from './microTreeLayout.js';
 
 import { PlaybackControls } from '../ui/PlaybackControls.js';
@@ -341,14 +342,20 @@ export class App {
     codeEditorPanel.appendChild(codeBottomReserved);
     this.codeBottomReserved = codeBottomReserved;
     this._setupCodeBottomResizer(codeEditorPanel, codeBottomResizer);
+    const callTreeResizer = document.createElement('div');
+    callTreeResizer.className = 'split-resizer call-tree-resizer';
+    callTreeResizer.title = 'Arraste para redimensionar a pilha de chamadas';
+    callTreeContainer.style.setProperty('--call-tree-width', `${getSetting('callTreeWidth')}px`);
     const splitResizer = document.createElement('div');
     splitResizer.className = 'split-resizer';
     splitResizer.title = 'Arraste para redimensionar';
     microSplit.appendChild(microMain);
     microSplit.appendChild(callTreeContainer);
+    microSplit.appendChild(callTreeResizer);
     microSplit.appendChild(splitResizer);
     microSplit.appendChild(codeEditorPanel);
     this._setupSplitResizer(microSplit, microMain, splitResizer);
+    this._setupCallTreeResizer(callTreeContainer, callTreeResizer);
     canvasArea.appendChild(microSplit);
 
     main.appendChild(canvasArea);
@@ -364,6 +371,7 @@ export class App {
     this.callTreeContainer = callTreeContainer;
     this.callTree = new CallTree(callTreeContainer, {
       onSelectFrame: (frameId) => this._onSelectCallFrame(frameId),
+      getScope: (frameId) => frameScope(this.micro, frameId),
       onModeChange: () => {
         this._syncCallTreeButton();
         this.settingsDialog?.refresh();
@@ -2397,6 +2405,34 @@ export class App {
       };
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', onUp);
+    });
+  }
+
+  /** Arraste na borda direita do painel da pilha de chamadas: muda a largura
+   * (modo completo), guardada em `callTreeWidth`. */
+  _setupCallTreeResizer(panelEl, resizerEl) {
+    resizerEl.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      resizerEl.classList.add('dragging');
+      const startX = e.clientX;
+      const startWidth = panelEl.getBoundingClientRect().width;
+      let width = startWidth;
+      const onMove = (ev) => {
+        width = Math.round(Math.max(140, Math.min(800, startWidth + (ev.clientX - startX))));
+        panelEl.style.setProperty('--call-tree-width', `${width}px`);
+      };
+      const onUp = () => {
+        resizerEl.classList.remove('dragging');
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        setSetting('callTreeWidth', width);
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+    });
+    resizerEl.addEventListener('dblclick', () => {
+      panelEl.style.setProperty('--call-tree-width', '220px');
+      setSetting('callTreeWidth', 220);
     });
   }
 

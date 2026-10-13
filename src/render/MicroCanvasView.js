@@ -2,6 +2,7 @@ import { svgEl } from './svgUtils.js';
 import { ARRAY_CELL_H } from '../core/micro/MicroModel.js';
 import { labelLayout, LABEL_PAD_X, LABEL_CODE_PAD } from './labelMarkdown.js';
 import { measureText, textMeasureGeneration } from './textMeasure.js';
+import { arrowHeadPoints, rulerTicks } from '../app/microLines.js';
 
 // ---- geometria dos nós de estrutura (caixa prev | data | next) ----
 export const STRUCT_W = 138;
@@ -1410,8 +1411,11 @@ export class MicroCanvasView {
     this.linkSourceLayer = svgEl('g', { class: 'link-source-layer' });
     this.pointersLayer = svgEl('g', { class: 'pointers-layer' });
     this.variablesLayer = svgEl('g', { class: 'variables-layer' });
+    // setas e réguas (anotações): por cima dos elementos do modelo, abaixo dos textos
+    this.linesLayer = svgEl('g', { class: 'lines-layer' });
     this.labelsLayer = svgEl('g', { class: 'labels-layer' });
     this.areaHandlesLayer = svgEl('g', { class: 'area-handles-layer' });
+    this.lineHandlesLayer = svgEl('g', { class: 'line-handles-layer' });
 
     this.viewport.appendChild(this.gridRect);
     this.viewport.appendChild(this.areasLayer);
@@ -1425,8 +1429,10 @@ export class MicroCanvasView {
     this.viewport.appendChild(this.linkSourceLayer);
     this.viewport.appendChild(this.pointersLayer);
     this.viewport.appendChild(this.variablesLayer);
+    this.viewport.appendChild(this.linesLayer);
     this.viewport.appendChild(this.labelsLayer);
     this.viewport.appendChild(this.areaHandlesLayer);
+    this.viewport.appendChild(this.lineHandlesLayer);
     // rótulo da operação da ligação em andamento, por cima de tudo (ver
     // `_renderLinkHint`)
     this.linkHintLayer = svgEl('g', { class: 'link-hint-layer' });
@@ -1443,6 +1449,7 @@ export class MicroCanvasView {
     this.variableEls = new Map();
     this.labelEls = new Map();
     this.areaEls = new Map();
+    this.lineEls = new Map();
     this.chartEls = new Map();
     this.edgeEls = new Map();
     this._lastSelectedId = null;
@@ -1521,6 +1528,9 @@ export class MicroCanvasView {
    * @param labels [{id,x,y,text,color,fontSize,selected,dragging}] labels de texto soltas (modo "Texto")
    * @param selectionRect {x0,y0,x1,y1}|null retângulo de seleção em área em andamento (modo Selecionar)
    * @param areas [{id,x,y,width,height,color,selected,dragging}] áreas hachuradas (modo "Área")
+   * @param lines [{id,kind:'arrow'|'ruler',x1,y1,x2,y2,color,selected,dragging}] setas e réguas
+   *   (ferramentas "Seta" e "Régua"), ver `_renderLines`
+   * @param lineHandles {x1,y1,x2,y2,size}|null extremidades arrastáveis da seta/régua selecionada
    * @param areaHandles {x,y,width,height,size}|null retângulo da área (ou do gráfico) com
    *   alças de redimensionamento visíveis (só quando exatamente uma área/gráfico está selecionado)
    * @param charts [{id,x,y,width,height,xLabel,yLabel,functions,selected,dragging,editingAxis}]
@@ -1543,6 +1553,8 @@ export class MicroCanvasView {
     labels = [],
     areas = [],
     areaHandles = null,
+    lines = [],
+    lineHandles = null,
     charts = [],
     edges,
     previewEdge = null,
@@ -1562,6 +1574,8 @@ export class MicroCanvasView {
     this._renderAreas(areas);
     this._renderCharts(charts);
     this._renderAreaHandles(areaHandles);
+    this._renderLines(lines);
+    this._renderLineHandles(lineHandles);
     this._renderArrays(arrays, edges);
     this._renderDicts(dicts);
     this._renderMatrices(matrices);
@@ -1778,6 +1792,83 @@ export class MicroCanvasView {
       });
       el.querySelector('.area-fill').style.fill = node.color;
       el.querySelector('.area-border').style.stroke = node.color;
+    });
+  }
+
+  /** Setas e réguas — linha de 2px na cor do elemento; a seta ganha uma ponta
+   * triangular no fim, a régua uma travessa perpendicular em cada ponta.
+   * Selecionada, ganha um halo largo na cor de seleção atrás. Os filhos
+   * são criados uma vez e depois só têm os atributos atualizados (ver
+   * `_renderAreas`). */
+  _renderLines(lines) {
+    const ids = new Set(lines.map((n) => n.id));
+    for (const [id, el] of this.lineEls) {
+      if (!ids.has(id)) {
+        el.remove();
+        this.lineEls.delete(id);
+      }
+    }
+    lines.forEach((node) => {
+      let el = this.lineEls.get(node.id);
+      if (!el || el.dataset.kind !== node.kind) {
+        el?.remove();
+        el = svgEl('g', { class: `line-node line-${node.kind}`, 'data-id': node.id, 'data-kind': node.kind });
+        el.appendChild(svgEl('line', { class: 'line-halo' }));
+        el.appendChild(svgEl('line', { class: 'line-main' }));
+        if (node.kind === 'arrow') el.appendChild(svgEl('polygon', { class: 'line-head' }));
+        else {
+          el.appendChild(svgEl('line', { class: 'line-tick' }));
+          el.appendChild(svgEl('line', { class: 'line-tick' }));
+        }
+        this.linesLayer.appendChild(el);
+        this.lineEls.set(node.id, el);
+      }
+      el.classList.toggle('selected', !!node.selected);
+      el.classList.toggle('dragging', !!node.dragging);
+      const setLine = (l, x1, y1, x2, y2) => {
+        l.setAttribute('x1', x1);
+        l.setAttribute('y1', y1);
+        l.setAttribute('x2', x2);
+        l.setAttribute('y2', y2);
+      };
+      let { x1, y1, x2, y2 } = node;
+      if (node.kind === 'arrow') {
+        // a haste termina na base da ponta, pra não aparecer na frente dela
+        const head = arrowHeadPoints(x1, y1, x2, y2);
+        const len = Math.hypot(x2 - x1, y2 - y1);
+        const back = Math.min(10, len);
+        const ux = len ? (x2 - x1) / len : 0;
+        const uy = len ? (y2 - y1) / len : 0;
+        setLine(el.querySelector('.line-main'), x1, y1, x2 - ux * back, y2 - uy * back);
+        const poly = el.querySelector('.line-head');
+        poly.setAttribute('points', head.map((p) => `${p.x},${p.y}`).join(' '));
+        poly.style.fill = node.color;
+        poly.style.stroke = node.color;
+      } else {
+        setLine(el.querySelector('.line-main'), x1, y1, x2, y2);
+        const ticks = rulerTicks(x1, y1, x2, y2);
+        el.querySelectorAll('.line-tick').forEach((t, i) => {
+          setLine(t, ticks[i].x1, ticks[i].y1, ticks[i].x2, ticks[i].y2);
+          t.style.stroke = node.color;
+        });
+      }
+      setLine(el.querySelector('.line-halo'), x1, y1, x2, y2);
+      el.querySelector('.line-main').style.stroke = node.color;
+    });
+  }
+
+  /** Extremidades arrastáveis da seta/régua selecionada (por cima de tudo,
+   * como as alças das áreas). */
+  _renderLineHandles(h) {
+    this.lineHandlesLayer.innerHTML = '';
+    if (!h) return;
+    [
+      ['a', h.x1, h.y1],
+      ['b', h.x2, h.y2],
+    ].forEach(([end, cx, cy]) => {
+      this.lineHandlesLayer.appendChild(
+        svgEl('circle', { class: 'line-handle', 'data-end': end, cx, cy, r: h.size / 2, 'stroke-width': h.size * 0.18 }),
+      );
     });
   }
 

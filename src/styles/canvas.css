@@ -996,3 +996,50 @@
   stroke: rgba(0, 0, 0, 0.55);
   stroke-width: 2.5px;
 }
+
+/* ---- modo micro: setas e réguas (ferramentas "Seta" e "Régua") ---- */
+
+.line-node {
+  cursor: grab;
+}
+
+.line-node.dragging {
+  cursor: grabbing;
+}
+
+.line-main,
+.line-tick {
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.line-head {
+  stroke-width: 1;
+  stroke-linejoin: round;
+}
+
+.line-halo {
+  stroke: transparent;
+  stroke-width: 8;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+
+.line-node.selected .line-halo {
+  stroke: var(--sel);
+  stroke-opacity: 0.35;
+}
+
+.line-handle {
+  fill: var(--bg-0);
+  stroke: var(--sel);
+  cursor: move;
+}
+
+.micro-container[data-mode='arrow'] .micro-canvas,
+.micro-container[data-mode='arrow'] .line-node,
+.micro-container[data-mode='ruler'] .micro-canvas,
+.micro-container[data-mode='ruler'] .line-node {
+  cursor: crosshair;
+}

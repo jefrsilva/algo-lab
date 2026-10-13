@@ -276,7 +276,7 @@ CodeEditor (modo 'run': ▶, Ctrl+Enter; ou Ctrl+Shift+Enter de qualquer modo �
 PlaybackControls / Ctrl+, / Ctrl+.  → MicroProgramRunner#goToStep(i) → _restore(snapshot) → onSelect(touched) + onChange
 ```
 
-Durante `runProgram`, uma chamada a uma função do usuário passa por `callFunction`: `env.pushFrame(label)`, bind dos parâmetros via `env.assignName`, `yield* execBlock(corpo)`, `env.popFrame()` e `env.releaseDeadArrays(...)`, que remove as listas locais que não foram devolvidas. A árvore de chamadas (`callTree`) só cresce e vai junto em cada passo. O `App` usa `activeFrameId` pra decidir quais ponteiros e variáveis mostrar, e o `CallTree` permite trocar a aba manualmente (`App#manualFrameId`).
+Durante `runProgram`, uma chamada a uma função do usuário passa por `callFunction`: `env.pushFrame(label)`, bind dos parâmetros via `env.assignName`, `yield* execBlock(corpo)`, `env.popFrame()` e `env.releaseDeadArrays(...)`, que remove as listas locais que não foram devolvidas. A árvore de chamadas (`callTree`) só cresce e vai junto em cada passo; ao retornar, o nó é substituído por uma cópia com `returned`, `returnText` e `scope` (foto dos parâmetros/locais do frame, via `env.frameScope` → `frameScope.js`), que o `CallTree` mostra como `→ valor` e no pop-up do hover (chamadas ainda na pilha usam `frameScope` sobre o modelo do passo atual). A largura do painel é arrastável (`callTreeWidth`). O `App` usa `activeFrameId` pra decidir quais ponteiros e variáveis mostrar, e o `CallTree` permite trocar a aba manualmente (`App#manualFrameId`).
 
 ### 6.3 Interação no canvas (gestos)
 
@@ -462,7 +462,7 @@ Cada widget é uma classe independente, sem classe base. Recebe um container e c
 | Arquivo | O que é | Ligado no App em |
 |---|---|---|
 | `CodeEditor.js` | Editor próprio: `<textarea>` + camada de realce sincronizada, gutter de números, linha marcada ("breakpoint" de aula, Ctrl+Setas), indentação inteligente, tamanho de fonte. Modos Sandbox/Simulação. Clique num nome destaca o elemento correspondente (`onSelectName`); botão direito em `nums[i]` liga ou desliga o cursor (`onToggleCursor`) e num nome oculta ou mostra o ponteiro (`onTogglePointer`). A validação acontece no Ctrl+Enter (`_handleGenerateFromLine`, com flash verde ou vermelho). | `_buildLayout` (`this.codeEditor`) |
-| `CallTree.js` | Árvore de chamadas da Simulação. Modos `full`/`compact`/`hidden`. Clique troca a aba exibida. | `this.callTree` |
+| `CallTree.js` | Árvore de chamadas da Simulação. Modos `full`/`compact`/`hidden`. Clique troca a aba exibida. Mostra o retorno das chamadas finalizadas e, no hover, o escopo do frame. | `this.callTree` |
 | `PlaybackControls.js` | Barra de passo, play/pause e velocidade. | `this.microPlayback` |
 | `ConsoleWindow.js` | Console de `print`, encaixado sob o canvas ou flutuante (arrastável e redimensionável). Persiste o modo e a geometria nas configurações. | `this.microConsole` |
 | `ModeToolbar.js` | Barra de modos do canvas (ícones em `ICONS`, lista de modos vinda de `MICRO_MODES`). Sem estado. | `this.microModeToolbar` |

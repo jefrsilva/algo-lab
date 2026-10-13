@@ -28,6 +28,7 @@ export const SETTINGS_DEFAULTS = Object.freeze({
   consoleFloating: false, // Alt+C
   consoleRect: null, // {x,y,w,h} da janela flutuante do console
   callTreeMode: 'full', // 'full' | 'compact' | 'hidden'
+  callTreeWidth: 220, // px do painel da pilha de chamadas no modo completo (arraste da borda)
   codePanelHidden: false, // Ctrl+H
   codePanelBottomInset: 0, // px reservados embaixo do painel de código (ver App#_setupCodeBottomResizer)
   playbackSpeed: 1,
@@ -47,6 +48,7 @@ const VALIDATORS = {
   consoleFloating: (v) => v === true,
   consoleRect: validRect,
   callTreeMode: (v) => (['full', 'compact', 'hidden'].includes(v) ? v : 'full'),
+  callTreeWidth: (v) => Math.round(clampNumber(v, 140, 800, 220)),
   codePanelHidden: (v) => v === true,
   codePanelBottomInset: (v) => Math.round(clampNumber(v, 0, 10000, 0)),
   playbackSpeed: (v) => clampNumber(v, SPEED_MIN, SPEED_MAX, SETTINGS_DEFAULTS.playbackSpeed),

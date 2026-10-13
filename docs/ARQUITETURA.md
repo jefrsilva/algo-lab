@@ -237,7 +237,7 @@ Já `App#microColors` (cor manual) é por **id**, e funciona porque os snapshots
 
 | | Elementos do modelo | Elementos de anotação |
 |---|---|---|
-| Onde ficam | `MicroModel` | `App#microLabels`, `App#microAreas`, `App#microCharts` |
+| Onde ficam | `MicroModel` | `App#microLabels`, `App#microAreas`, `App#microLines` (setas e réguas), `App#microCharts` |
 | Afetados pela reprodução | sim (snapshots) | não |
 | Acessíveis pelo código | sim | não |
 | Criáveis durante a Simulação | não (sumiriam no próximo passo) | sim |
@@ -465,7 +465,7 @@ Cada widget é uma classe independente, sem classe base. Recebe um container e c
 | `CallTree.js` | Árvore de chamadas da Simulação. Modos `full`/`compact`/`hidden`. Clique troca a aba exibida. Mostra o retorno das chamadas finalizadas e, no hover, o escopo do frame. | `this.callTree` |
 | `PlaybackControls.js` | Barra de passo, play/pause e velocidade. | `this.microPlayback` |
 | `ConsoleWindow.js` | Console de `print`, encaixado sob o canvas ou flutuante (arrastável e redimensionável). Persiste o modo e a geometria nas configurações. | `this.microConsole` |
-| `ModeToolbar.js` | Barra de modos do canvas (ícones em `ICONS`, lista de modos vinda de `MICRO_MODES`). Sem estado. | `this.microModeToolbar` |
+| `ModeToolbar.js` | Barra de modos do canvas (ícones em `ICONS`, lista de modos vinda de `MICRO_MODES`). Modos com o mesmo `group` (Área, Seta e Régua) dividem um botão: segurar (ou botão direito) abre a lista de escolha; só lembra o último do grupo. | `this.microModeToolbar` |
 | `AlignToolbar.js` | Botões de alinhar (2+ selecionados) e distribuir (3+), acima da barra de modos; some sem seleção suficiente (`ALIGN_BUTTONS[].min`). Sem estado: recebe `count` e chama `actions.run(id)`. | `this.microAlignToolbar` |
 | `TreeLayoutToolbar.js` | Botões "Árvore ↕"/"Árvore ↔" (`TREE_LAYOUT_BUTTONS`), ao lado do lugar da `AlignToolbar`, só com um TreeNode selecionado. Sem estado: recebe `enabled` e chama `actions.run(orientation)`. | `this.microTreeToolbar` |
 | `QuickActionPalette.js` | Caixa Ctrl+Espaço: casamento abreviado (`scoreName`), sugestão em cinza, ↑/↓/Tab/Enter/Esc. Os comandos vêm de quem abre. | `this.microQuickActions` |

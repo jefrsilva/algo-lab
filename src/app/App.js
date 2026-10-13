@@ -84,13 +84,18 @@ import { SettingsDialog } from '../ui/SettingsDialog.js';
 import { applyTheme } from './theme.js';
 import { onTextMeasureChange } from '../render/textMeasure.js';
 import { getSetting, setSetting, SETTINGS_DEFAULTS } from './settings.js';
+import { defaultLine, distToSegment, lineBounds, lineEnds, lineFromDrag, moveLineEnd } from './microLines.js';
 
 /** Modos da barra de ferramentas inferior do canvas (ver
  * App#_buildLayout/_setMicroMode). */
 const MICRO_MODES = [
   { id: 'select', label: 'Selecionar / Mover', shortcut: '1 / V' },
   { id: 'text', label: 'Texto (cor: Alt+1…Alt+0)', shortcut: '2 / T' },
-  { id: 'area', label: 'Área hachurada (cor: Alt+1…Alt+0, grid: G)', shortcut: '3 / R' },
+  // area, arrow e ruler formam UM botão da barra (`group`): clicar e segurar
+  // abre a escolha entre eles (ver ModeToolbar)
+  { id: 'area', group: 'draw', label: 'Área hachurada (cor: Alt+1…Alt+0, grid: G)', shortcut: '3 / R' },
+  { id: 'arrow', group: 'draw', label: 'Seta (Shift: horizontal/vertical; cor: Alt+1…Alt+0)', shortcut: '6 / A' },
+  { id: 'ruler', group: 'draw', label: 'Régua (Shift: horizontal/vertical; cor: Alt+1…Alt+0)', shortcut: '7 / M' },
   { id: 'chart', label: 'Gráfico Big-O (botão direito: funções exibidas; mouse sobre ele: lê f(n))', shortcut: '4 / B' },
   {
     id: 'link',
@@ -119,6 +124,10 @@ const AREA_COLORS = [
 const AREA_DEFAULT_CELLS = { w: 6, h: 4 };
 /** Lado das alças de redimensionamento, em px de TELA (não muda com o zoom). */
 const AREA_HANDLE_PX = 10;
+/** Setas e réguas: folga de pega em volta da linha e diâmetro das extremidades
+ * arrastáveis, em px de TELA. */
+const LINE_HIT_PX = 7;
+const LINE_HANDLE_PX = 12;
 
 /** Gráfico de complexidade (modo "Gráfico", ver `_createMicroChart`): tamanho
  * de um criado com clique simples, e os títulos com que nasce — sem nenhuma
@@ -165,7 +174,7 @@ export class App {
     // o app abre com canvas e código vazios
     this.micro = new MicroModel();
     this.microViewport = { tx: 0, ty: 0, scale: 1 };
-    this.microMode = 'select'; // 'select' | 'text' | 'area' | 'chart' | 'link' — modos da barra inferior (ver MICRO_MODES)
+    this.microMode = 'select'; // 'select' | 'text' | 'area' | 'arrow' | 'ruler' | 'chart' | 'link' — modos da barra inferior (ver MICRO_MODES)
     // preferências de tela (ver settings.js / _applySetting) — salvas no
     // navegador, editáveis pela janela de Configurações e pelos atalhos
     this.codePanelHidden = getSetting('codePanelHidden'); // Ctrl+H, ver _toggleCodePanel
@@ -183,6 +192,7 @@ export class App {
     this.microAreas = new Map(); // id -> {id,x,y,width,height,color}
     // gráficos de complexidade Big-O (modo "Gráfico") — mesmo status das
     // áreas: só canvas, fora do MicroModel e da reprodução do modo Executar.
+    this.microLines = new Map(); // id -> {id,kind:'arrow'|'ruler',x,y,dx,dy,color} — início em (x,y), fim em (x+dx,y+dy), ver microLines.js
     this.microCharts = new Map(); // id -> {id,x,y,width,height,xLabel,yLabel,functions:string[],nMax,yMode:'manual'|'auto',yMax}
     this._microEditingChartAxis = null; // {id, axis:'x'|'y'} título de eixo em edição in place
     // cor manual dos elementos do modelo (Alt+1…Alt+0 com o elemento
@@ -744,6 +754,8 @@ export class App {
     else if (key === '3' || key === 'r') this._setMicroMode('area');
     else if (key === '4' || key === 'b') this._setMicroMode('chart');
     else if (key === '5' || key === 'l') this._setMicroMode('link');
+    else if (key === '6' || key === 'a') this._setMicroMode('arrow');
+    else if (key === '7' || key === 'm') this._setMicroMode('ruler');
     else if (key === 'g') this._toggleMicroAreaSnap();
     else if (key === 'n') this._toggleMicroFullNames();
     else if (key === 'c') this._applySetting('consoleHidden', !this.microConsole.userHidden);
@@ -868,6 +880,11 @@ export class App {
         area.color = areaColor;
         hadArea = true;
       }
+      const line = this.microLines.get(id);
+      if (line) {
+        line.color = areaColor;
+        hadArea = true;
+      }
       const label = this.microLabels.get(id);
       if (label) {
         label.color = textColor;
@@ -883,7 +900,7 @@ export class App {
       }
     });
     const noSelection = this.microMode === 'select' && ids.length === 0;
-    if (this.microMode === 'area' || hadArea || noSelection) this.microAreaColor = areaColor;
+    if (['area', 'arrow', 'ruler'].includes(this.microMode) || hadArea || noSelection) this.microAreaColor = areaColor;
     if (this.microMode === 'text' || hadLabel || noSelection) this.microLabelColor = textColor;
     this._renderMicroOnly();
   }
@@ -1066,6 +1083,7 @@ export class App {
       rects.push({ x: n.x, y: n.y, w: width, h: height });
     });
     this.microAreas.forEach((n) => rects.push({ x: n.x, y: n.y, w: n.width, h: n.height }));
+    this.microLines.forEach((n) => rects.push(lineBounds(n)));
     this.microCharts.forEach((n) => rects.push({ x: n.x, y: n.y, w: n.width, h: n.height }));
 
     const size = this.microView.getSize();
@@ -1103,6 +1121,7 @@ export class App {
       this.micro.variables.size > 0 ||
       this.microLabels.size > 0 ||
       this.microAreas.size > 0 ||
+      this.microLines.size > 0 ||
       this.microCharts.size > 0 ||
       this.codeEditor.getValue().trim() !== ''
     );
@@ -1128,6 +1147,7 @@ export class App {
     this.micro.clear();
     this.microLabels.clear();
     this.microAreas.clear();
+    this.microLines.clear();
     this.microCharts.clear();
     this.microColors.clear();
     this.microWindows = [];
@@ -1163,6 +1183,7 @@ export class App {
       micro: this.micro.toJSON(),
       labels: Array.from(this.microLabels.values()).map((l) => ({ ...l })),
       areas: Array.from(this.microAreas.values()).map((a) => ({ ...a })),
+      lines: Array.from(this.microLines.values()).map((l) => ({ ...l })),
       charts: Array.from(this.microCharts.values()).map((c) => ({ ...c, functions: [...c.functions] })),
       windows: this.microWindows.map((w) => ({ ...w })),
       // cor manual por id (ids do `micro` acima são preservados no load) —
@@ -1254,6 +1275,13 @@ export class App {
     (project.labels || []).forEach((l) => l && l.id && this.microLabels.set(l.id, { ...l }));
     this.microAreas.clear();
     (project.areas || []).forEach((a) => a && a.id && this.microAreas.set(a.id, { ...a }));
+    this.microLines.clear();
+    (project.lines || []).forEach((l) => {
+      if (!l || !l.id || (l.kind !== 'arrow' && l.kind !== 'ruler')) return;
+      const [x, y, dx, dy] = [l.x, l.y, l.dx, l.dy].map(Number);
+      if (![x, y, dx, dy].every(Number.isFinite)) return;
+      this.microLines.set(l.id, { id: l.id, kind: l.kind, x, y, dx, dy, color: typeof l.color === 'string' ? l.color : AREA_COLORS[0] });
+    });
     this.microCharts.clear();
     (project.charts || []).forEach((c) => {
       if (!c || !c.id) return;
@@ -2122,6 +2150,7 @@ export class App {
       this.micro.variables,
       this.microLabels,
       this.microAreas,
+      this.microLines,
       this.microCharts,
     ];
   }
@@ -2145,6 +2174,7 @@ export class App {
     else if (this.micro.matrices.has(id)) this.micro.removeMatrix(id);
     else if (this.micro.variables.has(id)) this.micro.removeVariable(id);
     else if (this.microAreas.has(id)) this.microAreas.delete(id);
+    else if (this.microLines.has(id)) this.microLines.delete(id);
     else if (this.microCharts.has(id)) this.microCharts.delete(id);
     else this.microLabels.delete(id);
   }
@@ -2210,7 +2240,7 @@ export class App {
     if (!node) return;
     node.x = x;
     node.y = y;
-    if (this.microLabels.has(id) || this.microAreas.has(id) || this.microCharts.has(id)) return;
+    if (this.microLabels.has(id) || this.microAreas.has(id) || this.microLines.has(id) || this.microCharts.has(id)) return;
     this.microRunner.updatePosition(id, x, y);
     // durante a reprodução a posição vira quadro-chave DAQUELE passo (ver
     // MicroProgramRunner#updatePosition) — não mexe na posição de nascimento
@@ -2267,6 +2297,10 @@ export class App {
       if (hits(n.x, n.y, width, height, n.id)) ids.push(n.id);
     });
     this.microCharts.forEach((n) => { if (hits(n.x, n.y, n.width, n.height, n.id)) ids.push(n.id); });
+    this.microLines.forEach((n) => {
+      const b = lineBounds(n);
+      if (hits(b.x, b.y, b.w, b.h, n.id)) ids.push(n.id);
+    });
     // áreas só entram se couberem INTEIRAS no retângulo — costumam envolver
     // outros elementos, e selecionar (e depois arrastar) esses elementos com
     // um retângulo por dentro da área não deveria levar a área junto.
@@ -2498,6 +2532,8 @@ export class App {
     this._microSelectionPreview = null;
     this._microAreaDraft = null;
     this._microChartDraft = null;
+    this._microLineDraft = null;
+    this._microLineEdit = null;
     this._microAreaResize = null;
     this._microLinkDraft = null;
     this._microLinkHover = null;
@@ -2789,6 +2825,49 @@ export class App {
       if (worldPt.x >= n.x && worldPt.x <= n.x + n.width && worldPt.y >= n.y && worldPt.y <= n.y + n.height) return n;
     }
     return null;
+  }
+
+  /** Seta/régua sob o ponto (a menos de LINE_HIT_PX px de tela da linha) —
+   * de trás pra frente. A mais recente fica por cima no render. */
+  _findMicroLineAt(worldPt) {
+    const tol = LINE_HIT_PX / this.microViewport.scale;
+    const lines = Array.from(this.microLines.values());
+    for (let i = lines.length - 1; i >= 0; i -= 1) {
+      const { x1, y1, x2, y2 } = lineEnds(lines[i]);
+      if (distToSegment(worldPt, { x: x1, y: y1 }, { x: x2, y: y2 }) <= tol) return lines[i];
+    }
+    return null;
+  }
+
+  /** Id da seta/régua que mostra as extremidades arrastáveis: só no modo
+   * Selecionar e com exatamente ela selecionada. */
+  _microSingleSelectedLineId() {
+    if (this.microMode !== 'select') return null;
+    const ids = this.microSelectedIds.size ? Array.from(this.microSelectedIds) : this.microSelectedId ? [this.microSelectedId] : [];
+    return ids.length === 1 && this.microLines.has(ids[0]) ? ids[0] : null;
+  }
+
+  /** Extremidade ('a' | 'b') da seta/régua selecionada sob o ponto, ou null. */
+  _findMicroLineHandleAt(worldPt) {
+    const id = this._microSingleSelectedLineId();
+    if (!id) return null;
+    const { x1, y1, x2, y2 } = lineEnds(this.microLines.get(id));
+    const r = (LINE_HANDLE_PX * 0.7) / this.microViewport.scale;
+    if (Math.hypot(worldPt.x - x1, worldPt.y - y1) <= r) return { id, end: 'a' };
+    if (Math.hypot(worldPt.x - x2, worldPt.y - y2) <= r) return { id, end: 'b' };
+    return null;
+  }
+
+  /** Ferramentas "Seta"/"Régua": cria a linha ao soltar o arraste (clique
+   * simples = uma horizontal de tamanho padrão) na cor atual e volta pro
+   * modo Selecionar com ela selecionada, como `_createMicroArea`. */
+  _createMicroLine(kind, geometry) {
+    const id = nextId(kind);
+    this.microLines.set(id, { id, kind, ...geometry, color: this.microAreaColor });
+    this._setMicroMode('select');
+    this.microSelectedIds = new Set();
+    this.microSelectedId = id;
+    this._syncCodeEditorSelection(null, null);
   }
 
   /** Gráfico de complexidade sob o ponto — de trás pra frente, como as áreas. */
@@ -4101,6 +4180,7 @@ export class App {
       this._findMicroDictAt(worldPt) ||
       this._findMicroMatrixAt(worldPt) ||
       this._findMicroLabelAt(worldPt) ||
+      this._findMicroLineAt(worldPt) ||
       this._findMicroChartAt(worldPt) ||
       (!ignoreAreas && this._findMicroAreaAt(worldPt))
     );
@@ -4388,6 +4468,14 @@ export class App {
       return;
     }
 
+    // modos seta/régua: mesmo gesto do modo área (Shift encaixa no eixo)
+    if (this.microMode === 'arrow' || this.microMode === 'ruler') {
+      this._microPointer = { downScreen: screenPt, lastScreen: screenPt, moved: false, hit: 'line-create', worldPtDown: worldPt };
+      window.addEventListener('pointermove', this._microBoundMove);
+      window.addEventListener('pointerup', this._microBoundUp);
+      return;
+    }
+
     // modo gráfico: mesmo gesto do modo área — arrastar desenha o gráfico
     // novo, clique simples cria um de tamanho padrão com o canto ali.
     if (this.microMode === 'chart') {
@@ -4424,6 +4512,23 @@ export class App {
       return;
     }
 
+    // extremidades da seta/régua selecionada: arrastar move só aquela ponta
+    const lineHandle = this._findMicroLineHandleAt(worldPt);
+    if (lineHandle) {
+      this._microPointer = {
+        downScreen: screenPt,
+        lastScreen: screenPt,
+        moved: false,
+        hit: 'line-end',
+        id: lineHandle.id,
+        end: lineHandle.end,
+        worldPtDown: worldPt,
+      };
+      window.addEventListener('pointermove', this._microBoundMove);
+      window.addEventListener('pointerup', this._microBoundUp);
+      return;
+    }
+
     const port = this._findMicroPortAt(worldPt);
     // Shift no pino prev/next de um nó (na borda dele): o mesmo Shift +
     // arraste de ligação do corpo do nó (ver abaixo), por esse ponteiro —
@@ -4432,25 +4537,27 @@ export class App {
       this._startMicroLinkDrag(this.micro.structs.get(port.ownerId), port.field, screenPt, worldPt);
       return;
     }
-    const structNode = !port ? this._findMicroStructAt(worldPt) : null;
-    const arrayNode = !port && !structNode ? this._findMicroArrayAt(worldPt) : null;
-    const dictNode = !port && !structNode && !arrayNode ? this._findMicroDictAt(worldPt) : null;
-    const matrixNode = !port && !structNode && !arrayNode && !dictNode ? this._findMicroMatrixAt(worldPt) : null;
-    const pointerNode = !port && !structNode && !arrayNode && !dictNode && !matrixNode ? this._findMicroPointerAt(worldPt) : null;
+    // a linha fina de uma seta/régua vence o que está debaixo dela
+    const lineNode = !port ? this._findMicroLineAt(worldPt) : null;
+    const structNode = !port && !lineNode ? this._findMicroStructAt(worldPt) : null;
+    const arrayNode = !port && !lineNode && !structNode ? this._findMicroArrayAt(worldPt) : null;
+    const dictNode = !port && !lineNode && !structNode && !arrayNode ? this._findMicroDictAt(worldPt) : null;
+    const matrixNode = !port && !lineNode && !structNode && !arrayNode && !dictNode ? this._findMicroMatrixAt(worldPt) : null;
+    const pointerNode = !port && !lineNode && !structNode && !arrayNode && !dictNode && !matrixNode ? this._findMicroPointerAt(worldPt) : null;
     const variableNode =
-      !port && !structNode && !arrayNode && !dictNode && !matrixNode && !pointerNode ? this._findMicroVariableAt(worldPt) : null;
+      !port && !lineNode && !structNode && !arrayNode && !dictNode && !matrixNode && !pointerNode ? this._findMicroVariableAt(worldPt) : null;
     const labelNode =
-      !port && !structNode && !arrayNode && !dictNode && !matrixNode && !pointerNode && !variableNode
+      !port && !lineNode && !structNode && !arrayNode && !dictNode && !matrixNode && !pointerNode && !variableNode
         ? this._findMicroLabelAt(worldPt)
         : null;
     // gráficos e áreas por último: ficam atrás de tudo, então qualquer
     // elemento em cima deles tem prioridade (e o gráfico, acima das áreas).
     const chartNode =
-      !port && !structNode && !arrayNode && !dictNode && !matrixNode && !pointerNode && !variableNode && !labelNode
+      !port && !lineNode && !structNode && !arrayNode && !dictNode && !matrixNode && !pointerNode && !variableNode && !labelNode
         ? this._findMicroChartAt(worldPt)
         : null;
     const areaNode =
-      !port && !structNode && !arrayNode && !dictNode && !matrixNode && !pointerNode && !variableNode && !labelNode && !chartNode
+      !port && !lineNode && !structNode && !arrayNode && !dictNode && !matrixNode && !pointerNode && !variableNode && !labelNode && !chartNode
         ? this._findMicroAreaAt(worldPt)
         : null;
 
@@ -4490,6 +4597,10 @@ export class App {
       hit = 'label';
       id = labelNode.id;
       grabOffset = { x: worldPt.x - labelNode.x, y: worldPt.y - labelNode.y };
+    } else if (lineNode) {
+      hit = 'line';
+      id = lineNode.id;
+      grabOffset = { x: worldPt.x - lineNode.x, y: worldPt.y - lineNode.y };
     } else if (chartNode) {
       hit = 'chart';
       id = chartNode.id;
@@ -4607,6 +4718,15 @@ export class App {
     } else if (this._microPointer.hit === 'chart-create') {
       this._microChartDraft = this._microChartRectFromDrag(this._microPointer.worldPtDown, worldPt);
       this._renderMicroOnly();
+    } else if (this._microPointer.hit === 'line-create') {
+      const { kind } = { kind: this.microMode };
+      const draft = lineFromDrag(this._microPointer.worldPtDown, worldPt, e.shiftKey);
+      this._microLineDraft = draft ? { kind, ...draft } : null;
+      this._renderMicroOnly();
+    } else if (this._microPointer.hit === 'line-end') {
+      const line = this.microLines.get(this._microPointer.id);
+      this._microLineEdit = line ? { id: line.id, ...moveLineEnd(line, this._microPointer.end, worldPt, e.shiftKey) } : null;
+      this._renderMicroOnly();
     } else if (this._microPointer.hit === 'area-resize') {
       // gráfico: redimensiona livre (sem grid), com um tamanho mínimo legível
       const isChart = this.microCharts.has(this._microPointer.id);
@@ -4649,7 +4769,7 @@ export class App {
         this._microGroupDragPositions.set(gid, { x: start.x + gdx, y: start.y + gdy });
       });
       this._renderMicroOnly();
-    } else if (['struct', 'pointer', 'array', 'dict', 'matrix', 'variable', 'label', 'chart'].includes(this._microPointer.hit)) {
+    } else if (['struct', 'pointer', 'array', 'dict', 'matrix', 'variable', 'label', 'chart', 'line'].includes(this._microPointer.hit)) {
       const offset = this._microPointer.grabOffset;
       this._microDragId = this._microPointer.id;
       this._microDragPos = { x: worldPt.x - offset.x, y: worldPt.y - offset.y };
@@ -4696,6 +4816,15 @@ export class App {
         this._createMicroChart({ x: worldPtDown.x, y: worldPtDown.y, ...CHART_DEFAULT_SIZE });
       }
       this._microChartDraft = null;
+    } else if (hit === 'line-create') {
+      const draft = this._microLineDraft;
+      this._createMicroLine(this.microMode, draft ? { x: draft.x, y: draft.y, dx: draft.dx, dy: draft.dy } : defaultLine(worldPtDown));
+      this._microLineDraft = null;
+    } else if (hit === 'line-end') {
+      const line = this.microLines.get(id);
+      const edit = this._microLineEdit;
+      if (moved && line && edit?.id === id) Object.assign(line, { x: edit.x, y: edit.y, dx: edit.dx, dy: edit.dy });
+      this._microLineEdit = null;
     } else if (hit === 'area-resize') {
       const area = this._microResizableById(id);
       if (moved && area && this._microAreaResize?.id === id) Object.assign(area, this._microAreaResize.rect);
@@ -4813,7 +4942,7 @@ export class App {
           node.y = this._microDragPos.y;
         }
       }
-    } else if (hit === 'area' || hit === 'chart') {
+    } else if (hit === 'area' || hit === 'chart' || hit === 'line') {
       if (!moved) {
         this.microSelectedIds = new Set();
         this.microSelectedId = id;
@@ -5086,7 +5215,7 @@ export class App {
     this.microContainer.classList.toggle('dragging-elements', !!(this._microDragId || this._microGroupDragPositions));
     this.microModeToolbar.render({
       mode: this.microMode,
-      swatches: { area: this.microAreaColor, text: labelCssColor(this.microLabelColor) },
+      swatches: { area: this.microAreaColor, arrow: this.microAreaColor, ruler: this.microAreaColor, text: labelCssColor(this.microLabelColor) },
     });
     this.microAlignToolbar.render({ count: this._microAlignableIds().length });
     this.microTreeToolbar.render({ enabled: !!this._microSelectedTreeRoot() });
@@ -5428,6 +5557,28 @@ export class App {
     if (this._microAreaDraft) {
       areas.push({ id: '__area-draft', ...this._microAreaDraft, color: this.microAreaColor, selected: false, dragging: true });
     }
+    const lines = Array.from(this.microLines.values()).map((n) => {
+      const { pos, dragging } = this._microNodePos(n);
+      const edited = this._microLineEdit?.id === n.id ? this._microLineEdit : null;
+      const geo = edited ?? { x: pos.x, y: pos.y, dx: n.dx, dy: n.dy };
+      return {
+        id: n.id,
+        kind: n.kind,
+        ...lineEnds(geo),
+        color: n.color,
+        selected: this._isMicroHighlighted(n.id),
+        dragging: dragging || !!edited,
+      };
+    });
+    if (this._microLineDraft) {
+      const d = this._microLineDraft;
+      lines.push({ id: '__line-draft', kind: d.kind, ...lineEnds(d), color: this.microAreaColor, selected: false, dragging: true });
+    }
+    const handlesLineId = this._microSingleSelectedLineId();
+    const handlesLine = handlesLineId ? lines.find((l) => l.id === handlesLineId) : null;
+    const lineHandlesRect = handlesLine
+      ? { x1: handlesLine.x1, y1: handlesLine.y1, x2: handlesLine.x2, y2: handlesLine.y2, size: LINE_HANDLE_PX / this.microViewport.scale }
+      : null;
     const charts = Array.from(this.microCharts.values()).map((n) => {
       const { pos, dragging } = this._microNodePos(n);
       const resized = this._microAreaResize?.id === n.id ? this._microAreaResize.rect : null;
@@ -5779,6 +5930,8 @@ export class App {
       labels,
       areas,
       areaHandles: areaHandlesRect,
+      lines,
+      lineHandles: lineHandlesRect,
       charts,
       edges,
       previewEdge,

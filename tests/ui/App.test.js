@@ -2230,3 +2230,117 @@ describe('seleção de nós no modo simplificado', () => {
     expect(app._microFindIdsInRect({ x0: 90, y0: 90, x1: 102, y1: 102 })).toHaveLength(0);
   });
 });
+
+describe('ferramentas Seta e Régua (grupo da Área)', () => {
+  const svg = () => $('.micro-canvas');
+  function evento(alvo, tipo, x, y, opts = {}) {
+    const { tx, ty } = app.microViewport;
+    alvo.dispatchEvent(new MouseEvent(tipo, { clientX: x + tx, clientY: y + ty, button: 0, bubbles: true, ...opts }));
+  }
+  function arrastar(x0, y0, x1, y1, opts = {}) {
+    evento(svg(), 'pointerdown', x0, y0, opts);
+    evento(window, 'pointermove', (x0 + x1) / 2, (y0 + y1) / 2, opts);
+    evento(window, 'pointermove', x1, y1, opts);
+    evento(window, 'pointerup', x1, y1, opts);
+  }
+  const unica = () => [...app.microLines.values()][0];
+
+  test('A/M escolhem as ferramentas; a Área e as duas dividem um botão só da barra', () => {
+    tecla(document.body, 'a');
+    expect(app.microMode).toBe('arrow');
+    expect($('.micro-container').dataset.mode).toBe('arrow');
+    tecla(document.body, 'm');
+    expect(app.microMode).toBe('ruler');
+    expect($$('.mode-btn')).toHaveLength(5);
+    expect($('.mode-btn.active').dataset.modeId).toBe('ruler');
+    tecla(document.body, 'r');
+    expect($('.mode-btn.active').dataset.modeId).toBe('area');
+  });
+
+  test('segurar o botão abre a lista com as 3 opções e escolher uma ativa a ferramenta', () => {
+    vi.useFakeTimers();
+    try {
+      const botaoGrupo = $('.mode-btn-grouped');
+      botaoGrupo.dispatchEvent(new MouseEvent('pointerdown', { button: 0, bubbles: true }));
+      vi.advanceTimersByTime(400);
+      expect($$('.mode-flyout .mode-btn').map((b) => b.dataset.modeId)).toEqual(['area', 'arrow', 'ruler']);
+      $('.mode-flyout [data-mode-id="ruler"]').click();
+      expect(app.microMode).toBe('ruler');
+      expect($('.mode-flyout')).toBeNull();
+      // o botão do grupo passa a mostrar a ferramenta escolhida
+      tecla(document.body, 'v');
+      expect($('.mode-btn-grouped').dataset.modeId).toBe('ruler');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('arrastar cria a seta, volta a Selecionar e deixa ela selecionada', () => {
+    tecla(document.body, 'a');
+    arrastar(100, 100, 220, 140);
+    expect(app.microMode).toBe('select');
+    expect(unica()).toMatchObject({ kind: 'arrow', x: 100, y: 100, dx: 120, dy: 40 });
+    expect(app.microSelectedId).toBe(unica().id);
+    expect($('.line-arrow .line-head')).not.toBeNull();
+  });
+
+  test('Shift encaixa na horizontal ou na vertical; clique simples cria uma padrão', () => {
+    tecla(document.body, 'm');
+    arrastar(100, 100, 220, 130, { shiftKey: true });
+    expect(unica()).toMatchObject({ kind: 'ruler', dx: 120, dy: 0 });
+    expect($$('.line-ruler .line-tick')).toHaveLength(2);
+    app.microLines.clear();
+    tecla(document.body, 'a');
+    arrastar(100, 100, 130, 220, { shiftKey: true });
+    expect(unica()).toMatchObject({ dx: 0, dy: 120 });
+    app.microLines.clear();
+    tecla(document.body, 'a');
+    evento(svg(), 'pointerdown', 50, 60);
+    evento(window, 'pointerup', 50, 60);
+    expect(unica()).toMatchObject({ x: 50, y: 60, dy: 0 });
+    expect(unica().dx).toBeGreaterThan(0);
+  });
+
+  test('arrastar uma extremidade move só ela (Shift encaixa no eixo); o corpo move tudo', () => {
+    tecla(document.body, 'a');
+    arrastar(100, 100, 200, 100);
+    const id = unica().id;
+    arrastar(200, 100, 260, 180); // ponta final
+    expect(unica()).toMatchObject({ id, x: 100, y: 100, dx: 160, dy: 80 });
+    arrastar(100, 100, 250, 60, { shiftKey: true }); // ponta inicial, encaixada na vertical do fim
+    expect(unica()).toMatchObject({ x: 260, y: 60, dx: 0, dy: 120 });
+    // corpo: arrasta pelo meio (260, 120)
+    arrastar(260, 120, 300, 150);
+    expect(unica()).toMatchObject({ x: 300, y: 90, dx: 0, dy: 120 });
+  });
+
+  test('Delete remove; Alt+cor pinta a linha selecionada', () => {
+    tecla(document.body, 'a');
+    arrastar(100, 100, 200, 100);
+    const antes = unica().color;
+    tecla(document.body, '3', { altKey: true, code: 'Digit3' });
+    expect(unica().color).not.toBe(antes);
+    tecla(document.body, 'Delete');
+    expect(app.microLines.size).toBe(0);
+  });
+
+  test('é salva e carregada com o projeto', async () => {
+    tecla(document.body, 'm');
+    arrastar(10, 20, 110, 20);
+    const original = { ...unica() };
+    let blob = null;
+    vi.spyOn(URL, 'createObjectURL').mockImplementation((b) => {
+      blob = b;
+      return 'blob:teste';
+    });
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    app._saveProject();
+    const projeto = JSON.parse(await blob.text());
+    expect(projeto.lines).toEqual([original]);
+
+    desmontarApp(app);
+    app = await montarApp();
+    await app._applyLoadedProject({ ...projeto, lines: [...projeto.lines, { id: 'x', kind: 'torta', x: 0, y: 0, dx: 1, dy: 1 }, null] });
+    expect([...app.microLines.values()]).toEqual([original]);
+  });
+});

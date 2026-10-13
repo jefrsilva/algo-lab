@@ -1,3 +1,4 @@
+import { numText } from '../core/numText.js';
 import { evaluate, assign, assignChain, assignTuple, truthy, iterableItems, loopValues, NoneValue } from './evaluator.js';
 
 /**
@@ -70,7 +71,7 @@ function describeArg(value, env) {
     return `[${shown.join(', ')}${items.length > 8 ? ', …' : ''}]`;
   }
   if (value.kind === 'nodelist' || value.kind === 'nestedlist') return `[${value.items.slice(0, 8).map((v) => describeArg(v, env)).join(', ')}${value.items.length > 8 ? ', …' : ''}]`;
-  if (value.kind === 'scalar') return String(value.value);
+  if (value.kind === 'scalar') return numText(value.value);
   if (value.kind === 'bool') return value.value ? 'True' : 'False';
   if (value.kind === 'string') return JSON.stringify(value.value);
   if (value.kind === 'struct') return '•';

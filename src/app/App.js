@@ -1,4 +1,5 @@
 import { nextId } from '../core/id.js';
+import { jsonNumReplacer, jsonNumReviver } from '../core/numText.js';
 import { MicroModel, MAX_ARRAY_SIZE } from '../core/micro/MicroModel.js';
 
 import {
@@ -1169,7 +1170,7 @@ export class App {
       // posições por passo da reprodução (ver MicroProgramRunner#stepLayout)
       stepLayout: this.microRunner.exportStepLayout(),
     };
-    const blob = new Blob([JSON.stringify(project, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(project, jsonNumReplacer, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -1208,7 +1209,7 @@ export class App {
     reader.onload = () => {
       let project;
       try {
-        project = JSON.parse(String(reader.result));
+        project = JSON.parse(String(reader.result), jsonNumReviver);
       } catch {
         this.dialog.alert('Arquivo inválido: não é um JSON válido.', { title: 'Não foi possível carregar' });
         return;

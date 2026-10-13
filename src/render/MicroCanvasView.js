@@ -1,4 +1,5 @@
 import { svgEl } from './svgUtils.js';
+import { numText } from '../core/numText.js';
 import { ARRAY_CELL_H } from '../core/micro/MicroModel.js';
 import { labelLayout, LABEL_PAD_X, LABEL_CODE_PAD } from './labelMarkdown.js';
 import { measureText, textMeasureGeneration } from './textMeasure.js';
@@ -458,7 +459,7 @@ export function matrixCellRect(node, row, col) {
 /** Texto de um valor de célula (array/matriz/variável): booleano no estilo
  * Python ("True"/"False"), o resto como está. */
 function cellText(v) {
-  return typeof v === 'boolean' ? (v ? 'True' : 'False') : String(v);
+  return typeof v === 'boolean' ? (v ? 'True' : 'False') : numText(v);
 }
 
 /** Layout puro das células de um dict, conforme orientação — mesma ideia de
@@ -2445,7 +2446,7 @@ export class MicroCanvasView {
       el.classList.toggle('linked', !!node.linked);
       el.classList.toggle('dragging', !!node.dragging);
       const dataLabel = el.querySelector('.struct-data-label');
-      const text = String(node.data);
+      const text = numText(node.data);
       if (dataLabel.textContent !== text) dataLabel.textContent = text;
       // modo simplificado não tem pino desenhado (ver criação acima) — a
       // linha/seta em si (ver App.js, _renderEdges) já sai direto da borda
@@ -2594,7 +2595,7 @@ export class MicroCanvasView {
       // "True"/"False" (estilo Python), não o "true"/"false" cru do JS —
       // mesma grafia que o resto da ferramenta usa pra booleano (ver
       // evaluator.js#exprLabel).
-      const text = typeof node.value === 'boolean' ? (node.value ? 'True' : 'False') : String(node.value);
+      const text = typeof node.value === 'boolean' ? (node.value ? 'True' : 'False') : numText(node.value);
       if (valueLabel.textContent !== text) valueLabel.textContent = text;
     });
   }
@@ -2960,7 +2961,7 @@ export class MicroCanvasView {
         });
         // "True"/"False" estilo Python, mesma grafia usada no resto da
         // ferramenta pra booleano (ver `_renderVariables`).
-        val.textContent = typeof cellModel.value === 'boolean' ? (cellModel.value ? 'True' : 'False') : String(cellModel.value);
+        val.textContent = typeof cellModel.value === 'boolean' ? (cellModel.value ? 'True' : 'False') : numText(cellModel.value);
         el.appendChild(val);
       } else {
         if (!cellModel.value) {

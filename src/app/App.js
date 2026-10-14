@@ -951,7 +951,10 @@ export class App {
     const colors = new Map(this.microColors);
     // lista/set/deque de nós selecionada com "Destacar nós": os nós dela
     // ganham a cor da coleção (sem cor própria, só o destaque padrão)
-    hosts.forEach((a) => {
+    // os "Sempre" pintam por último: um nó destacado permanentemente por uma
+    // coleção não perde a cor para outra que só o destaca ao ser selecionada
+    const byPriority = [...hosts].sort((a, b) => (a.highlightNodes === 'always') - (b.highlightNodes === 'always'));
+    byPriority.forEach((a) => {
       const color = this.microColors.get(a.id);
       if (color) a.cells.forEach((id) => id && colors.set(id, color));
     });

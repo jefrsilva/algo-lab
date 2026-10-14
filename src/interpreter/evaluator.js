@@ -1124,7 +1124,10 @@ function valueText(v, env, repr) {
   return repr ? reprItem(v, env) : formatPrintValue(v, env);
 }
 
-export function evaluate(node, env) {
+/** `quiet`: só vale pra 'Index' — a leitura é só um passo de uma indexação
+ * encadeada ("m[0]" em "m[0][1]"), então não mostra o cursor dela (quem quiser
+ * o cursor "m[0]" escreve "m[0]" sozinho, ex. no Sandbox). */
+export function evaluate(node, env, quiet = false) {
   switch (node.type) {
     case 'Number':
       return Scalar(node.value);
@@ -1284,7 +1287,7 @@ export function evaluate(node, env) {
       // scalar/string (não precisa ser inteiro), string/array só aceitam
       // índice inteiro, então a validação do índice depende de que tipo de
       // objeto está sendo indexado.
-      const objValue = node.object.type === 'Name' ? env.resolveName(node.object.name) : evaluate(node.object, env);
+      const objValue = node.object.type === 'Name' ? env.resolveName(node.object.name) : evaluate(node.object, env, node.object.type === 'Index');
 
       if (objValue?.kind === 'dict') {
         const key = valueToKey(evaluate(node.index, env), env);
@@ -1315,7 +1318,7 @@ export function evaluate(node, env) {
       // "nome[i]" de verdade, mesmo caminho de sempre.
       // `node.object` vai junto: o cursor de leitura se chama pela expressão
       // ("res[i][j]", "nó.neighbors[k]") e acompanha quando ela muda de lista
-      if (objValue?.kind === 'arrayref') return env.getIndex(objValue.name, node.index, indexValue.value, node.object);
+      if (objValue?.kind === 'arrayref') return env.getIndex(objValue.name, node.index, indexValue.value, node.object, quiet);
 
       // "m[i][j]" — o objeto indexado é "m[i]" (uma linha, ver abaixo): lê a
       // célula pelo Environment, passando as DUAS expressões de índice (linha
@@ -1351,7 +1354,7 @@ export function evaluate(node, env) {
       // implementa `getIndex` poder criar um cursor de leitura reativo — ver
       // MicroRuntimeAdapter#_showReadCursor, que reavalia essa expressão
       // sempre que uma variável dela é escrita em outra linha.
-      return env.getIndex(node.object.name, node.index, indexValue.value);
+      return env.getIndex(node.object.name, node.index, indexValue.value, undefined, quiet);
     }
 
     case 'Slice': {
@@ -2284,7 +2287,7 @@ export function assign(targetNode, value, env) {
     // `evaluate` genérico — só assim "d[chave]" que guarda um array
     // (`ArrayRefValue`) consegue virar o alvo de uma escrita encadeada como
     // "d[chave][2] = valor".
-    const objectValue = targetNode.object.type === 'Name' ? env.resolveName(targetNode.object.name) : evaluate(targetNode.object, env);
+    const objectValue = targetNode.object.type === 'Name' ? env.resolveName(targetNode.object.name) : evaluate(targetNode.object, env, targetNode.object.type === 'Index');
 
     // "d[chave] = valor" — dict é valor de primeira classe (ao contrário de
     // array): o Map já resolvido É a própria variável (ou uma RECONSTRUÇÃO
@@ -2321,7 +2324,9 @@ export function assign(targetNode, value, env) {
     // em tempo de execução, mesmo sem o objeto ser um `Name` direto (ver
     // caso 'arrayref' equivalente em `evaluate`, caso 'Index').
     if (objectValue?.kind === 'arrayref') {
-      env.assignIndex(objectValue.name, indexValue.value, value);
+      // expressões do índice e da lista vão junto: a escrita "m[i][j] = v"
+      // mostra o cursor "m[i][j]", como a leitura (ver `getIndex`)
+      env.assignIndex(objectValue.name, indexValue.value, value, targetNode.index, targetNode.object);
       return;
     }
 

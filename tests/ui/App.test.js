@@ -2319,6 +2319,43 @@ describe('seleção de nós no modo simplificado', () => {
   });
 });
 
+describe('preferências visuais de listas entre execuções', () => {
+  test('círculos, destacar nós e cor sobrevivem a rodar a Simulação de novo', () => {
+    const codigo = 'a = Node(1)\nfila = [a]';
+    rodarNaSimulacao(codigo);
+    app.microRunner.goToStep(app.microRunner.steps.length - 1);
+    const fila = () => [...app.micro.arrays.values()].find((n) => n.name === 'fila');
+    app.micro.setArrayOrientation(fila().id, 'vertical');
+    app.micro.setArrayNodeCircles(fila().id, true);
+    app.micro.setArrayHighlightNodes(fila().id, true);
+    app.microColors.set(fila().id, '#ff0000');
+    app._rememberArrayPrefs(fila());
+
+    $('.code-editor-run-btn').click();
+    app.microRunner.goToStep(app.microRunner.steps.length - 1);
+    expect(fila().orientation).toBe('vertical');
+    expect(fila().nodeCircles).toBe(true);
+    expect(fila().highlightNodes).toBe(true);
+    expect(app.microColors.get(fila().id)).toBe('#ff0000');
+  });
+});
+
+describe('preferências visuais de dicts entre execuções', () => {
+  test('orientação e cor sobrevivem a rodar a Simulação de novo', () => {
+    rodarNaSimulacao('d = {"a": 1}');
+    app.microRunner.goToStep(app.microRunner.steps.length - 1);
+    const dic = () => [...app.micro.dicts.values()].find((n) => n.name === 'd');
+    app.micro.setDictOrientation(dic().id, 'vertical');
+    app.microColors.set(dic().id, '#ff0000');
+    app._rememberDictPrefs(dic());
+
+    $('.code-editor-run-btn').click();
+    app.microRunner.goToStep(app.microRunner.steps.length - 1);
+    expect(dic().orientation).toBe('vertical');
+    expect(app.microColors.get(dic().id)).toBe('#ff0000');
+  });
+});
+
 describe('ferramentas Seta e Régua (grupo da Área)', () => {
   const svg = () => $('.micro-canvas');
   function evento(alvo, tipo, x, y, opts = {}) {

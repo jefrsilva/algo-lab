@@ -231,6 +231,10 @@ export class App {
     // apagar um elemento e rodar a linha de novo (ou rodar o programa inteiro
     // de novo) reproduzir a MESMA posição que o usuário já tinha ajustado.
     this.microLayout = new Map(); // key -> {x,y}
+    // preferências visuais de listas/sets/deques por NOME (mesma ideia do
+    // `microLayout`): key -> {orientation, nodeCircles, highlightNodes, color}. Sobrevivem a
+    // rodar a Simulação de novo, quando os ids mudam.
+    this.microArrayPrefs = new Map();
     // ids destacados por uma instrução do editor de código (leituras via
     // cursor de array + a escrita final de um passo) — além, não em vez, de
     // `microSelectedId` (que continua sendo o clique manual do usuário).
@@ -409,8 +413,14 @@ export class App {
       createPosition: (kind, size, layoutKey, near) => this._microCreatePosition(kind, size, layoutKey, near),
       onChange: () => this._renderMicroOnly(),
       onStructCreated: (node) => this._microTidyOwned(node.id),
-      onArrayCreated: (node, opts) => this._createArrayLabelPointer(node, opts),
-      onDictCreated: (node, opts) => this._createDictLabelPointer(node, opts),
+      onArrayCreated: (node, opts) => {
+        this._applyRememberedArrayPrefs(node);
+        return this._createArrayLabelPointer(node, opts);
+      },
+      onDictCreated: (node, opts) => {
+        this._applyRememberedDictPrefs(node);
+        return this._createDictLabelPointer(node, opts);
+      },
       onMatrixCreated: (node, opts) => this._createMatrixLabelPointer(node, opts),
     });
     this.microRunBarContainer = microRunBarContainer;
@@ -906,6 +916,10 @@ export class App {
         if (win) win.color = elementColor;
         else if (elementColor) this.microColors.set(id, elementColor);
         else this.microColors.delete(id);
+        const arr = this.micro.arrays.get(id);
+        if (arr) this._rememberArrayPrefs(arr);
+        const dict = this.micro.dicts.get(id);
+        if (dict) this._rememberDictPrefs(dict);
       }
     });
     const noSelection = this.microMode === 'select' && ids.length === 0;
@@ -1168,6 +1182,7 @@ export class App {
     this.microEdgeColors.clear();
     this.microWindows = [];
     this.microLayout.clear();
+    this.microArrayPrefs.clear();
     this.microSelectedId = null;
     this.microSelectedIds = new Set();
     this.microRunHighlightIds = new Set();
@@ -1212,6 +1227,8 @@ export class App {
       // esse elemento especificamente ausente do `micro` acima no momento do
       // save (ex: apagado antes de salvar).
       layout: Array.from(this.microLayout.entries()),
+      // modo círculos / destacar nós / cor das listas, por nome
+      arrayPrefs: Array.from(this.microArrayPrefs.entries()),
       // posições por passo da reprodução (ver MicroProgramRunner#stepLayout)
       stepLayout: this.microRunner.exportStepLayout(),
     };
@@ -1330,6 +1347,11 @@ export class App {
     this.microLayout = new Map(
       Array.isArray(project.layout) ? project.layout.filter((e) => Array.isArray(e) && typeof e[0] === 'string') : [],
     );
+    this.microArrayPrefs = new Map(
+      Array.isArray(project.arrayPrefs)
+        ? project.arrayPrefs.filter((e) => Array.isArray(e) && typeof e[0] === 'string' && e[1] && typeof e[1] === 'object')
+        : [],
+    );
     this.microSelectedId = null;
     this.microSelectedIds = new Set();
     this.microRunHighlightIds = new Set();
@@ -1397,6 +1419,53 @@ export class App {
       },
       { type: 'value', returnFocusTo: this.microView.svg }, // número, texto ou bool
     );
+  }
+
+  /** Guarda (por nome) as preferências visuais atuais do array — orientação, modo
+   * "nós como círculos", "destacar nós" e cor manual — pra reaplicar quando
+   * ele nascer de novo numa próxima execução (ver `_applyRememberedArrayPrefs`). */
+  _rememberArrayPrefs(node) {
+    const key = microLayoutKey('array', { name: node.name, frameId: node.frameId });
+    if (!key) return;
+    const prefs = {};
+    if (node.orientation && node.orientation !== 'horizontal') prefs.orientation = node.orientation;
+    if (node.nodeCircles) prefs.nodeCircles = true;
+    if (node.highlightNodes) prefs.highlightNodes = true;
+    const color = this.microColors.get(node.id);
+    if (color) prefs.color = color;
+    if (Object.keys(prefs).length) this.microArrayPrefs.set(key, prefs);
+    else this.microArrayPrefs.delete(key);
+  }
+
+  /** Idem `_rememberArrayPrefs`, pro dict (orientação e cor). */
+  _rememberDictPrefs(node) {
+    const key = microLayoutKey('dict', { name: node.name, frameId: node.frameId });
+    if (!key) return;
+    const prefs = {};
+    if (node.orientation && node.orientation !== 'horizontal') prefs.orientation = node.orientation;
+    const color = this.microColors.get(node.id);
+    if (color) prefs.color = color;
+    if (Object.keys(prefs).length) this.microArrayPrefs.set(key, prefs);
+    else this.microArrayPrefs.delete(key);
+  }
+
+  _applyRememberedDictPrefs(node) {
+    const key = microLayoutKey('dict', { name: node.name, frameId: node.frameId });
+    const prefs = key ? this.microArrayPrefs.get(key) : null;
+    if (!prefs) return;
+    if (prefs.orientation) this.micro.setDictOrientation(node.id, prefs.orientation);
+    if (prefs.color) this.microColors.set(node.id, prefs.color);
+  }
+
+  _applyRememberedArrayPrefs(node) {
+    const key = microLayoutKey('array', { name: node.name, frameId: node.frameId });
+    const prefs = key ? this.microArrayPrefs.get(key) : null;
+    if (!prefs) return;
+    // lista de listas que já nasceu em grade fica como está
+    if (prefs.orientation && node.orientation !== 'grid') this.micro.setArrayOrientation(node.id, prefs.orientation);
+    if (prefs.nodeCircles) this.micro.setArrayNodeCircles(node.id, true);
+    if (prefs.highlightNodes) this.micro.setArrayHighlightNodes(node.id, true);
+    if (prefs.color) this.microColors.set(node.id, prefs.color);
   }
 
   /** Todo array nasce com um ponteiro dedicado, rotulado com o nome do array
@@ -1910,6 +1979,7 @@ export class App {
           this.microRunner.updateHighlightNodes(node.id, highlightNodes);
         }
         if (wasGrid && node.orientation !== 'grid') this._microUnstackGridRows(node);
+        this._rememberArrayPrefs(this.micro.arrays.get(node.id) ?? node);
         if (size !== undefined) this.micro.resizeArray(node.id, size);
         if (this.microSelectedId === node.id) this._syncCodeEditorSelection('array', node.id);
         this._renderMicroOnly();
@@ -2020,6 +2090,7 @@ export class App {
         this.micro.renameDict(node.id, name);
         this.micro.setDictOrientation(node.id, orientation);
         this.microRunner.updateOrientation(node.id, orientation);
+        this._rememberDictPrefs(this.micro.dicts.get(node.id) ?? node);
         if (this.microSelectedId === node.id) this._syncCodeEditorSelection('dict', node.id);
         this._renderMicroOnly();
       },

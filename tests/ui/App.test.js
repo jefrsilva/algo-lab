@@ -2340,6 +2340,24 @@ describe('preferências visuais de listas entre execuções', () => {
   });
 });
 
+describe('destacar nós: prioridade entre coleções', () => {
+  test('"Selecionado" selecionada se sobrepõe à cor de "Sempre"', () => {
+    rodarNaSimulacao('a = Node(1)\nfila = [a]\npilha = [a]');
+    app.microRunner.goToStep(app.microRunner.steps.length - 1);
+    const arr = (nome) => [...app.micro.arrays.values()].find((n) => n.name === nome);
+    const noId = arr('fila').cells[0];
+    app.micro.setArrayHighlightNodes(arr('fila').id, 'always');
+    app.micro.setArrayHighlightNodes(arr('pilha').id, 'selected');
+    app.microColors.set(arr('fila').id, '#ff0000');
+    app.microColors.set(arr('pilha').id, '#0000ff');
+    app.microSelectedId = arr('pilha').id;
+    expect(app._microEffectiveColors().get(noId)).toBe('#0000ff');
+    // desmarcada a "Selecionado", volta a cor do "Sempre"
+    app.microSelectedId = null;
+    expect(app._microEffectiveColors().get(noId)).toBe('#ff0000');
+  });
+});
+
 describe('preferências visuais de dicts entre execuções', () => {
   test('orientação e cor sobrevivem a rodar a Simulação de novo', () => {
     rodarNaSimulacao('d = {"a": 1}');

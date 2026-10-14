@@ -1445,6 +1445,8 @@ export class MicroCanvasView {
     this.areaEls = new Map();
     this.chartEls = new Map();
     this.edgeEls = new Map();
+    this.edgeHitEls = new Map();
+    this.edgeMarkerIds = new Map(); // cor CSS -> id do <marker> da ponta
     this._lastSelectedId = null;
   }
 
@@ -2057,6 +2059,7 @@ export class MicroCanvasView {
       if (!ids.has(id)) {
         el.remove();
         this.edgeEls.delete(id);
+        this._removeEdgeHit(id);
       }
     }
 
@@ -2186,6 +2189,7 @@ export class MicroCanvasView {
             el.remove();
             this.edgeEls.delete(r.edge.id);
           }
+          this._removeEdgeHit(r.edge.id);
         });
         resolved = resolved.filter((r) => !merged.has(r));
       }
@@ -2239,16 +2243,66 @@ export class MicroCanvasView {
         cx = curveOffset ? mx + perp.x * curveOffset : mx;
         cy = curveOffset ? my + perp.y * curveOffset : my;
       }
-      el.setAttribute('d', `M ${edge.x1} ${edge.y1} Q ${cx} ${cy} ${end.x} ${end.y}`);
+      const d = `M ${edge.x1} ${edge.y1} Q ${cx} ${cy} ${end.x} ${end.y}`;
+      el.setAttribute('d', d);
       el.classList.toggle('selected', !!edge.selected);
       el.classList.toggle('micro-dimmed', !!edge.dimmed);
-      const markerUrl = edge.selected ? 'url(#micro-arrowhead-selected)' : 'url(#micro-arrowhead)';
+      // cor manual (Alt+1…Alt+9): traço e ponta na cor escolhida, também
+      // selecionada (o destaque fica por conta da largura e do halo)
+      el.classList.toggle('micro-edge-colored', !!edge.color);
+      if (edge.color) el.style.stroke = edge.color;
+      else el.style.removeProperty('stroke');
+      const markerUrl = edge.color
+        ? `url(#${this._edgeMarkerFor(edge.color)})`
+        : edge.selected
+          ? 'url(#micro-arrowhead-selected)'
+          : 'url(#micro-arrowhead)';
       el.setAttribute('marker-end', markerUrl);
+      // alvo de clique invisível e mais largo que o traço — a aresta é
+      // selecionável (e pintável), nunca arrastável nem removível
+      let hit = this.edgeHitEls.get(edge.id);
+      if (!hit) {
+        hit = svgEl('path', { class: 'micro-edge-hit', 'data-edge-id': edge.id });
+        this.edgesLayer.insertBefore(hit, el); // halo por baixo do traço
+        this.edgeHitEls.set(edge.id, hit);
+      }
+      hit.setAttribute('d', d);
+      hit.classList.toggle('picked', !!edge.picked);
+      hit.classList.toggle('micro-dimmed', !!edge.dimmed);
       // ligação bidirecional fundida em uma só seta (ver passo 1.5, modo
       // simplificado) — ponta nas duas pontas do traço, não só na de chegada.
       if (bidirectional) el.setAttribute('marker-start', markerUrl);
       else el.removeAttribute('marker-start');
     });
+  }
+
+  _removeEdgeHit(id) {
+    const hit = this.edgeHitEls.get(id);
+    if (!hit) return;
+    hit.remove();
+    this.edgeHitEls.delete(id);
+  }
+
+  /** Id do <marker> da ponta de seta na cor `color` (criado na primeira vez). */
+  _edgeMarkerFor(color) {
+    let id = this.edgeMarkerIds.get(color);
+    if (!id) {
+      id = `micro-arrowhead-c${this.edgeMarkerIds.size}`;
+      const marker = svgEl('marker', {
+        id,
+        viewBox: '0 0 10 10',
+        refX: 9,
+        refY: 5,
+        markerWidth: ARROW_SIZE,
+        markerHeight: ARROW_SIZE,
+        markerUnits: 'userSpaceOnUse',
+        orient: 'auto-start-reverse',
+      });
+      marker.appendChild(svgEl('path', { d: 'M 0 0 L 10 5 L 0 10 z', fill: color }));
+      this.defs.appendChild(marker);
+      this.edgeMarkerIds.set(color, id);
+    }
+    return id;
   }
 
   /** `simplified` (Ctrl+A global, ver App#_toggleMicroSimplifiedNodes) troca a

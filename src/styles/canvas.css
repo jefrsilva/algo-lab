@@ -358,6 +358,7 @@
   fill: none;
   stroke: var(--edge-color);
   stroke-width: 2.75;
+  pointer-events: none; /* o clique é do `.micro-edge-hit` */
   transition: d 0.35s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease, stroke-width 0.2s ease;
 }
 
@@ -374,6 +375,31 @@
 .micro-edge-line.selected {
   stroke: var(--sel);
   stroke-width: 3.5;
+}
+
+/* aresta com cor manual: o `stroke` inline vence a cor de seleção, só a
+   largura marca o destaque */
+.micro-edge-line.micro-edge-colored.selected {
+  stroke-width: 3.5;
+}
+
+/* alvo de clique da aresta (selecionar/pintar): invisível e mais largo que
+   o traço; fica sob os elementos, que têm prioridade no clique */
+.micro-edge-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 12;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.micro-edge-hit.picked {
+  stroke: var(--sel);
+  stroke-opacity: 0.28;
+}
+
+.micro-edge-hit.micro-dimmed {
+  pointer-events: none;
 }
 
 /* ---- modo micro: arrays ---- */

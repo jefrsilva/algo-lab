@@ -296,6 +296,33 @@ describe('ações rápidas (Ctrl+Espaço)', () => {
     input.dispatchEvent(new Event('input', { bubbles: true }));
     expect($('.quick-action-item.disabled')).not.toBeNull();
   });
+
+  test('"new adjacency matrix" cria a matriz e os dicts a partir dos GraphNode selecionados', () => {
+    const grafo = (x, data) => {
+      const no = app.micro.addStruct(x, 0, data, 'graph');
+      const lista = app.micro.addArray(x, 900, { kind: 'ref', size: 0, name: `__graph_neighbors_${no.id}` });
+      app.micro.setStructNeighborsArray(no.id, lista.id);
+      return no;
+    };
+    const [a, b, c] = [grafo(0, 10), grafo(200, 20), grafo(400, 30)];
+    app.micro.toggleStructNeighbor(a.id, b.id);
+    app.micro.toggleStructNeighbor(b.id, c.id);
+    app.micro.toggleStructNeighbor(c.id, a.id);
+    app.microSelectedIds = new Set([a.id, b.id, c.id]);
+    app.microSelectedId = a.id;
+    tecla(window, ' ', { code: 'Space', ctrlKey: true });
+    const input = $('.quick-action-input');
+    input.value = 'new adjacency matrix';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    tecla(input, 'Enter');
+    const arrays = [...app.micro.arrays.values()];
+    const adj = arrays.find((x) => x.name === 'adj');
+    const linhas = adj.cells.map((id) => app.micro.arrays.get(id).cells);
+    expect(linhas).toEqual([[0, 1, 0], [0, 0, 1], [1, 0, 0]]);
+    const dict = (nome) => Object.fromEntries([...app.micro.dicts.values()].find((d) => d.name === nome).cells.map((x) => [x.key, x.value]));
+    expect(dict('index_to_id')).toEqual({ 0: 10, 1: 20, 2: 30 });
+    expect(dict('id_to_index')).toEqual({ 10: 0, 20: 1, 30: 2 });
+  });
 });
 
 describe('ponteiro de um elemento recém-criado nasce longe o bastante pra seta aparecer', () => {

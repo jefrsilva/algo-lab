@@ -3326,6 +3326,12 @@ export class App {
       disabled: treeBlocked,
       run: () => this._runMicroTreeLayout(orientation),
     }));
+    const graphNodes = this._microSelectedGraphNodes();
+    const adjBlocked = !graphNodes.length
+      ? 'selecione GraphNodes'
+      : graphNodes.length > MAX_ARRAY_SIZE
+        ? `no máximo ${MAX_ARRAY_SIZE} nós`
+        : null;
     const commands = [
       model('new pointer', ['new ptr'], 'ponteiro solto — pede o nome', () => this._quickNewPointer()),
       model('new variable', ['new var'], 'variável — pede o nome', () => this._quickNewVariable()),
@@ -3338,6 +3344,10 @@ export class App {
       model('new deque', ['new queue'], 'deque vazio, deque() — pede o nome', () => this._quickNewCollection('deque')),
       model('new dict', ['new dictionary'], 'dicionário vazio — pede o nome', () => this._quickNewCollection('dict')),
       model('new matrix', [], 'matriz 3×3 — pede o nome', () => this._quickNewCollection('matrix')),
+      {
+        ...model('new adjacency matrix', ['new adj matrix', 'adjacency matrix'], 'matriz de adjacência + index_to_id/id_to_index dos GraphNodes selecionados', () => this._quickNewAdjacencyMatrix(graphNodes)),
+        disabled: busy ?? adjBlocked,
+      },
       { name: 'new label', aliases: ['new text'], description: 'texto livre no canvas', run: () => this._quickNewLabel() },
       { name: 'new area', aliases: [], description: 'área retangular pra agrupar elementos', run: () => this._quickNewArea() },
       {
@@ -3724,6 +3734,51 @@ export class App {
       },
       remove: () => this._quickDiscard(node.id),
     });
+  }
+
+  /** Nós de grafo (GraphNode) da seleção atual, na ordem em que foram selecionados. */
+  _microSelectedGraphNodes() {
+    return this._microSelectionIds().map((id) => this.micro.structs.get(id)).filter((s) => s?.type === 'graph');
+  }
+
+  /** "new adjacency matrix": a partir dos GraphNode selecionados, cria a matriz
+   * de adjacência (grade n×n, `adj[i][j] = 1` se o nó i tem o nó j em
+   * `neighbors` — só arestas entre nós selecionados) e os dicts `index_to_id`
+   * (índice da matriz -> `no.data`) e `id_to_index` (`no.data` -> índice). O
+   * índice segue a ordem da seleção. Nomes livres via `_microFreeName`; os três
+   * ganham o ponteiro-rótulo de sempre. Vale só fora da Simulação (cria
+   * elementos do modelo). */
+  _quickNewAdjacencyMatrix(nodes) {
+    const n = nodes.length;
+    const addLabel = (node, modelKind) => {
+      const labelPos = this._microPointerSpotNear(node.id, node.name, { movable: true });
+      const label = this.micro.addPointer(labelPos.x, labelPos.y, node.name);
+      if (modelKind === 'dict') this.micro.linkDictLabelPointer(node.id, label.id);
+      else this.micro.linkArrayLabelPointer(node.id, label.id);
+    };
+    const matrixName = this._microFreeName('adj');
+    const pos = this._microCreatePosition('array', n);
+    const matrix = this.micro.addArray(pos.x, pos.y, { kind: 'arrayref', orientation: 'grid', size: 0, name: matrixName });
+    const index = new Map(nodes.map((s, i) => [s.id, i]));
+    const rows = nodes.map((s, i) => {
+      const row = this.micro.addArray(matrix.x + GRID_ROW_BAND_W, matrix.y + GRID_COL_BAND_H + i * ARRAY_CELL, { size: n, name: `${matrixName}[${i}]` });
+      const neighbors = this.micro.arrays.get(s.neighborsArrayId)?.cells ?? [];
+      neighbors.forEach((id) => {
+        if (index.has(id)) this.micro.setArrayCellValue(row.id, index.get(id), 1);
+      });
+      return row.id;
+    });
+    this.micro.setArrayContents(matrix.id, 'arrayref', rows);
+    addLabel(matrix, 'array');
+    const dictNames = [this._microFreeName('index_to_id'), this._microFreeName('id_to_index')];
+    dictNames.forEach((name, k) => {
+      const dpos = this._microCreatePosition('dict', n);
+      const dict = this.micro.addDict(dpos.x, dpos.y, { name });
+      nodes.forEach((s, i) => this.micro.setDictCellValue(dict.id, k === 0 ? i : s.data, k === 0 ? s.data : i));
+      addLabel(dict, 'dict');
+    });
+    this._selectMicroElement('array', matrix.id);
+    this._renderMicroOnly();
   }
 
   _quickNewLabel() {

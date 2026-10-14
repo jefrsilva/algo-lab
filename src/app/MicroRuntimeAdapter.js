@@ -13,6 +13,7 @@ import {
   tupleToRaw,
 } from '../interpreter/evaluator.js';
 import { PyTuple } from '../interpreter/pytuple.js';
+import { frameScope } from './frameScope.js';
 import {
   pyHash,
   tableValues,
@@ -153,6 +154,12 @@ export class MicroRuntimeAdapter {
     const id = nextId('frame');
     this.frameStack.push({ id, label });
     return id;
+  }
+
+  /** Foto dos valores do frame (parâmetros e locais), pro pop-up da árvore de
+   * chamadas — ver frameScope.js. */
+  frameScope(frameId) {
+    return frameScope(this.micro, frameId);
   }
 
   /** Desempilha o frame do topo — nunca desempilha o 'global' (guarda de

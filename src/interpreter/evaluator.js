@@ -105,7 +105,7 @@
  * uma das reconhecidas — "Node(valor)", "ListNode(valor)", "TreeNode(valor)", "GraphNode(valor)", "len(nome)", "range(...)",
  * "sum(...)", "min(...)", "max(...)", "sorted(...)", "enumerate(...)",
  * "list(...)", "set(...)", "tuple(...)", "deque(...)" (e os métodos de deque,
- * ver `callDequeMethod`), "str(valor)", "abs(x)", "int(x[, base])", "ord(c)", "chr(n)",
+ * ver `callDequeMethod`), "str(valor)", "abs(x)", "int(x[, base])", "float(x)" (sobretudo float('inf')/float('-inf')), "ord(c)", "chr(n)",
  * "sep.join(...)", "texto.upper()",
  * "texto.lower()", "texto.split(...)", "texto.replace(...)",
  * "texto.strip(...)", "texto.lstrip(...)", "texto.rstrip(...)", "texto.startswith(...)", "texto.endswith(...)",
@@ -203,6 +203,7 @@ import {
   buildFromDictKeys,
 } from './pyset.js';
 import { PyTuple, makeTuple } from './pytuple.js';
+import { numText } from '../core/numText.js';
 
 export const Scalar = (value) => ({ kind: 'scalar', value });
 export const StructRef = (id) => ({ kind: 'struct', id });
@@ -804,7 +805,7 @@ function stringCharAt(str, idx) {
 function formatPrintValue(v, env) {
   switch (v.kind) {
     case 'scalar':
-      return String(v.value);
+      return numText(v.value);
     case 'string':
       return v.value;
     case 'bool':
@@ -859,7 +860,7 @@ function reprItem(v, env) {
 /** Texto de uma lista de valores crus (célula de array/matriz) — igual
  * `repr()` de uma lista Python: `[1, 'a', True]`. */
 function formatRawList(raws) {
-  return `[${raws.map((e) => (typeof e === 'string' ? pyStringRepr(e) : typeof e === 'boolean' ? (e ? 'True' : 'False') : String(e))).join(', ')}]`;
+  return `[${raws.map((e) => (typeof e === 'string' ? pyStringRepr(e) : typeof e === 'boolean' ? (e ? 'True' : 'False') : numText(e))).join(', ')}]`;
 }
 
 /** Texto de um dict (`Map<chave, TypedValue>` — ver `DictValue`) — igual
@@ -868,7 +869,7 @@ function formatRawList(raws) {
 export function formatPrintDict(entries, env) {
   const parts = [];
   entries.forEach((v, k) => {
-    const keyText = typeof k === 'string' ? pyStringRepr(k) : String(k);
+    const keyText = typeof k === 'string' ? pyStringRepr(k) : numText(k);
     parts.push(`${keyText}: ${reprItem(v, env)}`);
   });
   return `{${parts.join(', ')}}`;
@@ -1714,7 +1715,13 @@ export function evaluate(node, env, quiet = false) {
             }
             base = b.value;
           }
-          if (v.kind === 'scalar') return Scalar(Math.trunc(v.value));
+          if (v.kind === 'scalar') {
+            if (!Number.isFinite(v.value)) {
+              env.warn?.(Number.isNaN(v.value) ? 'int(x): não dá pra converter nan em inteiro.' : 'int(x): não dá pra converter inf em inteiro.');
+              return undefined;
+            }
+            return Scalar(Math.trunc(v.value));
+          }
           if (v.kind === 'bool') return Scalar(Number(v.value));
           if (v.kind === 'string') {
             const n = parseIntText(v.value, base);
@@ -1722,6 +1729,29 @@ export function evaluate(node, env, quiet = false) {
             return n === undefined ? undefined : Scalar(n);
           }
           env.warn?.('int(x): x precisa ser um número, um bool ou um texto com um número inteiro.');
+          return undefined;
+        }
+
+        // "float()" (0), "float(x)" — o modelo não distingue int de float
+        // (todo número é um `number`), então serve sobretudo pro infinito:
+        // float('inf'), float('-inf'), float('nan') (maiúsculas, "+", espaços
+        // e "infinity" valem, igual Python); texto numérico ("3.5", "1e3") e
+        // número/bool também são aceitos.
+        if (fname === 'float' && node.args.length <= 1) {
+          if (node.args.length === 0) return Scalar(0);
+          const v = evaluate(node.args[0], env);
+          if (v === undefined) return undefined;
+          if (v.kind === 'scalar') return Scalar(v.value);
+          if (v.kind === 'bool') return Scalar(Number(v.value));
+          if (v.kind === 'string') {
+            const t = v.value.trim().toLowerCase().replace(/_(?=\d)/g, '');
+            const m = /^([+-]?)(inf|infinity|nan)$/.exec(t);
+            if (m) return Scalar(m[2] === 'nan' ? NaN : m[1] === '-' ? -Infinity : Infinity);
+            if (/^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/.test(t)) return Scalar(Number(t));
+            env.warn?.(`float(...): ${pyStringRepr(v.value)} não é um número.`);
+            return undefined;
+          }
+          env.warn?.('float(x): x precisa ser um número, um bool ou um texto com um número.');
           return undefined;
         }
 

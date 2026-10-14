@@ -97,6 +97,14 @@ describe('vizinhos de nó de grafo (toggleStructNeighbor)', () => {
     expect(vizinhos(b)).toEqual([a.id]);
   });
 
+  test('remover o vizinho C esvazia a lista de B, sem deixar referência nula', () => {
+    const b = noGrafo(2);
+    const c = noGrafo(3);
+    m.toggleStructNeighbor(b.id, c.id);
+    m.removeStruct(c.id);
+    expect(vizinhos(b)).toEqual([]);
+  });
+
   test('desligar tira todas as ocorrências e desloca os cursores da lista', () => {
     const a = noGrafo(1);
     const b = noGrafo(2);

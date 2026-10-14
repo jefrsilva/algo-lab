@@ -496,8 +496,21 @@ export class MicroModel {
     for (const p of this.pointers.values()) {
       if (p.target?.kind === 'struct' && p.target.id === id) p.target = null;
     }
+    // lista de vizinhos de um GraphNode: a aresta some (a célula é removida),
+    // em vez de sobrar uma referência nula
+    const neighborLists = new Set();
+    for (const s of this.structs.values()) {
+      if (s.neighborsArrayId) neighborLists.add(s.neighborsArrayId);
+    }
     for (const arr of this.arrays.values()) {
-      if (arr.kind === 'ref') arr.cells = arr.cells.map((c) => (c === id ? null : c));
+      if (arr.kind !== 'ref') continue;
+      if (neighborLists.has(arr.id)) {
+        for (let i = arr.cells.length - 1; i >= 0; i -= 1) {
+          if (arr.cells[i] === id) this.removeArrayCell(arr.id, i);
+        }
+      } else {
+        arr.cells = arr.cells.map((c) => (c === id ? null : c));
+      }
     }
     for (const dict of this.dicts.values()) {
       dict.cells.forEach((c) => {

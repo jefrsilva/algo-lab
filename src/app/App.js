@@ -390,6 +390,7 @@ export class App {
     this.callTreeContainer = callTreeContainer;
     this.callTree = new CallTree(callTreeContainer, {
       onSelectFrame: (frameId) => this._onSelectCallFrame(frameId),
+      onDimChange: (value) => this._applySetting('dimOutOfScope', value),
       getScope: (frameId) => frameScope(this.micro, frameId),
       onModeChange: () => {
         this._syncCallTreeButton();
@@ -843,6 +844,11 @@ export class App {
         break;
       case 'callTreeMode':
         this.callTree.setMode(value); // grava sozinho (CallTree#setMode)
+        break;
+      case 'dimOutOfScope':
+        setSetting(key, value);
+        this.callTree.render(this.callTree._last);
+        this._renderMicroOnly();
         break;
       case 'playbackSpeed':
         this.microRunner.setSpeed(setSetting(key, value));
@@ -6023,7 +6029,8 @@ export class App {
 
     // o que não está no escopo da chamada ativa fica mais transparente (ver
     // _microOutOfScopeIds) — a seta some junto com quem ela sai
-    const dimmedIds = this._microOutOfScopeIds(activeFrameId, highlightedIds);
+    // (a preferência "dimOutOfScope" desligada mostra tudo normal e clicável)
+    const dimmedIds = getSetting('dimOutOfScope') ? this._microOutOfScopeIds(activeFrameId, highlightedIds) : new Set();
     // o que não foi desenhado (filtrado acima) ou está apagado não recebe
     // mouse — ver _microPickable
     const drawnIds = new Set([...structs, ...pointers, ...arrays, ...dicts, ...matrices, ...variables].map((n) => n.id));

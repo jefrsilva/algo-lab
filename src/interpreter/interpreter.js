@@ -1,3 +1,4 @@
+import { numText } from '../core/numText.js';
 import { evaluate, assign, assignChain, assignTuple, truthy, iterableItems, loopValues, NoneValue } from './evaluator.js';
 
 /**
@@ -70,7 +71,8 @@ function describeArg(value, env) {
     return `[${shown.join(', ')}${items.length > 8 ? ', …' : ''}]`;
   }
   if (value.kind === 'nodelist' || value.kind === 'nestedlist') return `[${value.items.slice(0, 8).map((v) => describeArg(v, env)).join(', ')}${value.items.length > 8 ? ', …' : ''}]`;
-  if (value.kind === 'scalar') return String(value.value);
+  if (value.kind === 'tuple') return `(${value.items.map((v) => describeArg(v, env)).join(', ')})`;
+  if (value.kind === 'scalar') return numText(value.value);
   if (value.kind === 'bool') return value.value ? 'True' : 'False';
   if (value.kind === 'string') return JSON.stringify(value.value);
   if (value.kind === 'struct') return '•';
@@ -159,13 +161,24 @@ export function* runProgram(program, functions, env) {
       }
     });
     const parentCallNodeId = currentCallNodeId;
-    callTree.push({ id: frameId, parentId: parentCallNodeId, label, depth: callDepth });
+    const callIndex = callTree.push({ id: frameId, parentId: parentCallNodeId, label, depth: callDepth }) - 1;
     currentCallNodeId = frameId;
 
     const signal = yield* execBlock(fn.body);
 
     currentCallNodeId = parentCallNodeId;
     let value = signal.kind === 'return' ? signal.value : NoneValue;
+    if (signal.kind !== 'abort') {
+      // o nó é SUBSTITUÍDO (não alterado): passos já emitidos guardam o
+      // anterior, então voltar na reprodução mostra a chamada ainda sem retorno.
+      // Valor de retorno e escopo são lidos antes do frame sair da pilha.
+      callTree[callIndex] = {
+        ...callTree[callIndex],
+        returned: true,
+        returnText: describeArg(value, env),
+        scope: env.frameScope?.(frameId),
+      };
+    }
     if (env.stableRef && value !== undefined) value = env.stableRef(value);
     env.popFrame();
     callDepth -= 1;

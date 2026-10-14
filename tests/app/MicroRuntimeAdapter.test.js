@@ -101,6 +101,22 @@ describe('adoptReadCursor (ponteiro digitado como "nums[i]" no canvas)', () => {
     expect(micro.pointers.has(p.id)).toBe(false);
   });
 
+  test('escrever "m[0][1] = 1" cria o cursor "m[0][1]" na célula escrita', () => {
+    const { micro } = runDsl('m = [[0, 0, 0], [0, 0, 0]]\nm[0][1] = 1');
+    const m = valores(micro.arrays).find((a) => a.name === 'm');
+    const cursor = valores(micro.pointers).find((q) => q.readCursorKey === 'm[0][1]');
+    expect(cursor).toBeDefined();
+    expect(cursor.target).toEqual({ kind: 'arrayCell', arrayId: m.cells[0], index: 1 });
+    expect(micro.arrays.get(m.cells[0]).cells[1]).toBe(1);
+  });
+
+  test('indexação encadeada não cria o cursor intermediário "m[0]", mas "m[0]" sozinho cria', () => {
+    const { micro } = runDsl('m = [[0, 0], [0, 0]]\nm[0][1] = 1\nx = m[1][0]');
+    expect(valores(micro.pointers).filter((q) => q.readCursorKey).map((q) => q.readCursorKey).sort()).toEqual(['m[0][1]', 'm[1][0]']);
+    const { micro: micro2 } = runDsl('m = [[0, 0], [0, 0]]\nm[0]');
+    expect(valores(micro2.pointers).map((q) => q.readCursorKey)).toEqual(['m[0]']);
+  });
+
   test('cursor de uma posição de lista de listas ("m[1][0]"), sem criar o cursor "m[1]"', () => {
     const { micro, env } = runDsl('m = [[1, 2], [3, 4]]');
     const m = valores(micro.arrays).find((a) => a.name === 'm');

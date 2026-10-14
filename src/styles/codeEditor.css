@@ -9,11 +9,12 @@
   display: none;
 }
 
-/* coluna esquerda: canvas (flex:1) + console embaixo (ver App#_buildLayout) */
-/* começa com 2/3 pro canvas e 1/3 pro painel de código (ver
-   .code-editor-panel) — a divisória (App#_setupSplitResizer) muda depois */
+/* coluna esquerda: canvas (flex:1) + console embaixo (ver App#_buildLayout).
+   Absorve o espaço que sobra: o painel de código tem largura própria (1/3 por
+   padrão, a divisória App#_setupSplitResizer muda) e a árvore de chamadas
+   também, então abrir/redimensionar a árvore só encolhe o canvas. */
 .micro-split .micro-main {
-  flex: 1 1 67%;
+  flex: 1 1 0;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -26,15 +27,15 @@
 
 /* Painel de código/execução oculto (Ctrl+H, ver App#_toggleCodePanel) — o
  * canvas (+ árvore de chamadas, se visível) ocupa o espaço todo sozinho.
- * `!important` necessário pro `.micro-main`: sobrepõe o `style.flex`
- * em px que o arraste da divisória grava inline (ver _setupSplitResizer). */
+ * (A largura em px do painel de código, gravada inline pelo arraste da
+ * divisória, some junto com ele: ver _setupSplitResizer.) */
 .micro-split.code-panel-hidden .micro-main {
   flex: 1 1 100% !important;
   border-right: none;
 }
 
 .micro-split.code-panel-hidden .code-editor-panel,
-.micro-split.code-panel-hidden .split-resizer {
+.micro-split.code-panel-hidden .split-resizer:not(.call-tree-resizer) {
   display: none;
 }
 
@@ -42,9 +43,8 @@
    aparece quando o programa rodado fez pelo menos uma chamada de função de
    usuário; escondido (via atributo hidden) fora disso. */
 .call-tree-panel {
-  flex: 0 0 220px;
+  flex: 0 0 var(--call-tree-width, 220px);
   min-width: 0;
-  border-right: 1px solid var(--border);
   background: var(--bg-1);
   overflow-y: auto;
   padding: 8px 6px;
@@ -54,11 +54,47 @@
 /* visualização reduzida: coluna estreita de bolinhas (ver CallTree#_makeDot) */
 .call-tree-panel.compact {
   flex-basis: 56px;
+  border-right: 1px solid var(--border);
   padding: 6px 4px;
 }
 
-.call-tree-panel[hidden] {
+.call-tree-panel[hidden],
+.call-tree-resizer:has(+ .call-tree-panel[hidden]),
+.call-tree-resizer:has(+ .call-tree-panel.compact) {
   display: none;
+}
+
+/* pop-up com o escopo da chamada sob o mouse (ver CallTree#_showScopeTip) */
+.call-tree-tip {
+  position: fixed;
+  z-index: 1000;
+  max-width: 360px;
+  padding: 8px 10px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 4px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--text-1);
+  pointer-events: none;
+}
+
+.call-tree-tip-title {
+  font-weight: 700;
+  color: var(--text-0);
+  padding-bottom: 4px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+  word-break: break-all;
+}
+
+.call-tree-tip-empty {
+  color: var(--text-2);
+}
+
+.call-tree-tip-row {
+  word-break: break-all;
 }
 
 /* Divisória arrastável entre a visualização (canvas + árvore de chamadas) e
@@ -197,7 +233,7 @@
 /* wrapper externo do painel de código: editor (flex:1) + barra de reprodução
    do modo "Executar" (altura própria, só aparece nesse modo) empilhados */
 .code-editor-panel {
-  flex: 1 1 33%;
+  flex: 0 0 33%;
   min-width: 0;
   display: flex;
   flex-direction: column;

@@ -9,11 +9,12 @@
   display: none;
 }
 
-/* coluna esquerda: canvas (flex:1) + console embaixo (ver App#_buildLayout) */
-/* começa com 2/3 pro canvas e 1/3 pro painel de código (ver
-   .code-editor-panel) — a divisória (App#_setupSplitResizer) muda depois */
+/* coluna esquerda: canvas (flex:1) + console embaixo (ver App#_buildLayout).
+   Absorve o espaço que sobra: o painel de código tem largura própria (1/3 por
+   padrão, a divisória App#_setupSplitResizer muda) e a árvore de chamadas
+   também, então abrir/redimensionar a árvore só encolhe o canvas. */
 .micro-split .micro-main {
-  flex: 1 1 67%;
+  flex: 1 1 0;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -26,15 +27,15 @@
 
 /* Painel de código/execução oculto (Ctrl+H, ver App#_toggleCodePanel) — o
  * canvas (+ árvore de chamadas, se visível) ocupa o espaço todo sozinho.
- * `!important` necessário pro `.micro-main`: sobrepõe o `style.flex`
- * em px que o arraste da divisória grava inline (ver _setupSplitResizer). */
+ * (A largura em px do painel de código, gravada inline pelo arraste da
+ * divisória, some junto com ele: ver _setupSplitResizer.) */
 .micro-split.code-panel-hidden .micro-main {
   flex: 1 1 100% !important;
   border-right: none;
 }
 
 .micro-split.code-panel-hidden .code-editor-panel,
-.micro-split.code-panel-hidden .split-resizer {
+.micro-split.code-panel-hidden .split-resizer:not(.call-tree-resizer) {
   display: none;
 }
 
@@ -58,8 +59,8 @@
 }
 
 .call-tree-panel[hidden],
-.call-tree-panel[hidden] + .call-tree-resizer,
-.call-tree-panel.compact + .call-tree-resizer {
+.call-tree-resizer:has(+ .call-tree-panel[hidden]),
+.call-tree-resizer:has(+ .call-tree-panel.compact) {
   display: none;
 }
 
@@ -232,7 +233,7 @@
 /* wrapper externo do painel de código: editor (flex:1) + barra de reprodução
    do modo "Executar" (altura própria, só aparece nesse modo) empilhados */
 .code-editor-panel {
-  flex: 1 1 33%;
+  flex: 0 0 33%;
   min-width: 0;
   display: flex;
   flex-direction: column;

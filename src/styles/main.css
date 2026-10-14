@@ -105,6 +105,7 @@ svg text {
   flex: 1;
   display: grid;
   grid-template-columns: 1fr;
+  grid-template-rows: minmax(0, 1fr); /* senão a linha cresce com o conteúdo (ex.: árvore de chamadas longa) */
   min-height: 0;
 }
 
@@ -112,6 +113,7 @@ svg text {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
 }
 
 .canvas-container {

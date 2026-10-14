@@ -203,6 +203,10 @@ export class App {
     // cada passo (MicroProgramRunner#_restore), mas preserva os ids — então
     // um mapa por id sobrevive a avançar/voltar passos sem ser desfeito.
     this.microColors = new Map(); // id -> cor CSS
+    // cor manual por id de aresta/seta (`<id do dono>-next`, `-cell3`…): ids
+    // de aresta também entram na seleção (só pintar — nunca mover/remover)
+    this.microEdgeColors = new Map();
+    this._microEdgeIds = new Set(); // arestas desenhadas no último render
     // janelas deslizantes ("new sliding window", ver `_quickNewSlidingWindow`):
     // pares de cursores agrupados — selecionar um seleciona o outro, e as
     // células do array entre os dois acendem. Também fora do MicroModel, e
@@ -891,6 +895,10 @@ export class App {
         label.color = textColor;
         hadLabel = true;
       }
+      if (this._isMicroEdgeId(id)) {
+        if (elementColor) this.microEdgeColors.set(id, elementColor);
+        else this.microEdgeColors.delete(id);
+      }
       if (this._isMicroModelElement(id)) {
         // cursor de uma janela deslizante: a cor é da janela (os dois
         // cursores e o colchete mudam juntos), não do id
@@ -904,6 +912,12 @@ export class App {
     if (['area', 'arrow', 'ruler'].includes(this.microMode) || hadArea || noSelection) this.microAreaColor = areaColor;
     if (this.microMode === 'text' || hadLabel || noSelection) this.microLabelColor = textColor;
     this._renderMicroOnly();
+  }
+
+  /** `id` é de uma aresta/seta desenhada (selecionável e pintável, mas não
+   * movível nem removível)? */
+  _isMicroEdgeId(id) {
+    return this._microEdgeIds.has(id);
   }
 
   /** `id` é de um elemento do MicroModel (os que aceitam cor manual)? */
@@ -1151,6 +1165,7 @@ export class App {
     this.microLines.clear();
     this.microCharts.clear();
     this.microColors.clear();
+    this.microEdgeColors.clear();
     this.microWindows = [];
     this.microLayout.clear();
     this.microSelectedId = null;
@@ -1190,6 +1205,7 @@ export class App {
       // cor manual por id (ids do `micro` acima são preservados no load) —
       // só de elementos que existem no modelo salvo
       colors: Array.from(this.microColors.entries()).filter(([id]) => this._isMicroModelElement(id)),
+      edgeColors: Array.from(this.microEdgeColors.entries()),
       // posições memorizadas por NOME, não por id (ver microLayoutKey.js) —
       // é o que faz apagar um elemento e rodar a linha de novo (já no
       // projeto recarregado) reproduzir a posição escolhida à mão, mesmo com
@@ -1305,6 +1321,11 @@ export class App {
       .map((w) => ({ a: w.a, b: w.b, color: typeof w.color === 'string' ? w.color : null }));
     this.microColors = new Map(
       Array.isArray(project.colors) ? project.colors.filter((e) => Array.isArray(e) && typeof e[1] === 'string') : [],
+    );
+    this.microEdgeColors = new Map(
+      Array.isArray(project.edgeColors)
+        ? project.edgeColors.filter((e) => Array.isArray(e) && typeof e[0] === 'string' && typeof e[1] === 'string')
+        : [],
     );
     this.microLayout = new Map(
       Array.isArray(project.layout) ? project.layout.filter((e) => Array.isArray(e) && typeof e[0] === 'string') : [],
@@ -2185,7 +2206,8 @@ export class App {
    * único de sempre (`microSelectedId`), o que estiver ativo. Não faz nada
    * sem seleção. */
   _deleteMicroSelection() {
-    const ids = this.microSelectedIds.size ? Array.from(this.microSelectedIds) : this.microSelectedId ? [this.microSelectedId] : [];
+    // arestas selecionadas só podem ser pintadas, não removidas
+    const ids = this._microSelectionIds().filter((id) => !this._isMicroEdgeId(id));
     if (!ids.length) return;
     ids.forEach((id) => this._microRemoveById(id));
     this.microSelectedIds = new Set();
@@ -4671,6 +4693,15 @@ export class App {
       grabOffset = { x: worldPt.x - areaNode.x, y: worldPt.y - areaNode.y };
     }
 
+    // seta/aresta sob o cursor (alvo invisível de MicroCanvasView): fica acima
+    // de áreas e gráficos, abaixo de qualquer elemento — só seleciona e pinta
+    const edgeId = e.target?.getAttribute?.('data-edge-id');
+    if (edgeId && (hit === 'canvas' || hit === 'area' || hit === 'chart')) {
+      hit = 'edge';
+      id = edgeId;
+      grabOffset = null;
+    }
+
     // Shift + arraste num nó (modo Selecionar): atalho da ferramenta "Ligar
     // nós", pelo ponteiro da metade onde começou (ver `_microLinkFieldAt`).
     // Só vale começando num nó — Shift numa célula de lista/matriz continua
@@ -4707,7 +4738,7 @@ export class App {
     const cursorCell = e.ctrlKey || e.metaKey ? null : this._findMicroCursorCellAt(arrayNode ?? matrixNode, worldPt, e.shiftKey);
 
     let groupStart = null;
-    if (cursorCell == null && this.microSelectedIds.size > 1 && this.microSelectedIds.has(id)) {
+    if (hit !== 'edge' && cursorCell == null && this.microSelectedIds.size > 1 && this.microSelectedIds.has(id)) {
       groupStart = new Map();
       this.microSelectedIds.forEach((gid) => {
         const node = this._microFindById(gid);
@@ -5009,6 +5040,13 @@ export class App {
         this._syncCodeEditorSelection(null, null);
       } else if (this._microDragPos) {
         this._microSetNodePos(id, this._microDragPos.x, this._microDragPos.y);
+      }
+    } else if (hit === 'edge') {
+      // arestas só selecionam (para pintar); arrastar não faz nada
+      if (!moved) {
+        this.microSelectedIds = new Set();
+        this.microSelectedId = id;
+        this._syncCodeEditorSelection(null, null);
       }
     }
 
@@ -5921,8 +5959,14 @@ export class App {
         if (!drawnIds.has(id) && !this.microLabels.has(id) && !this.microAreas.has(id)) this._microInertIds.add(id);
       }),
     );
+    this._microEdgeIds = new Set(edges.map((e) => e.id));
     edges.forEach((e) => {
       e.dimmed = dimmedIds.has(e.sourceKey.split(':')[1]);
+      // aresta escolhida diretamente (clique/Ctrl+clique), à parte do destaque
+      // que ela já ganha quando o dono está selecionado
+      e.picked = e.id === this.microSelectedId || this.microSelectedIds.has(e.id);
+      if (e.picked) e.selected = true;
+      e.color = this.microEdgeColors.get(e.id) ?? null;
     });
 
     let previewEdge = null;

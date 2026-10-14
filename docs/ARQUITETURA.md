@@ -233,6 +233,8 @@ Ids (`nextId`) nunca se repetem: cada "Rodar" recria os elementos com ids novos.
 
 Já `App#microColors` (cor manual) é por **id**, e funciona porque os snapshots preservam os ids dentro de uma execução. O canvas recebe `App#_microEffectiveColors()`, que é `microColors` com a cor de cada janela aplicada aos seus cursores; Alt+1…Alt+0 num cursor de janela muda a cor da janela, não a do id.
 
+**Arestas/setas** (next/prev/left/right, vizinhos de grafo, setas de ponteiro e de célula) também são selecionáveis e pintáveis: `MicroCanvasView#_renderEdges` desenha, por aresta, um alvo de clique invisível (`.micro-edge-hit`, `data-edge-id`), e `App#_onMicroPointerDown` o trata como `hit: 'edge'` — acima de áreas/gráficos, abaixo de qualquer elemento. O id da aresta (`<id do dono>-next`, `-cell3`…) entra em `microSelectedId(s)`, mas só serve pra pintar (Alt+1…Alt+0 / roda de cores → `App#microEdgeColors`, salvo no projeto como `edgeColors`): arrastar não move nada e Delete as ignora (`_isMicroEdgeId`). A cor vira `stroke` inline na linha e um `<marker>` por cor (`_edgeMarkerFor`).
+
 ### 5.6 Elementos do modelo × elementos de anotação
 
 | | Elementos do modelo | Elementos de anotação |

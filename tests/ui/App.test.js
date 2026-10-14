@@ -582,6 +582,67 @@ describe('gráfico Big-O: leitura com o mouse sobre o gráfico (hover)', () => {
   });
 });
 
+describe('arestas: selecionar e pintar, sem mover nem remover', () => {
+  const clicarAresta = (id, opts = {}) => {
+    const alvo = $(`.micro-edge-hit[data-edge-id="${id}"]`);
+    alvo.dispatchEvent(new MouseEvent('pointerdown', { clientX: -5000, clientY: -5000, button: 0, buttons: 1, bubbles: true, ...opts }));
+    window.dispatchEvent(new MouseEvent('pointerup', { clientX: -5000, clientY: -5000, button: 0, ...opts }));
+  };
+  let aresta;
+  beforeEach(() => {
+    rodarNaSimulacao(linhas('a = Node(1)', 'b = Node(2)', 'a.next = b'));
+    botao('.playback-btn', '⏭').click();
+    aresta = [...app._microEdgeIds].find((id) => id.endsWith('-next'));
+  });
+
+  test('clicar na seta seleciona a aresta; Alt+1 pinta o traço e a ponta, Alt+0 tira a cor', () => {
+    expect(aresta).toBeDefined();
+    clicarAresta(aresta);
+    expect(app.microSelectedId).toBe(aresta);
+    expect($(`.micro-edge-hit[data-edge-id="${aresta}"]`).classList.contains('picked')).toBe(true);
+
+    tecla(window, '1', { code: 'Digit1', altKey: true });
+    const cor = app.microEdgeColors.get(aresta);
+    expect(cor).toBeTruthy();
+    const linhaCor = [...$$('.micro-edge-line')].find((l) => l.style.stroke);
+    expect(linhaCor).toBeDefined();
+    expect(linhaCor.getAttribute('marker-end')).toMatch(/micro-arrowhead-c\d+/);
+
+    tecla(window, '0', { code: 'Digit0', altKey: true });
+    expect(app.microEdgeColors.has(aresta)).toBe(false);
+  });
+
+  test('Delete não remove a aresta nem o nó; arrastar não move nada', () => {
+    clicarAresta(aresta);
+    const nos = app.micro.structs.size;
+    const pos = [...app.micro.structs.values()].map((n) => [n.x, n.y]);
+    tecla(window, 'Delete');
+    expect(app.micro.structs.size).toBe(nos);
+    expect(app._microEdgeIds.has(aresta)).toBe(true);
+    expect([...app.micro.structs.values()].map((n) => [n.x, n.y])).toEqual(pos);
+  });
+
+  test('a cor da aresta é salva e recarregada no projeto', async () => {
+    clicarAresta(aresta);
+    tecla(window, '2', { code: 'Digit2', altKey: true });
+    const cor = app.microEdgeColors.get(aresta);
+    let blob = null;
+    vi.spyOn(URL, 'createObjectURL').mockImplementation((b) => {
+      blob = b;
+      return 'blob:teste';
+    });
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    app._saveProject();
+    const projeto = JSON.parse(await blob.text());
+    expect(projeto.edgeColors).toEqual([[aresta, cor]]);
+
+    desmontarApp(app);
+    app = await montarApp();
+    await app._applyLoadedProject(projeto);
+    expect(app.microEdgeColors.get(aresta)).toBe(cor);
+  });
+});
+
 describe('atalhos e configurações', () => {
   test('N alterna nomes completos e grava a preferência', () => {
     expect(app.microFullNames).toBe(false);

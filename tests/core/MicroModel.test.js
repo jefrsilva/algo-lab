@@ -271,15 +271,17 @@ describe('arrays', () => {
 
   test('destacar nós: vale pra lista/set/deque, não pra lista de listas, e vai pro projeto salvo', () => {
     const fila = m.addArray(0, 0, { kind: 'ref', size: 0 });
-    m.setArrayHighlightNodes(fila.id, true);
-    expect(fila.highlightNodes).toBe(true);
+    m.setArrayHighlightNodes(fila.id, true); // legado (liga/desliga) = Selecionado
+    expect(fila.highlightNodes).toBe('selected');
+    m.setArrayHighlightNodes(fila.id, 'always');
+    expect(fila.highlightNodes).toBe('always');
     const listas = m.addArray(0, 0, { kind: 'arrayref', size: 0 });
     m.setArrayHighlightNodes(listas.id, true);
     expect(listas.highlightNodes).toBeUndefined();
     const m2 = new MicroModel();
     m2.loadFrom(JSON.parse(JSON.stringify(m.toJSON())));
-    expect(m2.arrays.get(fila.id).highlightNodes).toBe(true);
-    m.setArrayHighlightNodes(fila.id, false);
+    expect(m2.arrays.get(fila.id).highlightNodes).toBe('always');
+    m.setArrayHighlightNodes(fila.id, null);
     expect(fila.highlightNodes).toBeUndefined();
   });
 

@@ -966,10 +966,10 @@ export class App {
     return colors;
   }
 
-  /** Listas/sets/deques de nós com "Destacar nós" ligado que estão
-   * selecionadas agora (clique, área ou toque do passo da Simulação). */
+  /** Listas/sets/deques de nós com "Destacar nós" em "Sempre", ou em
+   * "Selecionado" e selecionadas agora (clique, área ou toque do passo da Simulação). */
   _microNodeHighlightHosts() {
-    return [...this.micro.arrays.values()].filter((a) => a.highlightNodes && a.kind === 'ref' && this._isMicroHighlighted(a.id));
+    return [...this.micro.arrays.values()].filter((a) => a.kind === 'ref' && (a.highlightNodes === 'always' || (a.highlightNodes && this._isMicroHighlighted(a.id))));
   }
 
   /** A label selecionada, quando a seleção inteira é exatamente UMA label. */
@@ -1430,7 +1430,7 @@ export class App {
     const prefs = {};
     if (node.orientation && node.orientation !== 'horizontal') prefs.orientation = node.orientation;
     if (node.nodeCircles) prefs.nodeCircles = true;
-    if (node.highlightNodes) prefs.highlightNodes = true;
+    if (node.highlightNodes) prefs.highlightNodes = node.highlightNodes;
     const color = this.microColors.get(node.id);
     if (color) prefs.color = color;
     if (Object.keys(prefs).length) this.microArrayPrefs.set(key, prefs);
@@ -1464,7 +1464,7 @@ export class App {
     // lista de listas que já nasceu em grade fica como está
     if (prefs.orientation && node.orientation !== 'grid') this.micro.setArrayOrientation(node.id, prefs.orientation);
     if (prefs.nodeCircles) this.micro.setArrayNodeCircles(node.id, true);
-    if (prefs.highlightNodes) this.micro.setArrayHighlightNodes(node.id, true);
+    if (prefs.highlightNodes) this.micro.setArrayHighlightNodes(node.id, prefs.highlightNodes);
     if (prefs.color) this.microColors.set(node.id, prefs.color);
   }
 

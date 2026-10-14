@@ -2327,7 +2327,7 @@ describe('preferências visuais de listas entre execuções', () => {
     const fila = () => [...app.micro.arrays.values()].find((n) => n.name === 'fila');
     app.micro.setArrayOrientation(fila().id, 'vertical');
     app.micro.setArrayNodeCircles(fila().id, true);
-    app.micro.setArrayHighlightNodes(fila().id, true);
+    app.micro.setArrayHighlightNodes(fila().id, 'always');
     app.microColors.set(fila().id, '#ff0000');
     app._rememberArrayPrefs(fila());
 
@@ -2335,7 +2335,7 @@ describe('preferências visuais de listas entre execuções', () => {
     app.microRunner.goToStep(app.microRunner.steps.length - 1);
     expect(fila().orientation).toBe('vertical');
     expect(fila().nodeCircles).toBe(true);
-    expect(fila().highlightNodes).toBe(true);
+    expect(fila().highlightNodes).toBe('always');
     expect(app.microColors.get(fila().id)).toBe('#ff0000');
   });
 });

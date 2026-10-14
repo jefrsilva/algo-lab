@@ -2341,7 +2341,7 @@ describe('preferências visuais de listas entre execuções', () => {
 });
 
 describe('destacar nós: prioridade entre coleções', () => {
-  test('"Sempre" não perde a cor do nó para uma coleção "Selecionado" selecionada', () => {
+  test('"Selecionado" selecionada se sobrepõe à cor de "Sempre"', () => {
     rodarNaSimulacao('a = Node(1)\nfila = [a]\npilha = [a]');
     app.microRunner.goToStep(app.microRunner.steps.length - 1);
     const arr = (nome) => [...app.micro.arrays.values()].find((n) => n.name === nome);
@@ -2351,10 +2351,10 @@ describe('destacar nós: prioridade entre coleções', () => {
     app.microColors.set(arr('fila').id, '#ff0000');
     app.microColors.set(arr('pilha').id, '#0000ff');
     app.microSelectedId = arr('pilha').id;
-    expect(app._microEffectiveColors().get(noId)).toBe('#ff0000');
-    // sem a "Sempre", a selecionada pinta normalmente
-    app.micro.setArrayHighlightNodes(arr('fila').id, null);
     expect(app._microEffectiveColors().get(noId)).toBe('#0000ff');
+    // desmarcada a "Selecionado", volta a cor do "Sempre"
+    app.microSelectedId = null;
+    expect(app._microEffectiveColors().get(noId)).toBe('#ff0000');
   });
 });
 

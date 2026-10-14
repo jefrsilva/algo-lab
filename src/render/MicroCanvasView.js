@@ -2640,6 +2640,16 @@ export class MicroCanvasView {
       el.querySelector(':scope > .array-cell-outlines')?.remove();
       const outlines = host.querySelector(':scope > .array-cell-outlines');
       if (outlines) el.appendChild(outlines.cloneNode(true));
+      // célula destacada dentro de uma linha: a linha de baixo (e a célula
+      // vizinha) cobririam a borda do contorno, então ele também sobe pra cá
+      arrays.forEach((row) => {
+        if (row.gridRow?.hostId !== node.id) return;
+        const rowOutlines = this.arrayEls.get(row.id)?.querySelector(':scope > .array-cell-outlines');
+        if (!rowOutlines) return;
+        const copy = rowOutlines.cloneNode(true);
+        copy.setAttribute('transform', `translate(${row.x - node.x}, ${row.y - node.y})`);
+        el.appendChild(copy);
+      });
     });
   }
 
@@ -2680,7 +2690,29 @@ export class MicroCanvasView {
       this._renderWindowBrackets(el, node, pointerEdges);
       // linha embutida numa grade vai pra cima da moldura (que pode ter sido
       // criada depois dela, ex: "list(d.values())")
-      if (node.gridRow) this.arraysLayer.appendChild(el);
+      // só move quando algo que não é linha vem depois: reinserir o elemento
+      // a cada render (mesmo já no lugar) o desanexa durante o clique e o
+      // navegador deixa de disparar click/dblclick nele (a edição por duplo
+      // clique da célula não abria)
+      const next = el.nextElementSibling;
+      if (node.gridRow && next && !next.classList.contains('grid-row-node')) this.arraysLayer.appendChild(el);
+    });
+    // grade: o índice da linha e o da coluna de cada célula destacada nas
+    // linhas acendem na cor de "alvo", como na matriz antiga (`_renderMatrices`)
+    arrays.forEach((host) => {
+      if (!host.gridGeom) return;
+      const hostEl = this.arrayEls.get(host.id);
+      if (!hostEl) return;
+      const activeRows = new Set();
+      const activeCols = new Set();
+      host.cells.forEach((rowId, r) => {
+        const row = arrays.find((a) => a.id === rowId);
+        if (row?.gridRow?.hostId !== host.id || !row.targetCellIndexes?.size) return;
+        activeRows.add(String(r));
+        row.targetCellIndexes.forEach((c) => activeCols.add(String(c)));
+      });
+      hostEl.querySelectorAll('.matrix-row-label').forEach((l) => l.classList.toggle('matrix-index-active', activeRows.has(l.dataset.row)));
+      hostEl.querySelectorAll('.matrix-col-label').forEach((l) => l.classList.toggle('matrix-index-active', activeCols.has(l.dataset.col)));
     });
   }
 

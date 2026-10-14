@@ -110,6 +110,10 @@
   cursor: pointer;
 }
 
+.call-tree-header-btn.toggled {
+  color: var(--text-0);
+}
+
 .call-tree-header-btn:hover {
   background: var(--bg-2);
   color: var(--text-0);

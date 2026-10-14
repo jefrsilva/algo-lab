@@ -29,8 +29,9 @@ const COMPACT_STEP = 6;
 const COMPACT_MAX_INDENT = 36;
 
 export class CallTree {
-  constructor(container, { onSelectFrame, onModeChange } = {}) {
+  constructor(container, { onSelectFrame, onModeChange, onDimChange } = {}) {
     this.container = container;
+    this.onDimChange = onDimChange || (() => {});
     this.onSelectFrame = onSelectFrame || (() => {});
     this.onModeChange = onModeChange || (() => {});
     this.mode = getSetting('callTreeMode');
@@ -116,6 +117,17 @@ export class CallTree {
         ? this._makeHeaderButton('⇥', 'Expandir a pilha de chamadas', () => this.setMode('full'))
         : this._makeHeaderButton('⇤', 'Visualização reduzida', () => this.setMode('compact')),
     );
+    const dim = getSetting('dimOutOfScope');
+    const dimBtn = this._makeHeaderButton(
+      '◐',
+      dim
+        ? 'Elementos fora do escopo da chamada com opacidade reduzida (clique para mostrá-los normais)'
+        : 'Elementos fora do escopo da chamada normais (clique para reduzir a opacidade)',
+      () => this.onDimChange(!getSetting('dimOutOfScope')),
+    );
+    dimBtn.classList.toggle('toggled', dim);
+    dimBtn.setAttribute('aria-pressed', String(dim));
+    header.appendChild(dimBtn);
     header.appendChild(
       this._makeHeaderButton('✕', 'Ocultar a pilha de chamadas (reabrir pelo menu ☰)', () => this.setMode('hidden')),
     );

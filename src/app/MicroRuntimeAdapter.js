@@ -13,6 +13,7 @@ import {
   tupleToRaw,
 } from '../interpreter/evaluator.js';
 import { PyTuple } from '../interpreter/pytuple.js';
+import { frameScope } from './frameScope.js';
 import {
   pyHash,
   tableValues,
@@ -153,6 +154,12 @@ export class MicroRuntimeAdapter {
     const id = nextId('frame');
     this.frameStack.push({ id, label });
     return id;
+  }
+
+  /** Foto dos valores do frame (parâmetros e locais), pro pop-up da árvore de
+   * chamadas — ver frameScope.js. */
+  frameScope(frameId) {
+    return frameScope(this.micro, frameId);
   }
 
   /** Desempilha o frame do topo — nunca desempilha o 'global' (guarda de
@@ -531,7 +538,7 @@ export class MicroRuntimeAdapter {
    * `_refreshDependentCursors`). `objectNode` (opcional): a expressão da
    * lista quando ela não é um nome direto ("res[i]" em "res[i][j]", ver
    * `_arrayCursorSpec`). */
-  getIndex(arrayName, indexNode, index, objectNode) {
+  getIndex(arrayName, indexNode, index, objectNode, quiet = false) {
     const arr = this._resolveArrayByName(arrayName);
     if (arr?.isSet) {
       this.warn(`Set não tem posições — "${arrayName}[...]" não é permitido (use "sorted(${arrayName})" pra ter uma lista).`);
@@ -540,7 +547,7 @@ export class MicroRuntimeAdapter {
     if (!arr) return undefined;
     index = fromEnd(index, arr.cells.length);
     if (index < 0 || index >= arr.cells.length) return undefined;
-    this._showReadCursor(arrayName, arr, indexNode, index, objectNode);
+    if (!quiet) this._showReadCursor(arrayName, arr, indexNode, index, objectNode);
     return this._cellValue(arr, arr.cells[index]);
   }
 
@@ -1603,7 +1610,7 @@ export class MicroRuntimeAdapter {
 
   /** "arrayName[index] = valor" — tipo do valor precisa bater com o tipo do
    * array (escalar para array de valores, struct/None para array de refs). */
-  assignIndex(arrayName, index, value) {
+  assignIndex(arrayName, index, value, indexNode, objectNode) {
     const arr = this._resolveArrayByName(arrayName);
     if (arr?.isSet) {
       this.warn(`Set não tem posições — use "${arrayName}.add(valor)" / "${arrayName}.remove(valor)".`);
@@ -1630,6 +1637,9 @@ export class MicroRuntimeAdapter {
       this.micro.setArrayCellRef(arr.id, index, value.kind === 'struct' ? value.id : null);
     }
     this._touch('array', arr.id);
+    // "m[i][j] = v" (lista vinda de uma expressão): o cursor da célula escrita,
+    // igual ao da leitura "m[i][j]"
+    if (objectNode && indexNode) this._showReadCursor(arrayName, arr, indexNode, index, objectNode);
   }
 
   /** Valor cru pra uma célula de lista de VALORES (número, texto, bool ou

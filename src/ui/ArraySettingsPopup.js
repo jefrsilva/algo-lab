@@ -161,29 +161,44 @@ export class ArraySettingsPopup {
     circlesRow.appendChild(circlesLabel);
     circlesRow.appendChild(circlesBtn);
 
-    // alternância "destacar nós": ao selecionar a coleção, todos os nós que
-    // ela guarda acendem na cor dela (ex: fila de nós a visitar, em vermelho)
-    let highlightNodes = !!node.highlightNodes;
+    // "destacar nós": três estados — Nunca, Selecionado (só com a coleção
+    // selecionada) e Sempre — os nós que ela guarda acendem na cor dela
+    // (ex: fila de nós a visitar, em vermelho)
+    let highlightNodes = node.highlightNodes === 'always' ? 'always' : node.highlightNodes ? 'selected' : 'never';
     const highlightRow = document.createElement('div');
     highlightRow.className = 'array-settings-row';
     const highlightLabel = document.createElement('label');
-    highlightLabel.textContent = 'Seleção';
-    const highlightBtn = document.createElement('button');
-    highlightBtn.type = 'button';
-    highlightBtn.className = 'array-orient-btn array-highlight-toggle';
-    highlightBtn.textContent = '✦ Destacar nós';
-    highlightBtn.title = 'Ao selecionar a coleção, destaca todos os nós dela na cor da coleção';
-    const syncHighlightBtn = () => {
-      highlightBtn.setAttribute('aria-pressed', String(highlightNodes));
-      highlightBtn.classList.toggle('active', highlightNodes);
-    };
-    syncHighlightBtn();
-    highlightBtn.addEventListener('click', () => {
-      highlightNodes = !highlightNodes;
-      syncHighlightBtn();
+    highlightLabel.textContent = 'Destacar nós';
+    const highlightButtons = document.createElement('div');
+    highlightButtons.className = 'array-orient-buttons';
+    const highlightBtns = [
+      ['never', 'Nunca', 'Selecionar a coleção nunca destaca os nós dela'],
+      ['selected', 'Selecionado', 'Destaca os nós dela só quando a coleção está selecionada'],
+      ['always', 'Sempre', 'Destaca os nós dela sempre, selecionada ou não'],
+    ].map(([value, text, title]) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'array-orient-btn array-highlight-toggle';
+      btn.dataset.mode = value;
+      btn.textContent = text;
+      btn.title = title;
+      btn.addEventListener('click', () => {
+        highlightNodes = value;
+        syncHighlightBtns();
+      });
+      highlightButtons.appendChild(btn);
+      return btn;
     });
+    const syncHighlightBtns = () => {
+      highlightBtns.forEach((btn) => {
+        const on = btn.dataset.mode === highlightNodes;
+        btn.setAttribute('aria-pressed', String(on));
+        btn.classList.toggle('active', on);
+      });
+    };
+    syncHighlightBtns();
     highlightRow.appendChild(highlightLabel);
-    highlightRow.appendChild(highlightBtn);
+    highlightRow.appendChild(highlightButtons);
 
     const actions = document.createElement('div');
     actions.className = 'array-settings-actions';
@@ -217,7 +232,7 @@ export class ArraySettingsPopup {
       const payload = { name, orientation };
       if (showNodeCircles) {
         payload.nodeCircles = nodeCircles;
-        payload.highlightNodes = highlightNodes;
+        payload.highlightNodes = highlightNodes === 'never' ? null : highlightNodes;
       }
       if (sizeInput) {
         // campo em branco mantém o tamanho atual (Number('') daria 0 e esvaziaria a lista)

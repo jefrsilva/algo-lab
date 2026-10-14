@@ -355,17 +355,17 @@ export class App {
     this._setupCodeBottomResizer(codeEditorPanel, codeBottomResizer);
     const callTreeResizer = document.createElement('div');
     callTreeResizer.className = 'split-resizer call-tree-resizer';
-    callTreeResizer.title = 'Arraste para redimensionar a pilha de chamadas';
+    callTreeResizer.title = 'Arraste para redimensionar a pilha de chamadas (duplo clique: tamanho padrão)';
     callTreeContainer.style.setProperty('--call-tree-width', `${getSetting('callTreeWidth')}px`);
     const splitResizer = document.createElement('div');
     splitResizer.className = 'split-resizer';
-    splitResizer.title = 'Arraste para redimensionar';
+    splitResizer.title = 'Arraste para redimensionar o código (duplo clique: tamanho padrão)';
     microSplit.appendChild(microMain);
-    microSplit.appendChild(callTreeContainer);
     microSplit.appendChild(callTreeResizer);
+    microSplit.appendChild(callTreeContainer);
     microSplit.appendChild(splitResizer);
     microSplit.appendChild(codeEditorPanel);
-    this._setupSplitResizer(microSplit, microMain, splitResizer);
+    this._setupSplitResizer(microSplit, codeEditorPanel, splitResizer);
     this._setupCallTreeResizer(callTreeContainer, callTreeResizer);
     canvasArea.appendChild(microSplit);
 
@@ -2413,25 +2413,25 @@ export class App {
 
   // ---- divisória arrastável entre visualização e código ----
 
-  /** Arraste na divisória entre o canvas (+ árvore de chamadas) e o painel
-   * de código (`.micro-split`, ver _buildLayout): define uma largura FIXA em
-   * px pro lado esquerdo (`leftEl`, normalmente `microMain`) via
-   * `style.flex`, sobrepondo o `flex-basis: 67%` inicial do CSS — o painel de código
-   * continua com `flex-grow: 1` e absorve o espaço restante sozinho, então
-   * não precisa de nenhum cálculo pro lado direito aqui. */
-  _setupSplitResizer(splitEl, leftEl, resizerEl) {
+  /** Arraste na divisória entre a visualização (canvas + árvore de chamadas)
+   * e o painel de código (`.micro-split`, ver _buildLayout): define uma largura
+   * FIXA em px pro painel de código (`rightEl`) via `style.flex`, sobrepondo o
+   * `flex-basis: 33%` inicial do CSS — o canvas (`.micro-main`) tem `flex-grow: 1`
+   * e absorve o resto, então abrir/redimensionar a pilha de chamadas não mexe no
+   * código. Duplo clique volta ao tamanho padrão. */
+  _setupSplitResizer(splitEl, rightEl, resizerEl) {
     const MIN_WIDTH = 240;
     resizerEl.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       resizerEl.classList.add('dragging');
       const startX = e.clientX;
-      const startWidth = leftEl.getBoundingClientRect().width;
+      const startWidth = rightEl.getBoundingClientRect().width;
 
       const onMove = (ev) => {
         const totalWidth = splitEl.getBoundingClientRect().width;
         const maxWidth = Math.max(MIN_WIDTH, totalWidth - MIN_WIDTH - resizerEl.getBoundingClientRect().width);
-        const newWidth = Math.max(MIN_WIDTH, Math.min(maxWidth, startWidth + (ev.clientX - startX)));
-        leftEl.style.flex = `0 0 ${newWidth}px`;
+        const newWidth = Math.max(MIN_WIDTH, Math.min(maxWidth, startWidth - (ev.clientX - startX)));
+        rightEl.style.flex = `0 0 ${newWidth}px`;
       };
       const onUp = () => {
         resizerEl.classList.remove('dragging');
@@ -2441,10 +2441,14 @@ export class App {
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', onUp);
     });
+    resizerEl.addEventListener('dblclick', () => {
+      rightEl.style.flex = '';
+    });
   }
 
-  /** Arraste na borda direita do painel da pilha de chamadas: muda a largura
-   * (modo completo), guardada em `callTreeWidth`. */
+  /** Arraste na borda esquerda do painel da pilha de chamadas: muda a largura
+   * (modo completo), guardada em `callTreeWidth`; o canvas cede/ganha o espaço
+   * e o painel de código não muda. Duplo clique restaura o padrão. */
   _setupCallTreeResizer(panelEl, resizerEl) {
     resizerEl.addEventListener('pointerdown', (e) => {
       e.preventDefault();
@@ -2453,7 +2457,7 @@ export class App {
       const startWidth = panelEl.getBoundingClientRect().width;
       let width = startWidth;
       const onMove = (ev) => {
-        width = Math.round(Math.max(140, Math.min(800, startWidth + (ev.clientX - startX))));
+        width = Math.round(Math.max(140, Math.min(800, startWidth - (ev.clientX - startX))));
         panelEl.style.setProperty('--call-tree-width', `${width}px`);
       };
       const onUp = () => {

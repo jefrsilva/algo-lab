@@ -323,6 +323,32 @@ describe('ações rápidas (Ctrl+Espaço)', () => {
     expect(dict('index_to_id')).toEqual({ 0: 10, 1: 20, 2: 30 });
     expect(dict('id_to_index')).toEqual({ 10: 0, 20: 1, 30: 2 });
   });
+
+  test('"new pointers" cria um ponteiro por nó selecionado, nomeado pelo dado, sem sobreposição', () => {
+    const a = app.micro.addStruct(0, 0, 'Ana', 'list');
+    const b = app.micro.addStruct(200, 0, 7, 'tree');
+    const c = app.micro.addStruct(400, 0, 'ana', 'slist');
+    app.microSelectedIds = new Set([a.id, b.id, c.id]);
+    app.microSelectedId = a.id;
+    tecla(window, ' ', { code: 'Space', ctrlKey: true });
+    const input = $('.quick-action-input');
+    input.value = 'new pointers';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    tecla(input, 'Enter');
+    const ponteiros = [...app.micro.pointers.values()];
+    expect(ponteiros.map((p) => p.label)).toEqual(['ana', 'p7', 'ana2']);
+    expect(ponteiros.map((p) => p.target.id)).toEqual([a.id, b.id, c.id]);
+    // cada ponteiro tem posição própria
+    expect(new Set(ponteiros.map((p) => `${p.x},${p.y}`)).size).toBe(3);
+  });
+
+  test('"new pointers" fica indisponível sem nós selecionados', () => {
+    tecla(window, ' ', { code: 'Space', ctrlKey: true });
+    const input = $('.quick-action-input');
+    input.value = 'new pointers';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    expect($('.quick-action-item.disabled')).not.toBeNull();
+  });
 });
 
 describe('ponteiro de um elemento recém-criado nasce longe o bastante pra seta aparecer', () => {

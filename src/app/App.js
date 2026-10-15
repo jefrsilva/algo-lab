@@ -3434,8 +3434,13 @@ export class App {
       : graphNodes.length > MAX_ARRAY_SIZE
         ? `no máximo ${MAX_ARRAY_SIZE} nós`
         : null;
+    const selectedStructs = this._microSelectedStructs();
     const commands = [
       model('new pointer', ['new ptr'], 'ponteiro solto — pede o nome', () => this._quickNewPointer()),
+      {
+        ...model('new pointers', ['new node pointers', 'pointers for nodes'], 'um ponteiro para cada nó selecionado, nomeado pelo dado do nó', () => this._quickNewPointersForNodes(selectedStructs)),
+        disabled: busy ?? (selectedStructs.length ? null : 'selecione nós'),
+      },
       model('new variable', ['new var'], 'variável — pede o nome', () => this._quickNewVariable()),
       model('new node', [], 'nó de lista, Node(v) — pede o dado', () => this._quickNewNode('list')),
       model('new list node', [], 'nó de lista simples, ListNode(v) — pede o dado', () => this._quickNewNode('slist')),
@@ -3836,6 +3841,31 @@ export class App {
       },
       remove: () => this._quickDiscard(node.id),
     });
+  }
+
+  /** Nós (Node, ListNode, TreeNode, GraphNode) da seleção atual, na ordem em que foram selecionados. */
+  _microSelectedStructs() {
+    return this._microSelectionIds().map((id) => this.micro.structs.get(id)).filter(Boolean);
+  }
+
+  /** "new pointers": um ponteiro apontando pra cada nó selecionado, com o
+   * nome do `data` do nó em minúsculas (se começa por letra) ou `p{data}` (número etc.);
+   * nome repetido ganha número no fim (`_microFreeName`). Nasce perto do nó
+   * (`_microPointerSpotNear`, sem mover o nó), sem cair em cima de outro
+   * elemento — nem dos ponteiros criados antes, já que entram no modelo um a
+   * um. Vale só fora da Simulação (cria elementos do modelo). */
+  _quickNewPointersForNodes(nodes) {
+    const created = nodes.map((node) => {
+      const text = String(node.data ?? '').trim();
+      const name = this._microFreeName(/^[A-Za-z_]/.test(text) ? text.toLowerCase() : `p${text}`);
+      const pos = this._microPointerSpotNear(node.id, name);
+      const pointer = this.micro.addPointer(pos.x, pos.y, name);
+      this.micro.setPointerTarget(pointer.id, { kind: 'struct', id: node.id });
+      return pointer;
+    });
+    this.microSelectedIds = new Set(created.map((p) => p.id));
+    this.microSelectedId = created.length === 1 ? created[0].id : null;
+    this._renderMicroOnly();
   }
 
   /** Nós de grafo (GraphNode) da seleção atual, na ordem em que foram selecionados. */

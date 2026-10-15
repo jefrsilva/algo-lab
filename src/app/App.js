@@ -3849,7 +3849,7 @@ export class App {
   }
 
   /** "new pointers": um ponteiro apontando pra cada nó selecionado, com o
-   * nome do `data` do nó (se começa por letra) ou `p{data}` (número etc.);
+   * nome do `data` do nó em minúsculas (se começa por letra) ou `p{data}` (número etc.);
    * nome repetido ganha número no fim (`_microFreeName`). Nasce perto do nó
    * (`_microPointerSpotNear`, sem mover o nó), sem cair em cima de outro
    * elemento — nem dos ponteiros criados antes, já que entram no modelo um a
@@ -3857,7 +3857,7 @@ export class App {
   _quickNewPointersForNodes(nodes) {
     const created = nodes.map((node) => {
       const text = String(node.data ?? '').trim();
-      const name = this._microFreeName(/^[A-Za-z_]/.test(text) ? text : `p${text}`);
+      const name = this._microFreeName(/^[A-Za-z_]/.test(text) ? text.toLowerCase() : `p${text}`);
       const pos = this._microPointerSpotNear(node.id, name);
       const pointer = this.micro.addPointer(pos.x, pos.y, name);
       this.micro.setPointerTarget(pointer.id, { kind: 'struct', id: node.id });

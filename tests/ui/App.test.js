@@ -325,7 +325,7 @@ describe('ações rápidas (Ctrl+Espaço)', () => {
   });
 
   test('"new pointers" cria um ponteiro por nó selecionado, nomeado pelo dado, sem sobreposição', () => {
-    const a = app.micro.addStruct(0, 0, 'ana', 'list');
+    const a = app.micro.addStruct(0, 0, 'Ana', 'list');
     const b = app.micro.addStruct(200, 0, 7, 'tree');
     const c = app.micro.addStruct(400, 0, 'ana', 'slist');
     app.microSelectedIds = new Set([a.id, b.id, c.id]);

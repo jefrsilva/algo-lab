@@ -659,6 +659,14 @@ Inclua em `_saveProject`, leia com validação defensiva em `_applyLoadedProject
 
 ---
 
+### Detalhes que não estão em outro lugar
+
+- Uma instrução continua nas linhas seguintes enquanto há `(`/`[`/`{` aberto ou a linha termina em `\` (`blockParser.js#joinLogicalLine`; mantém a linha onde começa, e `logicalLineAt` deixa o Ctrl+Enter do Sandbox rodá-la inteira).
+- `float('inf')`/`float('-inf')` aparecem como `inf`/`-inf` via `core/numText.js`.
+- `CallTree`: o botão ◐ do cabeçalho alterna a configuração `dimOutOfScope` (elementos fora do escopo da chamada ativa ficam com opacidade reduzida ou normais, sempre clicáveis; também em Configurações).
+- Preferências visuais de lista/set/deque/dict (orientação, `nodeCircles`, `highlightNodes`, cor manual) também são lembradas POR NOME em `App#microArrayPrefs` (salvas como `arrayPrefs`) e reaplicadas por `_applyRememberedArrayPrefs` quando o array nasce numa nova execução — os ids mudam entre execuções, os nomes não.
+- Quick action `new pointers` (com nós selecionados): um ponteiro por nó, nomeado pelo `data` em minúsculas se começar com letra, senão `p{data}` (`App#_quickNewPointersForNodes`, desativada na Simulação).
+
 ## 10. Como verificar uma mudança
 
 Primeiro, sempre: `npm test` (a suíte de `tests/`, ver [tests/README.md](../tests/README.md)) e `npm run build`, ambos sem erro — é o mesmo que o CI roda. Acrescente testes pro que você mudou. Os testes cobrem a linguagem, o modelo, a reprodução e o fluxo da interface (no jsdom), mas **não enxergam o desenho**: medidas, posições, setas e cores precisam de um navegador. Pra isso, rode `npm run dev`, abra http://localhost:5173 e, conforme o que você mexeu:

@@ -35,7 +35,7 @@ import { If, While, For, FunctionDef, Return, Break, Continue } from './ast.js';
 // "i in ...", "i, v in ..." ou "(i, j) in ..." (ver ast.js#For sobre
 // varNames/enumerate — os parênteses só agrupam, e somem no parse do "for").
 const FOR_HEADER_RE =
-  /^([A-Za-z_][A-Za-z0-9_]*(?:\s*,\s*[A-Za-z_][A-Za-z0-9_]*)?|\(\s*[A-Za-z_][A-Za-z0-9_]*(?:\s*,\s*[A-Za-z_][A-Za-z0-9_]*)?\s*\))\s+in\s+(.+)$/;
+  /^([A-Za-z_][A-Za-z0-9_]*(?:\s*,\s*[A-Za-z_][A-Za-z0-9_]*)*|\(\s*[A-Za-z_][A-Za-z0-9_]*(?:\s*,\s*[A-Za-z_][A-Za-z0-9_]*)*\s*\))\s+in\s+(.+)$/;
 const DEF_HEADER_RE = /^([A-Za-z_][A-Za-z0-9_]*)\((.*)\)$/;
 
 /** Corta o comentário ("#" até o fim da linha) — mas não um "#" dentro de

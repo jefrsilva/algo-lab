@@ -1,5 +1,6 @@
 import { nextId } from '../id.js';
 import { reviveRaw } from '../../interpreter/pytuple.js';
+import { DEFAULT_FACTORIES } from '../../interpreter/evaluator.js';
 
 // 32 cobre o contador de letras "[0] * 26" (anagramas, frequência)
 export const MAX_ARRAY_SIZE = 32;
@@ -280,10 +281,19 @@ export class MicroModel {
 
   /** `frameId`: igual o de array, só diz a qual frame pertence o NOME do
    * dict (ele é "heap", aparece em qualquer aba). */
-  addDict(x, y, { orientation = 'horizontal', name = 'dict', cells = [], frameId = 'global' } = {}) {
-    const node = { id: nextId('dict'), x, y, orientation, cells: cells.slice(0, MAX_DICT_SIZE), name, frameId };
+  addDict(x, y, { orientation = 'horizontal', name = 'dict', cells = [], frameId = 'global', defaultFactory = null } = {}) {
+    const node = { id: nextId('dict'), x, y, orientation, cells: cells.slice(0, MAX_DICT_SIZE), name, frameId, ...(defaultFactory ? { defaultFactory } : {}) };
     this.dicts.set(node.id, node);
     return node;
+  }
+
+  /** `defaultdict(fábrica)`: nome da fábrica ('int', 'list'...) ou `null`
+   * pra um dict comum (ver evaluator.js#DEFAULT_FACTORIES). */
+  setDictDefaultFactory(dictId, defaultFactory) {
+    const node = this.dicts.get(dictId);
+    if (!node) return;
+    if (defaultFactory) node.defaultFactory = defaultFactory;
+    else delete node.defaultFactory;
   }
 
   renameDict(dictId, name) {
@@ -847,6 +857,7 @@ export class MicroModel {
       cells: n.cells.map((c) => ({ ...c })),
       name: n.name,
       ...(n.labelPointerId ? { labelPointerId: n.labelPointerId } : {}),
+      ...(n.defaultFactory ? { defaultFactory: n.defaultFactory } : {}),
     });
     const variable = (n) => ({ id: n.id, x: n.x, y: n.y, name: n.name, value: n.value, frameId: n.frameId, ...(n.hidden ? { hidden: true } : {}) });
     const matrix = (n) => ({
@@ -939,6 +950,7 @@ export class MicroModel {
           : [],
         name: n.name,
         ...(n.labelPointerId ? { labelPointerId: n.labelPointerId } : {}),
+        ...(Object.hasOwn(DEFAULT_FACTORIES, n.defaultFactory) ? { defaultFactory: n.defaultFactory } : {}),
       });
     });
     (data.variables || []).forEach((n) => {

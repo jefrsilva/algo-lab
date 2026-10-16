@@ -808,4 +808,44 @@ inf inf nan
 -inf 3.5
 `,
   },
+  {
+    nome: "zip: pares, três iteráveis e parada no menor",
+    codigo: `
+a = [1, 2, 3]
+b = ['x', 'y', 'z', 'w']
+for n, c in zip(a, b):
+    print(n, c)
+for p, q, r in zip(a, b, [10, 20]):
+    print(p, q, r)
+print(list(zip(a, 'ab')))
+`,
+    saida: `
+1 x
+2 y
+3 z
+1 x 10
+2 y 20
+[(1, 'a'), (2, 'b')]
+`,
+  },
+  {
+    nome: "defaultdict: int, list e leitura de chave ausente",
+    codigo: `
+from collections import defaultdict
+cont = defaultdict(int)
+for ch in "banana":
+    cont[ch] += 1
+print(cont['a'], cont['n'], cont['z'], len(cont))
+grupos = defaultdict(list)
+for w in ["ab", "cd", "ae", "cf"]:
+    grupos[w[0]].append(w)
+print(grupos['a'], grupos['c'], 'x' in grupos)
+print(grupos)
+`,
+    saida: `
+3 2 0 4
+['ab', 'ae'] ['cd', 'cf'] False
+defaultdict(<class 'list'>, {'a': ['ab', 'ae'], 'c': ['cd', 'cf']})
+`,
+  },
 ];

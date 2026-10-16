@@ -475,3 +475,26 @@ describe('lista de listas', () => {
     expect(dentro(micro, array(micro, 'm'))).toEqual([[1, 4]]);
   });
 });
+
+describe('defaultdict e zip', () => {
+  test('defaultdict vira um dict vivo que cria a chave ausente ao ler', () => {
+    const { micro, error } = runDsl(linhas('from collections import defaultdict', 'd = defaultdict(int)', 'd["a"] += 2', 'x = d["b"]'));
+    expect(error).toBeNull();
+    const dict = valores(micro.dicts)[0];
+    expect(dict.defaultFactory).toBe('int');
+    expect(dict.cells.map((c) => [c.key, c.value])).toEqual([['a', 2], ['b', 0]]);
+    const outro = new micro.constructor();
+    outro.loadFrom(JSON.parse(JSON.stringify(micro.toJSON())));
+    expect(valores(outro.dicts)[0].defaultFactory).toBe('int');
+  });
+
+  test('"in" e get não criam a chave; fábrica desconhecida avisa', () => {
+    expect(saida(linhas('from collections import defaultdict', 'd = defaultdict(list)', 'print("a" in d, d.get("a"), len(d))'))).toBe('False None 0');
+    const { output } = runDsl(linhas('from collections import defaultdict', 'd = defaultdict(set)', 'print(1)'));
+    expect(output.join('\n')).toContain('fábrica não suportada');
+  });
+
+  test('zip pára no menor iterável', () => {
+    expect(saida(linhas('t = 0', 'for a, b in zip([1, 2, 3], [10, 20]):', '    t += a * b', 'print(t)'))).toBe('50');
+  });
+});

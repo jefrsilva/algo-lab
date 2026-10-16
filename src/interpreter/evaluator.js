@@ -44,7 +44,8 @@
  *                                        listas NOVAS de valores, do mesmo
  *                                        tamanho, vem com `grid` (desenhada
  *                                        como grade, ver NestedListValue)
- *   - {kind:'dict', entries: Map<number|string|PyTuple, TypedValue>} — AO
+ *   - {kind:'dict', entries: Map<number|string|PyTuple, TypedValue>,
+ *      defaultFactory?: 'int'|'float'|'str'|'bool'|'list'} — AO
  *                                        CONTRÁRIO de array, É valor de
  *                                        primeira classe (mesma família de
  *                                        string): circula livremente,
@@ -104,7 +105,7 @@
  * (nome desconhecido, campo/índice inválido, chamada de função que não seja
  * uma das reconhecidas — "Node(valor)", "ListNode(valor)", "TreeNode(valor)", "GraphNode(valor)", "len(nome)", "range(...)",
  * "sum(...)", "min(...)", "max(...)", "sorted(...)", "enumerate(...)",
- * "list(...)", "set(...)", "tuple(...)", "deque(...)" (e os métodos de deque,
+ * "list(...)", "set(...)", "tuple(...)", "zip(a, b, ...)", "deque(...)", "defaultdict(int|float|str|bool|list)" (e os métodos de deque,
  * ver `callDequeMethod`), "str(valor)", "abs(x)", "int(x[, base])", "float(x)" (sobretudo float('inf')/float('-inf')), "ord(c)", "chr(n)",
  * "sep.join(...)", "texto.upper()",
  * "texto.lower()", "texto.split(...)", "texto.replace(...)",
@@ -239,7 +240,24 @@ export const DequeValue = (elements, maxlen = null) => ({ kind: 'deque', element
  * (`ArrayRefValue`), dict É valor de primeira classe pra tudo mais (Index,
  * print, comparação, 'in'...), então um `kind:'dictref'` separado obrigaria
  * replicar esse tratamento em todo canto que já lida com `kind:'dict'`. */
-export const DictValue = (entries, sourceName) => ({ kind: 'dict', entries, ...(sourceName ? { sourceName } : {}) });
+export const DictValue = (entries, sourceName, defaultFactory) => ({
+  kind: 'dict',
+  entries,
+  ...(sourceName ? { sourceName } : {}),
+  // "defaultdict(int)": nome da fábrica (ver `DEFAULT_FACTORIES`)
+  ...(defaultFactory ? { defaultFactory } : {}),
+});
+
+/** Fábricas aceitas por "defaultdict(fábrica)": nome -> valor padrão novo a
+ * cada chave ausente lida ("d[k]"). Só tipos cujo valor cabe numa célula de
+ * dict (set/dict dentro de dict ainda não são suportados). */
+export const DEFAULT_FACTORIES = {
+  int: () => Scalar(0),
+  float: () => Scalar(0),
+  str: () => StringValue(''),
+  bool: () => BoolValue(false),
+  list: () => ArrayValue([]),
+};
 /** `step` pode ser negativo (contagem regressiva), nunca zero — ver o caso
  * "range" em `evaluate`. */
 export const RangeValue = (start, stop, step = 1) => ({ kind: 'range', start, stop, step });
@@ -827,8 +845,10 @@ function formatPrintValue(v, env) {
     case 'matrix':
     case 'matrixref':
       return `[${v.rows.map(formatRawList).join(', ')}]`;
-    case 'dict':
-      return formatPrintDict(v.entries, env);
+    case 'dict': {
+      const text = formatPrintDict(v.entries, env);
+      return v.defaultFactory ? `defaultdict(<class '${v.defaultFactory}'>, ${text})` : text;
+    }
     case 'set':
       return formatPrintSet(v.elements, env);
     case 'deque':
@@ -972,6 +992,42 @@ function evalDequeCall(node, env) {
   }
   if (maxlen != null && items.length > maxlen) items = items.slice(items.length - maxlen);
   return DequeValue(items, maxlen);
+}
+
+/** "defaultdict" ou "collections.defaultdict" (depois de "import collections"). */
+function isDefaultdictCallee(callee) {
+  if (callee.type === 'Name') return callee.name === 'defaultdict';
+  return callee.type === 'Attribute' && callee.attr === 'defaultdict' && callee.object.type === 'Name' && callee.object.name === 'collections';
+}
+
+/** "defaultdict(fábrica)" ou "defaultdict(fábrica, dict)" — um dict que cria
+ * sozinho o valor de uma chave ausente lida (int -> 0, list -> [], str -> '',
+ * float, bool). A fábrica é lida pelo NOME (não é avaliada: "int" sozinho não
+ * é um valor da DSL). */
+function evalDefaultdictCall(node, env) {
+  if (node.kwargs || node.args.length > 2) {
+    env.warn?.('defaultdict(fábrica): só aceita a fábrica e, opcionalmente, um dict inicial.');
+    return undefined;
+  }
+  let factory = null;
+  const f = node.args[0];
+  if (f && f.type !== 'NoneLiteral') {
+    if (f.type !== 'Name' || !DEFAULT_FACTORIES[f.name]) {
+      env.warn?.(`defaultdict(...): fábrica não suportada — use ${Object.keys(DEFAULT_FACTORIES).join(', ')}.`);
+      return undefined;
+    }
+    factory = f.name;
+  }
+  let entries = new Map();
+  if (node.args[1]) {
+    const initial = evaluate(node.args[1], env);
+    if (initial?.kind !== 'dict') {
+      env.warn?.('defaultdict(fábrica, valor): o segundo argumento precisa ser um dict.');
+      return undefined;
+    }
+    entries = new Map(initial.entries);
+  }
+  return DictValue(entries, undefined, factory);
 }
 
 const NOT_DEQUE_METHOD = Symbol('not a deque method');
@@ -1298,7 +1354,15 @@ export function evaluate(node, env, quiet = false) {
       if (objValue?.kind === 'dict') {
         const key = valueToKey(evaluate(node.index, env), env);
         if (key === undefined) return undefined;
-        return objValue.entries.has(key) ? objValue.entries.get(key) : undefined;
+        if (objValue.entries.has(key)) return objValue.entries.get(key);
+        // defaultdict: ler uma chave ausente a CRIA com o valor padrão
+        // (Python faz o mesmo em "d[k]" e "d[k] += 1"), e devolve o que ficou
+        const make = objValue.defaultFactory && DEFAULT_FACTORIES[objValue.defaultFactory];
+        if (make && node.object.type === 'Name' && env.assignDictKey) {
+          env.assignDictKey(node.object.name, key, make());
+          return env.resolveName(node.object.name)?.entries?.get(key);
+        }
+        return undefined;
       }
 
       const indexValue = evaluate(node.index, env);
@@ -1435,6 +1499,7 @@ export function evaluate(node, env, quiet = false) {
       // em vez de ser ignorado calado (função do usuário com argumento
       // nomeado nem chega aqui, ver interpreter.js#tryUserCall)
       if (isDequeCallee(node.callee)) return evalDequeCall(node, env);
+      if (isDefaultdictCallee(node.callee)) return evalDefaultdictCall(node, env);
       if (node.kwargs) {
         env.warn?.(`Argumento nomeado ("${node.kwargs[0].name}=...") não é suportado nessa chamada — só em deque(..., maxlen=n) e em funções definidas com "def".`);
         return undefined;
@@ -1660,6 +1725,17 @@ export function evaluate(node, env, quiet = false) {
           const items = collectionItems(node.args[0], env);
           if (items === undefined) return undefined;
           return PairsValue(items.map((v, i) => [Scalar(i), v]));
+        }
+
+        // "zip(a, b, ...)" — só existe pra alimentar um "for x, y in zip(...)"
+        // (ou "list(zip(...))"): mesma família de "enumerate", cada item é
+        // uma tupla JS com um elemento de cada iterável; para no menor, igual
+        // Python.
+        if (fname === 'zip' && node.args.length >= 1) {
+          const lists = node.args.map((a) => collectionItems(a, env));
+          if (lists.some((l) => l === undefined)) return undefined;
+          const n = Math.min(...lists.map((l) => l.length));
+          return PairsValue(Array.from({ length: n }, (_, i) => lists.map((l) => l[i])));
         }
 
         // "str(valor)" — o mesmo texto que o print mostraria (ex: pra juntar

@@ -399,7 +399,7 @@ export class MicroRuntimeAdapter {
    * nome que leva a ELE aqui (ou o id) — ver `DictValue`/`assignName`. */
   _dictValue(dict) {
     const ref = this._resolveDictByName(dict.name) === dict ? dict.name : dict.id;
-    return DictValue(dictCellsToMap(dict.cells, this.micro, (arr) => this._arrayRef(arr)), ref);
+    return DictValue(dictCellsToMap(dict.cells, this.micro, (arr) => this._arrayRef(arr)), ref, dict.defaultFactory);
   }
 
   _touch(kind, id) {
@@ -1409,6 +1409,7 @@ export class MicroRuntimeAdapter {
     else {
       const lists = node.cells.filter((c) => c.kind === 'arrayref' && c.value).map((c) => c.value);
       this.micro.clearDict(node.id);
+      this.micro.setDictDefaultFactory(node.id, value.defaultFactory);
       value.entries.forEach((v, key) => this._writeDictCell(node, name, key, v));
       lists.forEach((id) => this._dropIfOrphan({ kind: 'array', id }));
     }
@@ -1500,7 +1501,7 @@ export class MicroRuntimeAdapter {
       // `_writeDictCell`): valor, nó/None ou lista ("{'a': [1, 2]}" — a
       // lista vira um array anônimo ligado à célula).
       const pos = this.createPosition('dict', value.entries.size, layoutKey('dict'));
-      const node = this.micro.addDict(pos.x, pos.y, { orientation: 'horizontal', name, cells: [], frameId });
+      const node = this.micro.addDict(pos.x, pos.y, { orientation: 'horizontal', name, cells: [], frameId, defaultFactory: value.defaultFactory });
       value.entries.forEach((v, key) => this._writeDictCell(node, name, key, v));
       if (label) this.micro.linkDictLabelPointer(node.id, label);
       else this.onDictCreated(node, { movable: !pos.remembered });

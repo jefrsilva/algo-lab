@@ -1096,3 +1096,74 @@ select {
   font-size: 0.9rem;
   color: var(--text-2);
 }
+
+/* Janela de visibilidade de identificadores (ver VisibilityPopup) */
+.visibility-popup {
+  /* fora do canvas: ancorado (fixed) abaixo do botão da barra do código,
+     alinhado pela borda direita dele */
+  position: fixed;
+  --popup-dx: -100%;
+  min-width: 300px;
+  max-width: min(420px, 90%);
+}
+
+.visibility-search {
+  flex: none;
+  width: 100%;
+  box-sizing: border-box;
+  text-align: left;
+}
+
+.visibility-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+
+.visibility-bulk .btn {
+  padding: 4px 10px;
+}
+
+.visibility-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.visibility-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 4px;
+  border-radius: var(--radius-sm);
+}
+
+.visibility-row:hover {
+  background: var(--bg-0);
+}
+
+.visibility-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  color: var(--text-0);
+}
+
+.visibility-kind {
+  font-size: 0.75rem;
+  color: var(--text-1);
+}
+
+.visibility-empty {
+  padding: 8px 4px;
+  font-size: 0.85rem;
+  color: var(--text-1);
+  text-align: center;
+}

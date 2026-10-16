@@ -73,6 +73,8 @@ import { CodeEditor } from '../ui/CodeEditor.js';
 import { CallTree } from '../ui/CallTree.js';
 import { CanvasTitle } from '../ui/CanvasTitle.js';
 import { LabelSettingsPopup } from '../ui/LabelSettingsPopup.js';
+import { VisibilityPopup } from '../ui/VisibilityPopup.js';
+import { collectIdentifiers, identifierKey } from './microVisibility.js';
 import { ChartSettingsPopup } from '../ui/ChartSettingsPopup.js';
 import { AppMenu } from '../ui/AppMenu.js';
 import { Dialog } from '../ui/Dialog.js';
@@ -376,6 +378,7 @@ export class App {
     this.microDictSettingsPopup = new ArraySettingsPopup(microContainer);
     this.microMatrixSettingsPopup = new ArraySettingsPopup(microContainer);
     this.microLabelSettingsPopup = new LabelSettingsPopup(microContainer);
+    this.visibilityPopup = new VisibilityPopup(document.body);
     // labels com markdown medem o texto nas fontes do app (textMeasure.js):
     // quando uma fonte termina de carregar as medidas mudam — redesenha
     onTextMeasureChange(() => this._renderMicroOnly());
@@ -450,6 +453,13 @@ export class App {
       onClick: () => this.callTree.toggleHidden(),
     });
     this._syncCallTreeButton();
+    // gerenciar a visibilidade de ponteiros/variáveis (ver VisibilityPopup)
+    this.visibilityButton = this.codeEditor.addToolbarButton({
+      className: 'visibility-open-btn',
+      title: 'Visibilidade de ponteiros e variáveis',
+      html: '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 8s2.3-4.5 6.5-4.5S14.5 8 14.5 8 12.2 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg>',
+      onClick: () => this._toggleVisibilityPopup(),
+    });
 
     // um gesto (clique/arrasto) começando esconde a leitura do gráfico
     this.microView.svg.addEventListener('pointerdown', () => this._setMicroChartReadout(null));
@@ -1117,6 +1127,7 @@ export class App {
 
     this.microRunner.stop();
     this.microRunner.clearStepLayout();
+    this.visibilityPopup.close();
     this.micro.clear();
     this.microLabels.clear();
     this.microAreas.clear();
@@ -2298,8 +2309,49 @@ export class App {
       (p) => p.label === name && !p.isArrayLabel && !p.isDictLabel && !p.isMatrixLabel && !p.readCursorKey,
     );
     if (!pointer) return;
-    pointer.hidden = !pointer.hidden;
+    this._setMicroIdentifiersHidden([name], !pointer.hidden);
+  }
+
+  /** Oculta/mostra identificadores (chaves de `identifierKey`: ponteiro,
+   * cursor de leitura ou variável) no modelo ao vivo E em todos os passos da
+   * Simulação — durante ela o modelo é refeito a cada passo a partir do
+   * snapshot, então a escolha também vai pro runner (ver
+   * MicroProgramRunner#setHidden). Não apaga nada do modelo. */
+  _setMicroIdentifiersHidden(keys, hidden) {
+    const set = new Set(keys);
+    this.micro.pointers.forEach((p) => {
+      if (!set.has(identifierKey(p))) return;
+      if (p.readCursorKey) p.readCursorHidden = hidden;
+      else if (hidden) p.hidden = true;
+      else delete p.hidden;
+    });
+    this.micro.variables.forEach((v) => {
+      if (!set.has(identifierKey(v))) return;
+      if (hidden) v.hidden = true;
+      else delete v.hidden;
+    });
+    this.microRunner.setHidden(keys, hidden);
     this._renderMicroOnly();
+  }
+
+  /** Identificadores do modelo atual e de todos os passos da Simulação, com a
+   * visibilidade em vigor (ver collectIdentifiers). */
+  _microIdentifiers() {
+    const models = [this.micro, ...this.microRunner.steps.map((s) => s.snapshot)];
+    return collectIdentifiers(models, this.microRunner.pointerVisibility);
+  }
+
+  _toggleVisibilityPopup() {
+    if (this.visibilityPopup.isOpen) {
+      this.visibilityPopup.close();
+      return;
+    }
+    const r = this.visibilityButton.getBoundingClientRect();
+    this.visibilityPopup.open(r.right, r.bottom + 6, {
+      getItems: () => this._microIdentifiers(),
+      onChange: (keys, hidden) => this._setMicroIdentifiersHidden(keys, hidden),
+      onReset: () => this._setMicroIdentifiersHidden(this._microIdentifiers().map((i) => i.key), false),
+    });
   }
 
   /** Sincroniza o destaque de identificador do editor de código com a seleção do
@@ -2520,7 +2572,7 @@ export class App {
 
   _findMicroVariableAt(worldPt) {
     for (const node of this.micro.variables.values()) {
-      if (!this._microPickable(node)) continue;
+      if (!this._microPickable(node) || node.hidden) continue;
       if (worldPt.x >= node.x && worldPt.x <= node.x + variableWidth(node, this.microFullNames) && worldPt.y >= node.y && worldPt.y <= node.y + VAR_H) return node;
     }
     return null;
@@ -2528,7 +2580,7 @@ export class App {
 
   _findMicroVariableValueAt(worldPt) {
     for (const node of this.micro.variables.values()) {
-      if (!this._microPickable(node)) continue;
+      if (!this._microPickable(node) || node.hidden) continue;
       const r = variableValueRect(node, this.microFullNames);
       if (worldPt.x >= r.x && worldPt.x <= r.x + r.width && worldPt.y >= r.y && worldPt.y <= r.y + r.height) return node;
     }
@@ -5346,6 +5398,7 @@ export class App {
     });
 
     const variables = Array.from(this.micro.variables.values())
+      .filter((n) => !n.hidden)
       .filter(inActiveFrame)
       .map((n) => {
       const { pos, dragging } = this._microNodePos(n);

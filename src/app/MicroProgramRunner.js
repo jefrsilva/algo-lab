@@ -1,6 +1,7 @@
 import { parseProgram } from '../interpreter/blockParser.js';
 import { runProgram } from '../interpreter/interpreter.js';
 import { isStackArray, ridesStackTop, stackHeight } from '../core/micro/MicroModel.js';
+import { identifierKey } from './microVisibility.js';
 
 const AUTOPLAY_BASE_MS = 700;
 
@@ -83,6 +84,8 @@ export class MicroProgramRunner {
     // passo. Sobrevive a "Rodar" de novo (só some com `clearStepLayout` —
     // projeto novo/carregado); vai junto no arquivo do projeto.
     this.stepLayout = new Map();
+    // nome do ponteiro -> oculto? (escolha do usuário, vale p/ todos os passos)
+    this.pointerVisibility = new Map();
     // por execução: id -> chave estável, id -> passo em que nasceu, e quantos
     // elementos de cada "base" de chave já apareceram (ver `_assignKeys`)
     this.stableKeys = new Map();
@@ -92,6 +95,16 @@ export class MicroProgramRunner {
 
   clearStepLayout() {
     this.stepLayout = new Map();
+    this.pointerVisibility.clear();
+  }
+
+  /** Oculta/mostra identificadores (ponteiros, cursores de leitura e
+   * variáveis — chaves de `identifierKey`) em TODOS os passos. O snapshot de
+   * cada passo guarda o `hidden` de quando o programa rodou, então a escolha
+   * do usuário fica aqui, por nome, e `_restore` a reaplica. */
+  setHidden(keys, hidden) {
+    [].concat(keys).forEach((key) => this.pointerVisibility.set(key, hidden));
+    if (this.stepIndex >= 0 && this.steps[this.stepIndex]) this._restore(this.steps[this.stepIndex].snapshot, this.stepIndex);
   }
 
   /** Quadros-chave pro arquivo do projeto / de volta dele (ver App#_saveProject). */
@@ -458,11 +471,30 @@ export class MicroProgramRunner {
     });
     this.micro.structs = new Map([...snapshot.structs].map(([id, n]) => [id, withPos(id, n)]));
     this.micro.pointers = new Map(
-      [...snapshot.pointers].map(([id, n]) => [id, { ...withPos(id, n), target: n.target ? { ...n.target } : null }]),
+      [...snapshot.pointers].map(([id, n]) => {
+        const copy = { ...withPos(id, n), target: n.target ? { ...n.target } : null };
+        const key = identifierKey(n);
+        if (this.pointerVisibility.has(key)) {
+          const hidden = this.pointerVisibility.get(key);
+          if (n.readCursorKey) copy.readCursorHidden = hidden;
+          else if (hidden) copy.hidden = true;
+          else delete copy.hidden;
+        }
+        return [id, copy];
+      }),
     );
     this.micro.arrays = new Map([...snapshot.arrays].map(([id, n]) => [id, withArrayPrefs(id, n)]));
     this.micro.dicts = new Map([...snapshot.dicts].map(([id, n]) => [id, withDictPrefs(id, n)]));
-    this.micro.variables = new Map([...snapshot.variables].map(([id, n]) => [id, withPos(id, n)]));
+    this.micro.variables = new Map(
+      [...snapshot.variables].map(([id, n]) => {
+        const copy = withPos(id, n);
+        if (this.pointerVisibility.has(n.name)) {
+          if (this.pointerVisibility.get(n.name)) copy.hidden = true;
+          else delete copy.hidden;
+        }
+        return [id, copy];
+      }),
+    );
     this.micro.matrices = new Map(
       [...snapshot.matrices].map(([id, n]) => [id, { ...withPos(id, n), cells: n.cells.map((row) => [...row]) }]),
     );

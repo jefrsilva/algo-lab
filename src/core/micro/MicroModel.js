@@ -826,7 +826,7 @@ export class MicroModel {
       name: n.name,
       ...(n.labelPointerId ? { labelPointerId: n.labelPointerId } : {}),
     });
-    const variable = (n) => ({ id: n.id, x: n.x, y: n.y, name: n.name, value: n.value, frameId: n.frameId });
+    const variable = (n) => ({ id: n.id, x: n.x, y: n.y, name: n.name, value: n.value, frameId: n.frameId, ...(n.hidden ? { hidden: true } : {}) });
     const matrix = (n) => ({
       id: n.id,
       x: n.x,
@@ -920,7 +920,7 @@ export class MicroModel {
       });
     });
     (data.variables || []).forEach((n) => {
-      this.variables.set(n.id, { id: n.id, x: n.x || 0, y: n.y || 0, name: n.name, value: reviveRaw(n.value), frameId: n.frameId || 'global' });
+      this.variables.set(n.id, { id: n.id, x: n.x || 0, y: n.y || 0, name: n.name, value: reviveRaw(n.value), frameId: n.frameId || 'global', ...(n.hidden ? { hidden: true } : {}) });
     });
     (data.matrices || []).forEach((n) => {
       // linhas irregulares (arquivo editado à mão) são completadas com 0 até

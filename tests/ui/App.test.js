@@ -2513,3 +2513,28 @@ describe('ferramentas Seta e Régua (grupo da Área)', () => {
     expect([...app.microLines.values()]).toEqual([original]);
   });
 });
+
+describe('botão de resetar o estado visual', () => {
+  test('esquece posições, preferências e quadros-chave lembrados, sem tocar no código', async () => {
+    rodarNaSimulacao('a = [1, 2]');
+    app.microLayout.set('array:a@global', { x: 5, y: 6 });
+    app.microArrayPrefs.set('array:a@global', { orientation: 'vertical' });
+    app.microRunner.importStepLayout([['array:a#0', [{ step: 0, x: 1, y: 2 }]]]);
+
+    vi.spyOn(app.dialog, 'confirm').mockResolvedValue(true);
+    $('.reset-layout-btn').click();
+    await vi.waitFor(() => expect(app.microLayout.size).toBe(0));
+
+    expect(app.microArrayPrefs.size).toBe(0);
+    expect(app.microRunner.exportStepLayout()).toEqual([]);
+    expect(textarea().value).toBe('a = [1, 2]');
+  });
+
+  test('cancelar a confirmação não muda nada', async () => {
+    app.microLayout.set('array:a@global', { x: 5, y: 6 });
+    vi.spyOn(app.dialog, 'confirm').mockResolvedValue(false);
+    $('.reset-layout-btn').click();
+    await Promise.resolve();
+    expect(app.microLayout.size).toBe(1);
+  });
+});

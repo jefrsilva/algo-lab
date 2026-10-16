@@ -487,6 +487,13 @@ export class App {
       onClick: () => this.callTree.toggleHidden(),
     });
     this._syncCallTreeButton();
+    // esquecer posições e quadros-chave lembrados (ver _resetMicroVisualState)
+    this.resetLayoutButton = this.codeEditor.addToolbarButton({
+      className: 'reset-layout-btn',
+      title: 'Resetar o estado visual: esquece posições e passos de criação lembrados dos elementos',
+      html: '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 8a5.5 5.5 0 1 0 1.8-4.1"/><path d="M2.5 2.5v3h3"/></svg>',
+      onClick: () => this._resetMicroVisualState(),
+    });
     // gerenciar a visibilidade de ponteiros/variáveis (ver VisibilityPopup)
     this.visibilityButton = this.codeEditor.addToolbarButton({
       className: 'visibility-open-btn',
@@ -1907,6 +1914,28 @@ export class App {
    * inteiro (com if/while/for) e roda contra o modelo real via
    * MicroProgramRunner, que devolve pronto pra reprodução (um passo por
    * atribuição/condição avaliada, com snapshot do modelo). */
+  /** Botão "resetar" da barra do código: esquece o que foi lembrado dos
+   * elementos por NOME — posições (`microLayout`), preferências visuais de
+   * listas (`microArrayPrefs`) e quadros-chave por passo (`stepLayout`) —,
+   * pra uma solução nova não herdar o layout/criação de uma anterior. Não
+   * mexe no código, em cores nem na visibilidade de identificadores. Na
+   * Simulação com passos, roda o programa de novo pra posições refletirem
+   * o reset. */
+  async _resetMicroVisualState() {
+    if (
+      !(await this.dialog.confirm('Resetar posições e passos de criação lembrados de todos os elementos?', {
+        confirmLabel: 'Resetar',
+        danger: true,
+      }))
+    )
+      return;
+    this.microLayout.clear();
+    this.microArrayPrefs.clear();
+    this.microRunner.importStepLayout([]);
+    if (this.codeEditor.mode === 'run' && this.microRunner.hasSteps) this._runMicroProgram(this.codeEditor.getValue());
+    else this.renderAll();
+  }
+
   _runMicroProgram(source) {
     this.microConsoleClearedLines = 0; // limpeza do console vale só pra reprodução anterior
     this.microRunner.run(source, this.microRuntime);

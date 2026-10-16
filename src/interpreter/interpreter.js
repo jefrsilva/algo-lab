@@ -445,7 +445,7 @@ export function* runProgram(program, functions, env) {
         // enumerate/items (ver ast.js#For/evaluator.js#loopValues).
         // `varNames[k]` sem item correspondente (mais nomes do que a tupla
         // tem) simplesmente não recebe atribuição nenhuma naquela iteração.
-        const values = loopValues(item, stmt.varNames.length);
+        const values = loopValues(item, stmt.varNames.length, env);
         stmt.varNames.forEach((name, k) => {
           if (values[k] !== undefined) env.assignName(name, values[k]);
         });

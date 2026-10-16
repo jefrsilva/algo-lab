@@ -358,9 +358,15 @@ function pairsAsTuples(items) {
  * comprehension), um por nome do laço: par do enumerate/items ou tupla ->
  * desempacotados nos `nVars` nomes; com um nome só, o item inteiro (par vira
  * tupla — "for par in d.items()"). */
-export function loopValues(item, nVars) {
+export function loopValues(item, nVars, env) {
   if (Array.isArray(item)) return nVars > 1 ? item : [TupleValue(item)];
   if (item?.kind === 'tuple' && nVars > 1) return item.items;
+  // lista como item ("for curso, pre in prerequisitos:" com pares [a, b]):
+  // desempacota os elementos, como o Python faz com qualquer iterável
+  if (nVars > 1 && (item?.kind === 'array' || item?.kind === 'arrayref')) {
+    const inner = iterableItems(item, env);
+    if (inner !== undefined) return inner;
+  }
   return [item];
 }
 
@@ -1202,7 +1208,7 @@ export function evaluate(node, env) {
       }
       const results = [];
       for (const item of items) {
-        const values = loopValues(item, node.varNames.length);
+        const values = loopValues(item, node.varNames.length, env);
         const bound = new Map();
         node.varNames.forEach((name, k) => {
           if (values[k] !== undefined) bound.set(name, values[k]);

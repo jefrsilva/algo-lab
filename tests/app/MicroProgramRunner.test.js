@@ -215,10 +215,10 @@ describe('destacar nós ao selecionar', () => {
     runner.goToStep(2);
     const id = [...micro.arrays.values()][0].id;
     micro.setArrayHighlightNodes(id, true);
-    runner.updateHighlightNodes(id, true);
+    runner.updateHighlightNodes(id, 'always');
     runner.goToStep(1);
-    expect(micro.arrays.get(id).highlightNodes).toBe(true);
-    runner.updateHighlightNodes(id, false);
+    expect(micro.arrays.get(id).highlightNodes).toBe('always');
+    runner.updateHighlightNodes(id, null);
     runner.goToStep(3);
     expect(micro.arrays.get(id).highlightNodes).toBeUndefined();
   });

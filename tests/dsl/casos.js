@@ -18,6 +18,21 @@ export const normalizar = (texto) => texto.replace(/^\n/, '').replace(/\n$/, '')
 
 export const CASOS = [
   {
+    nome: "for com desempacotamento de listas internas (pares [a, b])",
+    codigo: `
+prerequisites = [[1, 0], [2, 1], [3, 2]]
+graph = [[] for _ in range(4)]
+indeg = [0] * 4
+for course, prerequisite in prerequisites:
+    graph[prerequisite].append(course)
+    indeg[course] += 1
+print(graph, indeg)
+`,
+    saida: `
+[[1], [2], [3], []] [0, 1, 1, 1]
+`,
+  },
+  {
     nome: "aritmética, atribuição composta, comparação encadeada e lógica",
     codigo: `
 a = 7
@@ -762,6 +777,35 @@ dict_values([[1], [2, 3]]) dict_keys(['a', 'b']) dict_items([('a', [1]), ('b', [
 [[0], [1, 1], [2, 2, 2]]
 [[1], [2, 3]]
 [[7, 8, 0], [7, 8, 0]]
+`,
+  },
+  {
+    nome: "float('inf') e float('-inf') como sentinelas",
+    codigo: `
+menor = float('inf')
+maior = float('-inf')
+for x in [5, 2, 9]:
+    if x < menor:
+        menor = x
+    if x > maior:
+        maior = x
+print(menor, maior)
+print(float('inf'), float('-inf'), -float('inf'))
+print(float('inf') > 10**9, float('-inf') < -5, float('inf') == float('inf'))
+print(min(float('inf'), 3), max(float('-inf'), -3))
+nums = [1, float('inf'), float('-inf')]
+print(nums)
+print(f"{float('inf')}", float('inf') + 1, float('inf') - float('inf'))
+print(float(' -Infinity '), float('3.5'))
+`,
+    saida: `
+2 9
+inf -inf -inf
+True True True
+3 -3
+[1, inf, -inf]
+inf inf nan
+-inf 3.5
 `,
   },
 ];

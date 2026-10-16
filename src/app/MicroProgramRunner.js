@@ -1,6 +1,6 @@
 import { parseProgram } from '../interpreter/blockParser.js';
 import { runProgram } from '../interpreter/interpreter.js';
-import { isStackArray, ridesStackTop, stackHeight } from '../core/micro/MicroModel.js';
+import { normalizeHighlightMode, isStackArray, ridesStackTop, stackHeight } from '../core/micro/MicroModel.js';
 import { identifierKey } from './microVisibility.js';
 
 const AUTOPLAY_BASE_MS = 700;
@@ -318,7 +318,7 @@ export class MicroProgramRunner {
 
   /** Idem `updateOrientation`, pra preferência "destacar os nós". */
   updateHighlightNodes(id, on) {
-    if (this.highlightNodes.has(id)) this.highlightNodes.set(id, !!on);
+    if (this.highlightNodes.has(id)) this.highlightNodes.set(id, normalizeHighlightMode(on));
   }
 
   goToStep(i) {
@@ -415,7 +415,7 @@ export class MicroProgramRunner {
     this.micro.arrays.forEach((n, id) => {
       if (!this.orientations.has(id)) this.orientations.set(id, n.orientation);
       if (!this.nodeCircles.has(id)) this.nodeCircles.set(id, !!n.nodeCircles);
-      if (!this.highlightNodes.has(id)) this.highlightNodes.set(id, !!n.highlightNodes);
+      if (!this.highlightNodes.has(id)) this.highlightNodes.set(id, normalizeHighlightMode(n.highlightNodes));
     });
     this.micro.dicts.forEach((n, id) => {
       if (!this.orientations.has(id)) this.orientations.set(id, n.orientation);
@@ -462,7 +462,7 @@ export class MicroProgramRunner {
       cells: [...n.cells],
       orientation: this.orientations.get(id) ?? 'horizontal',
       ...(this.nodeCircles.get(id) && n.kind !== 'arrayref' ? { nodeCircles: true } : {}),
-      ...(this.highlightNodes.get(id) && n.kind !== 'arrayref' ? { highlightNodes: true } : {}),
+      ...(this.highlightNodes.get(id) && n.kind !== 'arrayref' ? { highlightNodes: this.highlightNodes.get(id) } : {}),
     });
     const withDictPrefs = (id, n) => ({
       ...withPos(id, n),

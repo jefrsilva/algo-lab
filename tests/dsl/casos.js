@@ -18,6 +18,21 @@ export const normalizar = (texto) => texto.replace(/^\n/, '').replace(/\n$/, '')
 
 export const CASOS = [
   {
+    nome: "for com desempacotamento de listas internas (pares [a, b])",
+    codigo: `
+prerequisites = [[1, 0], [2, 1], [3, 2]]
+graph = [[] for _ in range(4)]
+indeg = [0] * 4
+for course, prerequisite in prerequisites:
+    graph[prerequisite].append(course)
+    indeg[course] += 1
+print(graph, indeg)
+`,
+    saida: `
+[[1], [2], [3], []] [0, 1, 1, 1]
+`,
+  },
+  {
     nome: "aritmética, atribuição composta, comparação encadeada e lógica",
     codigo: `
 a = 7

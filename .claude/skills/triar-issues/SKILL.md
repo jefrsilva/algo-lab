@@ -9,7 +9,7 @@ O objetivo é transformar cada issue aberta em uma tarefa que outra sessão cons
 
 ## 1. Listar as issues abertas
 
-Repositório: o `origin` deste checkout (`git remote get-url origin`, hoje `jefrsilva/ferramenta-visualizacao-algoritmos`). Use o que a sessão tiver:
+Repositório: o `origin` deste checkout (`git remote get-url origin`, hoje `jefrsilva/algo-lab`). Use o que a sessão tiver:
 
 - **Ferramentas MCP do GitHub** (sessões na nuvem): `list_issues` com `state: OPEN` e os campos `number`, `title`, `body`, `labels`, `assignees`, `created_at`. Se não estiverem carregadas, carregue com ToolSearch (`select:mcp__github__list_issues,mcp__github__issue_read`).
 - **`gh` CLI** (terminal local): `gh issue list --state open --json number,title,body,labels,assignees,createdAt --limit 100`.

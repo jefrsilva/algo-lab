@@ -631,7 +631,8 @@ export class App {
   _showAbout() {
     const texto = [
       `Versão ${APP_VERSION} (beta) — visualizador de estruturas de dados e algoritmos.`,
-      'Desenvolvida e mantida por Jeferson Silva, com apoio de IA, como apoio didático para a gravação de cursos sobre algoritmos e estruturas de dados.',
+      'Desenvolvida e mantida por Jeferson Silva, com apoio de IA, como apoio didático para a gravação dos cursos de Coding Interview da Alura.',
+      'Agora a ferramenta está disponível como uma contribuição para a comunidade, para quem quiser usá-la e modificá-la.',
       'Aviso: a ferramenta está em beta. Ela não pretende ser completa nem permitir a visualização de todos os tipos de algoritmos e estruturas de dados, e também não replica 100% o comportamento da linguagem Python.',
     ].join('\n\n');
     this.dialog.alert(texto, {
@@ -645,6 +646,8 @@ export class App {
    * ícone da rede — SVGs inline, pintados com `currentColor`. */
   _aboutLinks() {
     const icones = {
+      codigo:
+        '<path d="M5 3.5 1 8l4 4.5M11 3.5 15 8l-4 4.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
       email:
         '<rect x="1" y="3" width="14" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M1.7 4.2 8 9l6.3-4.8" fill="none" stroke="currentColor" stroke-width="1.4"/>',
       github:
@@ -653,6 +656,7 @@ export class App {
         '<path fill="currentColor" fill-rule="evenodd" d="M2 0h12a2 2 0 012 2v12a2 2 0 01-2 2H2a2 2 0 01-2-2V2a2 2 0 012-2zM3.9 2.7a1.2 1.2 0 100 2.4 1.2 1.2 0 000-2.4zM2.8 6.3h2.2v7H2.8zM6.5 6.3h2.1v.95c.3-.55 1-1.15 2.1-1.15 2 0 2.4 1.3 2.4 3v4.2h-2.2V9.7c0-.9-.1-1.5-1-1.5s-1.2.6-1.2 1.5v3.6H6.5z"/>',
     };
     const links = [
+      { icone: 'codigo', label: 'Código-fonte: github.com/jefrsilva/algo-lab', href: 'https://github.com/jefrsilva/algo-lab' },
       { icone: 'email', label: 'jefrsilva@gmail.com', href: 'mailto:jefrsilva@gmail.com' },
       { icone: 'github', label: 'github.com/jefrsilva', href: 'https://github.com/jefrsilva' },
       { icone: 'linkedin', label: 'linkedin.com/in/jefrsilva', href: 'https://www.linkedin.com/in/jefrsilva/' },

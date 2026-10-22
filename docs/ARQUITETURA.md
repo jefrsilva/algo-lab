@@ -102,7 +102,7 @@ src/
   ui/                       widgets de interface independentes, instanciados e ligados pelo App
     CodeEditor.js  CallTree.js  PlaybackControls.js  ConsoleWindow.js  ModeToolbar.js  AlignToolbar.js
     TreeLayoutToolbar.js
-    QuickActionPalette.js  AppMenu.js  Tutorial.js  SettingsDialog.js  Dialog.js  CanvasTitle.js
+    QuickActionPalette.js  AppMenu.js  Tutorial.js  tutorials.js  SettingsDialog.js  Dialog.js  CanvasTitle.js
     NodePopup.js  ArraySettingsPopup.js  LabelSettingsPopup.js  ChartSettingsPopup.js
     InlineValueEditor.js  fitPopup.js
   styles/
@@ -472,8 +472,8 @@ Cada widget é uma classe independente, sem classe base. Recebe um container e c
 | `AlignToolbar.js` | Botões de alinhar (2+ selecionados) e distribuir (3+), acima da barra de modos; some sem seleção suficiente (`ALIGN_BUTTONS[].min`). Sem estado: recebe `count` e chama `actions.run(id)`. | `this.microAlignToolbar` |
 | `TreeLayoutToolbar.js` | Botões "Árvore ↕"/"Árvore ↔" (`TREE_LAYOUT_BUTTONS`), ao lado do lugar da `AlignToolbar`, só com um TreeNode selecionado. Sem estado: recebe `enabled` e chama `actions.run(orientation)`. | `this.microTreeToolbar` |
 | `QuickActionPalette.js` | Caixa Ctrl+Espaço: casamento abreviado (`scoreName`), sugestão em cinza, ↑/↓/Tab/Enter/Esc. Os comandos vêm de quem abre. | `this.microQuickActions` |
-| `AppMenu.js` | Menu hambúrguer (`items`, `onSelect(id)`). | `this.appMenu` |
-| `Tutorial.js` | Tutorial guiado de primeiros passos: popups não modais (`TUTORIAL_STEPS`: `target` = seletor CSS do que é destacado, `placement`) com Próximo / Pular tutorial; pular mostra um aviso apontando o menu ☰ → Tutorial. Não sabe do App: avisa `onClose('concluido'\|'pulado')` e o App grava `tutorialSeen` (settings.js, fora do "Restaurar padrões"). Abre sozinho na primeira visita (`App#_startTutorial`) e pelo item "Tutorial" do menu. | `this.tutorial` |
+| `AppMenu.js` | Menu hambúrguer (`items`, `onSelect(id)`); um item com `children` vira submenu (ex.: Tutorial). | `this.appMenu` |
+| `Tutorial.js` / `tutorials.js` | Tutorial guiado: popups não modais com Próximo / Pular tutorial. `Tutorial#start({steps, onClose, skipNotice})` roda um roteiro; os roteiros ficam em `tutorials.js` (`TUTORIALS`: "Como começar" + 3 cenários — somar lista, lista ligada canvas+código, simulação e posições; cada passo tem `target` = seletor CSS destacado, `placement`, `body` com parágrafos e `{code}`). Só "Como começar" abre sozinho na primeira visita, marca `tutorialSeen` (settings.js, fora do "Restaurar padrões") e mostra o aviso do menu ao ser pulado; os cenários só abrem por ☰ → Tutorial (`App#_startTutorial(id)`). `tests/ui/cenarios.test.js` roda os programas dos cenários — mudou um passo, confira lá. | `this.tutorial` |
 | `SettingsDialog.js` | Janela modal de configurações. A estrutura fica em `SECTIONS` (tipos `choice`, `toggle`, `stepper`…). Não aplica nada, só chama `onChange(key, value)`. | `this.settingsDialog` |
 | `Dialog.js` | `confirm`/`alert` modais baseados em Promise (substituem os nativos). | `this.dialog` |
 | `CanvasTitle.js` | Título editável no topo do canvas. | `this.microCanvasTitle` |

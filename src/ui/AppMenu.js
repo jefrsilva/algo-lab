@@ -6,7 +6,9 @@ const MENU_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
  * Menu simples (ícone de hambúrguer) ancorado no canto onde é montado — abre
  * um dropdown com uma lista de ações (`items: [{id,label}]`, ou
  * `{separator:true}` pra uma linha divisória) e chama `onSelect(id)` ao
- * clicar numa delas. Fecha ao selecionar um item ou ao clicar fora.
+ * clicar numa delas. Um item com `children: [{id,label}]` vira um submenu:
+ * clicar nele abre/fecha a lista ao lado, e são os filhos que chamam
+ * `onSelect`. Fecha ao selecionar um item ou ao clicar fora.
  */
 export class AppMenu {
   constructor(container, { items = [], onSelect } = {}) {
@@ -43,16 +45,45 @@ export class AppMenu {
         dropdown.appendChild(sep);
         return;
       }
-      const itemBtn = document.createElement('button');
-      this.itemEls.set(item.id, itemBtn);
-      itemBtn.type = 'button';
-      itemBtn.className = 'app-menu-item';
-      itemBtn.textContent = item.label;
-      itemBtn.addEventListener('click', () => {
+      const makeItem = (entry, parent) => {
+        const itemBtn = document.createElement('button');
+        this.itemEls.set(entry.id, itemBtn);
+        itemBtn.type = 'button';
+        itemBtn.className = 'app-menu-item';
+        itemBtn.textContent = entry.label;
+        parent.appendChild(itemBtn);
+        return itemBtn;
+      };
+      if (item.children) {
+        const group = document.createElement('div');
+        group.className = 'app-menu-group';
+        const parentBtn = makeItem(item, group);
+        parentBtn.classList.add('has-submenu');
+        parentBtn.setAttribute('aria-haspopup', 'true');
+        parentBtn.setAttribute('aria-expanded', 'false');
+        const sub = document.createElement('div');
+        sub.className = 'app-menu-submenu';
+        sub.hidden = true;
+        item.children.forEach((child) => {
+          makeItem(child, sub).addEventListener('click', () => {
+            this._close();
+            this.onSelect(child.id);
+          });
+        });
+        group.appendChild(sub);
+        parentBtn.addEventListener('click', () => {
+          const open = sub.hidden;
+          this._closeSubmenus();
+          sub.hidden = !open;
+          parentBtn.setAttribute('aria-expanded', String(open));
+        });
+        dropdown.appendChild(group);
+        return;
+      }
+      makeItem(item, dropdown).addEventListener('click', () => {
         this._close();
         this.onSelect(item.id);
       });
-      dropdown.appendChild(itemBtn);
     });
 
     wrap.appendChild(btn);
@@ -82,7 +113,15 @@ export class AppMenu {
     document.addEventListener('pointerdown', this._outsideHandler);
   }
 
+  _closeSubmenus() {
+    this.dropdown.querySelectorAll('.app-menu-submenu').forEach((sub) => {
+      sub.hidden = true;
+      sub.previousElementSibling?.setAttribute('aria-expanded', 'false');
+    });
+  }
+
   _close() {
+    this._closeSubmenus();
     this.open = false;
     this.dropdown.hidden = true;
     document.removeEventListener('pointerdown', this._outsideHandler);

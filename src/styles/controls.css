@@ -1195,6 +1195,7 @@ select {
   margin-right: auto;
   font-size: 0.85rem;
   color: var(--text-2);
+}
 
 /* Janela de visibilidade de identificadores (ver VisibilityPopup) */
 .visibility-popup {
@@ -1265,4 +1266,41 @@ select {
   font-size: 0.85rem;
   color: var(--text-1);
   text-align: center;
+}
+
+
+/* Submenu do ☰ (ver AppMenu.js, itens com `children`): abre à direita do item */
+.app-menu-group {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-menu-item.has-submenu::after {
+  content: '›';
+  float: right;
+  color: var(--text-2);
+}
+
+.app-menu-submenu {
+  position: absolute;
+  top: -6px;
+  left: calc(100% + 4px);
+  min-width: 250px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 10px 30px var(--shadow-color);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.app-menu-submenu[hidden] {
+  display: none;
+}
+
+.app-menu-submenu .app-menu-item {
+  white-space: nowrap;
 }

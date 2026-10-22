@@ -12,7 +12,7 @@
  */
 const COMO_COMECAR = [
   {
-    title: 'Bem-vindo(a)!',
+    title: 'Bem-vindo(a) ao Algo-Lab!',
     target: null,
     body: [
       'Esta ferramenta mostra, passo a passo, o que acontece na memória quando um programa roda: nós, ponteiros, listas, dicionários e variáveis.',

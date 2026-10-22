@@ -81,6 +81,7 @@ import { ChartSettingsPopup } from '../ui/ChartSettingsPopup.js';
 import { AppMenu } from '../ui/AppMenu.js';
 import { Tutorial } from '../ui/Tutorial.js';
 import { TUTORIALS } from '../ui/tutorials.js';
+import { APP_NAME, APP_VERSION } from './version.js';
 import { Dialog } from '../ui/Dialog.js';
 import { ConsoleWindow } from '../ui/ConsoleWindow.js';
 import { ColorWheel } from '../ui/ColorWheel.js';
@@ -602,6 +603,8 @@ export class App {
         { separator: true },
         { id: 'tutorial', label: 'Tutorial', children: TUTORIALS.map((t) => ({ id: `tutorial:${t.id}`, label: t.label })) },
         { id: 'settings', label: 'Configurações…' },
+        { separator: true },
+        { id: 'about', label: `Sobre o ${APP_NAME}` },
       ],
       onSelect: (id) => {
         if (id === 'new') this._newProject();
@@ -610,6 +613,7 @@ export class App {
         else if (id === 'quick-actions') this._openQuickActions({ showAll: true });
         else if (id.startsWith('tutorial:')) this._startTutorial(id.slice('tutorial:'.length));
         else if (id === 'settings') this.settingsDialog.open();
+        else if (id === 'about') this._showAbout();
       },
     });
 
@@ -617,6 +621,14 @@ export class App {
     // concluído ou pulado) e a qualquer hora pelo menu ☰ → Tutorial
     this.tutorial = new Tutorial();
     if (!getSetting('tutorialSeen')) this._startTutorial('como-comecar');
+  }
+
+  /** ☰ → Sobre o Algo-Lab: nome e versão (ver version.js). */
+  _showAbout() {
+    this.dialog.alert(`Versão ${APP_VERSION} — visualizador de estruturas de dados e algoritmos.`, {
+      title: `Sobre o ${APP_NAME}`,
+      okLabel: 'Fechar',
+    });
   }
 
   /** Abre um roteiro de tutorials.js. Só "Como começar" marca o tutorial

@@ -21,9 +21,11 @@ export function instalarStubsDom() {
 /** Monta o app inteiro num <div id="app"> novo e devolve a instância. O
  * módulo App.js é importado de novo a cada chamada (com `vi.resetModules`)
  * pra que settings.js releia o localStorage do zero. */
-export async function montarApp() {
+export async function montarApp({ tutorial = false } = {}) {
   instalarStubsDom();
   localStorage.clear();
+  // o tutorial abre sozinho na primeira visita — os testes partem dele já visto
+  if (!tutorial) localStorage.setItem('algo-visualizer:settings', JSON.stringify({ tutorialSeen: true }));
   document.body.innerHTML = '<div id="app"></div>';
   vi.resetModules();
   const { App } = await import('../../src/app/App.js');
@@ -35,6 +37,7 @@ export async function montarApp() {
  * testes anteriores (com o DOM já descartado) continuariam ouvindo `window`. */
 export function desmontarApp(app) {
   app.microRunner.stop();
+  app.tutorial.close();
   window.removeEventListener('keydown', app._boundKeyDown);
   window.removeEventListener('keyup', app._boundKeyUp);
   window.removeEventListener('contextmenu', app._boundLinkDragContextMenu, true);

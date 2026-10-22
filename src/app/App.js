@@ -79,6 +79,7 @@ import { VisibilityPopup } from '../ui/VisibilityPopup.js';
 import { collectIdentifiers, identifierKey } from './microVisibility.js';
 import { ChartSettingsPopup } from '../ui/ChartSettingsPopup.js';
 import { AppMenu } from '../ui/AppMenu.js';
+import { Tutorial } from '../ui/Tutorial.js';
 import { Dialog } from '../ui/Dialog.js';
 import { ConsoleWindow } from '../ui/ConsoleWindow.js';
 import { ColorWheel } from '../ui/ColorWheel.js';
@@ -598,6 +599,7 @@ export class App {
         { separator: true },
         { id: 'quick-actions', label: 'Ações rápidas (Ctrl+Espaço)' },
         { separator: true },
+        { id: 'tutorial', label: 'Tutorial' },
         { id: 'settings', label: 'Configurações…' },
       ],
       onSelect: (id) => {
@@ -605,9 +607,19 @@ export class App {
         else if (id === 'save') this._saveProject();
         else if (id === 'load') this._loadProject();
         else if (id === 'quick-actions') this._openQuickActions({ showAll: true });
+        else if (id === 'tutorial') this._startTutorial();
         else if (id === 'settings') this.settingsDialog.open();
       },
     });
+
+    // tutorial de primeiros passos: abre sozinho na primeira visita (até ser
+    // concluído ou pulado) e a qualquer hora pelo menu ☰ → Tutorial
+    this.tutorial = new Tutorial({ onClose: () => setSetting('tutorialSeen', true) });
+    if (!getSetting('tutorialSeen')) this._startTutorial();
+  }
+
+  _startTutorial() {
+    this.tutorial.start();
   }
 
   _seedMicroExample() {
@@ -881,7 +893,7 @@ export class App {
    * volta ao padrão (não aparece na janela, mas é preferência de tela). */
   _resetSettings() {
     Object.entries(SETTINGS_DEFAULTS).forEach(([key, value]) => {
-      if (key === 'consoleRect') return;
+      if (key === 'consoleRect' || key === 'tutorialSeen') return;
       this._applySetting(key, value);
     });
     this.microConsole.resetRect();

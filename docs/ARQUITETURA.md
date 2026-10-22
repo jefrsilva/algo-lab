@@ -102,7 +102,7 @@ src/
   ui/                       widgets de interface independentes, instanciados e ligados pelo App
     CodeEditor.js  CallTree.js  PlaybackControls.js  ConsoleWindow.js  ModeToolbar.js  AlignToolbar.js
     TreeLayoutToolbar.js
-    QuickActionPalette.js  AppMenu.js  SettingsDialog.js  Dialog.js  CanvasTitle.js
+    QuickActionPalette.js  AppMenu.js  Tutorial.js  SettingsDialog.js  Dialog.js  CanvasTitle.js
     NodePopup.js  ArraySettingsPopup.js  LabelSettingsPopup.js  ChartSettingsPopup.js
     InlineValueEditor.js  fitPopup.js
   styles/
@@ -473,6 +473,7 @@ Cada widget é uma classe independente, sem classe base. Recebe um container e c
 | `TreeLayoutToolbar.js` | Botões "Árvore ↕"/"Árvore ↔" (`TREE_LAYOUT_BUTTONS`), ao lado do lugar da `AlignToolbar`, só com um TreeNode selecionado. Sem estado: recebe `enabled` e chama `actions.run(orientation)`. | `this.microTreeToolbar` |
 | `QuickActionPalette.js` | Caixa Ctrl+Espaço: casamento abreviado (`scoreName`), sugestão em cinza, ↑/↓/Tab/Enter/Esc. Os comandos vêm de quem abre. | `this.microQuickActions` |
 | `AppMenu.js` | Menu hambúrguer (`items`, `onSelect(id)`). | `this.appMenu` |
+| `Tutorial.js` | Tutorial guiado de primeiros passos: popups não modais (`TUTORIAL_STEPS`: `target` = seletor CSS do que é destacado, `placement`) com Próximo / Pular tutorial; pular mostra um aviso apontando o menu ☰ → Tutorial. Não sabe do App: avisa `onClose('concluido'\|'pulado')` e o App grava `tutorialSeen` (settings.js, fora do "Restaurar padrões"). Abre sozinho na primeira visita (`App#_startTutorial`) e pelo item "Tutorial" do menu. | `this.tutorial` |
 | `SettingsDialog.js` | Janela modal de configurações. A estrutura fica em `SECTIONS` (tipos `choice`, `toggle`, `stepper`…). Não aplica nada, só chama `onChange(key, value)`. | `this.settingsDialog` |
 | `Dialog.js` | `confirm`/`alert` modais baseados em Promise (substituem os nativos). | `this.dialog` |
 | `CanvasTitle.js` | Título editável no topo do canvas. | `this.microCanvasTitle` |

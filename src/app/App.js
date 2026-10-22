@@ -636,8 +636,40 @@ export class App {
     ].join('\n\n');
     this.dialog.alert(texto, {
       title: `Sobre o ${APP_NAME}`,
+      extra: this._aboutLinks(),
       okLabel: 'Fechar',
     });
+  }
+
+  /** Links de contato do "Sobre" (e-mail, GitHub, LinkedIn), cada um com o
+   * ícone da rede — SVGs inline, pintados com `currentColor`. */
+  _aboutLinks() {
+    const icones = {
+      email:
+        '<rect x="1" y="3" width="14" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M1.7 4.2 8 9l6.3-4.8" fill="none" stroke="currentColor" stroke-width="1.4"/>',
+      github:
+        '<path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>',
+      linkedin:
+        '<path fill="currentColor" fill-rule="evenodd" d="M2 0h12a2 2 0 012 2v12a2 2 0 01-2 2H2a2 2 0 01-2-2V2a2 2 0 012-2zM3.9 2.7a1.2 1.2 0 100 2.4 1.2 1.2 0 000-2.4zM2.8 6.3h2.2v7H2.8zM6.5 6.3h2.1v.95c.3-.55 1-1.15 2.1-1.15 2 0 2.4 1.3 2.4 3v4.2h-2.2V9.7c0-.9-.1-1.5-1-1.5s-1.2.6-1.2 1.5v3.6H6.5z"/>',
+    };
+    const links = [
+      { icone: 'email', label: 'jefrsilva@gmail.com', href: 'mailto:jefrsilva@gmail.com' },
+      { icone: 'github', label: 'github.com/jefrsilva', href: 'https://github.com/jefrsilva' },
+      { icone: 'linkedin', label: 'linkedin.com/in/jefrsilva', href: 'https://www.linkedin.com/in/jefrsilva/' },
+    ];
+    const lista = document.createElement('div');
+    lista.className = 'about-links';
+    links.forEach(({ icone, label, href }) => {
+      const a = document.createElement('a');
+      a.className = 'about-link';
+      a.href = href;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.innerHTML = `<svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true">${icones[icone]}</svg>`;
+      a.appendChild(document.createTextNode(label));
+      lista.appendChild(a);
+    });
+    return lista;
   }
 
   /** Abre um roteiro de tutorials.js. Só "Como começar" marca o tutorial

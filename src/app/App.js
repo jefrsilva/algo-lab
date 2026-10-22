@@ -631,7 +631,8 @@ export class App {
   _showAbout() {
     const texto = [
       `Versão ${APP_VERSION} (beta) — visualizador de estruturas de dados e algoritmos.`,
-      'Desenvolvida e mantida por Jeferson Silva, com apoio de IA, como apoio didático para a gravação de cursos sobre algoritmos e estruturas de dados.',
+      'Desenvolvida e mantida por Jeferson Silva, com apoio de IA, como apoio didático para a gravação dos cursos de Coding Interview da Alura.',
+      'Agora a ferramenta está disponível como uma contribuição para a comunidade, para quem quiser usá-la e modificá-la.',
       'Aviso: a ferramenta está em beta. Ela não pretende ser completa nem permitir a visualização de todos os tipos de algoritmos e estruturas de dados, e também não replica 100% o comportamento da linguagem Python.',
     ].join('\n\n');
     this.dialog.alert(texto, {

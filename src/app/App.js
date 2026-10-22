@@ -87,8 +87,10 @@ import { ConsoleWindow } from '../ui/ConsoleWindow.js';
 import { ColorWheel } from '../ui/ColorWheel.js';
 import { QuickActionPalette } from '../ui/QuickActionPalette.js';
 import { SettingsDialog } from '../ui/SettingsDialog.js';
+import { ShortcutsDialog } from '../ui/ShortcutsDialog.js';
 import { applyTheme } from './theme.js';
 import { onTextMeasureChange } from '../render/textMeasure.js';
+import logoSvg from '../assets/algo-lab.svg?raw';
 import { getSetting, setSetting, SETTINGS_DEFAULTS } from './settings.js';
 import { defaultLine, distToSegment, lineBounds, lineEnds, lineFromDrag, moveLineEnd } from './microLines.js';
 
@@ -573,13 +575,11 @@ export class App {
     topRightControls.appendChild(fitBtn);
     microContainer.appendChild(topRightControls);
 
-    // canto inferior esquerdo: logo (cor por tema, ver --logo em variables.css)
+    // canto inferior esquerdo: logo (assets/algo-lab.svg, pintada de branco via CSS)
     const logo = document.createElement('div');
     logo.className = 'canvas-logo';
     logo.setAttribute('aria-hidden', 'true');
-    logo.innerHTML = `<svg viewBox="0 0 25.5028 31.7088" width="100%" height="100%">
-      <path d="M21.5357 31.7088L15.2591 5.60453C15.061 4.81207 14.8015 4.3029 14.4701 4.04831C14.135 3.79014 13.5765 3.66464 12.7514 3.66464C11.9263 3.66464 11.3678 3.79014 11.0327 4.04831C10.7012 4.30648 10.4418 4.81566 10.2436 5.60453L3.97062 31.7088H0L6.49639 4.67582C6.8531 3.28096 7.61696 2.13711 8.76274 1.28728C9.91213 0.433876 11.2525 0 12.7514 0C14.2503 0 15.5906 0.433876 16.74 1.28728C17.8858 2.14069 18.646 3.28096 19.0064 4.68299L25.5028 31.7088H21.5321H21.5357Z" fill="currentColor"/>
-    </svg>`;
+    logo.innerHTML = logoSvg;
     microContainer.appendChild(logo);
 
     // janela de Configurações (item do menu ☰) — ver _applySetting
@@ -588,6 +588,8 @@ export class App {
       onChange: (key, value) => this._applySetting(key, value),
       onReset: () => this._resetSettings(),
     });
+    // janela de atalhos de teclado (item do menu ☰ ou a tecla ?)
+    this.shortcutsDialog = new ShortcutsDialog();
 
     // canto superior esquerdo: menu (projeto, ações rápidas, configurações)
     const menuHost = document.createElement('div');
@@ -603,6 +605,7 @@ export class App {
         { separator: true },
         { id: 'tutorial', label: 'Tutorial', children: TUTORIALS.map((t) => ({ id: `tutorial:${t.id}`, label: t.label })) },
         { id: 'settings', label: 'Configurações…' },
+        { id: 'shortcuts', label: 'Atalhos de teclado (?)' },
         { separator: true },
         { id: 'about', label: `Sobre o ${APP_NAME}` },
       ],
@@ -613,6 +616,7 @@ export class App {
         else if (id === 'quick-actions') this._openQuickActions({ showAll: true });
         else if (id.startsWith('tutorial:')) this._startTutorial(id.slice('tutorial:'.length));
         else if (id === 'settings') this.settingsDialog.open();
+        else if (id === 'shortcuts') this.shortcutsDialog.open();
         else if (id === 'about') this._showAbout();
       },
     });
@@ -625,7 +629,12 @@ export class App {
 
   /** ☰ → Sobre o Algo-Lab: nome e versão (ver version.js). */
   _showAbout() {
-    this.dialog.alert(`Versão ${APP_VERSION} — visualizador de estruturas de dados e algoritmos.`, {
+    const texto = [
+      `Versão ${APP_VERSION} (beta) — visualizador de estruturas de dados e algoritmos.`,
+      'Desenvolvido por Jeferson Silva, com apoio de IA, como apoio didático para a gravação de cursos sobre algoritmos e estruturas de dados.',
+      'Aviso: a ferramenta está em beta. Ela não pretende ser completa nem permitir a visualização de todos os tipos de algoritmos e estruturas de dados, e também não replica 100% o comportamento da linguagem Python.',
+    ].join('\n\n');
+    this.dialog.alert(texto, {
       title: `Sobre o ${APP_NAME}`,
       okLabel: 'Fechar',
     });
@@ -669,7 +678,7 @@ export class App {
   _onKeyDown(e) {
     // janela de Configurações é modal: ela mesma trata Esc/Tab, e nenhum
     // atalho do app vale por trás dela
-    if (this.settingsDialog.isOpen) return;
+    if (this.settingsDialog.isOpen || this.shortcutsDialog.isOpen) return;
     // roda de cores aberta: qualquer outra tecla (ex.: Ctrl+Shift+Enter) cancela
     if (this.colorWheel.isOpen && e.key !== 'Control' && e.key !== 'Shift') this._closeColorWheel(false);
     // Esc no meio do Shift + arraste de ligação (botão ainda pressionado)
@@ -815,6 +824,12 @@ export class App {
       this._applySetting('consoleFloating', !this.microConsole.floating);
       // trocar a posição de um console oculto não teria efeito visível
       if (this.microConsole.userHidden) this._applySetting('consoleHidden', false);
+      return;
+    }
+    // ? — lista de atalhos de teclado (só fora de campos de texto, ver isTyping)
+    if (e.key === '?' && !e.ctrlKey && !e.metaKey && !this.dialog.isOpen) {
+      e.preventDefault();
+      this.shortcutsDialog.open();
       return;
     }
     if (e.ctrlKey || e.metaKey || e.altKey) return;

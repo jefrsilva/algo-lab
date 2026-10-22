@@ -36,6 +36,7 @@ const COMO_COMECAR = [
     body: [
       'Aqui fica o código. No modo Sandbox, Ctrl+Enter executa só a linha do cursor — e o canvas muda na hora. Experimente digitar:',
       { code: 'p = Node(10)\nq = Node(20)\np.next = q' },
+      'Atenção: a ferramenta entende apenas a linguagem Python (um subconjunto dela). Outras linguagens não funcionam.',
       'Código e canvas estão ligados: o que o código cria aparece no canvas com o mesmo nome, e clicar num nome no código seleciona o elemento correspondente no canvas.',
     ],
   },
@@ -54,6 +55,7 @@ const COMO_COMECAR = [
     placement: 'right',
     body: [
       'É só isso para começar. Para rever este tutorial quando quiser, abra o menu ☰ → Tutorial → Como começar. Lá também há cenários guiados com algoritmos simples.',
+      'Para ver todos os atalhos de teclado, aperte ? (com o foco fora do código) ou abra o menu ☰ → Atalhos de teclado.',
     ],
   },
 ];

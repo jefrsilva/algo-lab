@@ -522,17 +522,27 @@ select {
   right: 14px;
 }
 
-/* logo no canto inferior esquerdo do canvas — mesmo respiro da barra de
-   modos (bottom: 18px); só decorativa, não bloqueia cliques no canvas */
+/* logo (assets/algo-lab.svg) no canto inferior esquerdo do canvas, sempre
+   branca (o CSS sobrepõe os fills originais); só decorativa, não bloqueia
+   cliques no canvas */
 .canvas-logo {
   position: absolute;
-  left: 18px;
-  bottom: 18px;
+  left: 28px;
+  bottom: 28px;
   z-index: 15;
-  width: 52px;
-  height: 64px;
-  color: var(--logo);
+  height: 30px;
+  color: #fff;
   pointer-events: none;
+}
+
+.canvas-logo svg {
+  display: block;
+  width: auto;
+  height: 100%;
+}
+
+.canvas-logo svg path {
+  fill: currentColor;
 }
 
 .canvas-icon-btn {
@@ -781,6 +791,7 @@ select {
   font-size: 0.95rem;
   line-height: 1.5;
   color: var(--text-1);
+  white-space: pre-line; /* "\n" na mensagem vira quebra de linha (parágrafos) */
 }
 
 .app-dialog-actions {
@@ -854,6 +865,12 @@ select {
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 1px 5px;
+}
+
+/* lista de atalhos (src/ui/ShortcutsDialog.js): a tecla não quebra de linha */
+.shortcuts-keys {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .settings-hint {

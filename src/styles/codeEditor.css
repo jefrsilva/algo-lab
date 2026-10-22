@@ -852,6 +852,13 @@
   z-index: 2;
 }
 
+/* dica do editor vazio: o texto do textarea é transparente, então a cor da
+   dica precisa ser dada aqui */
+.code-editor-textarea::placeholder {
+  color: var(--text-2);
+  opacity: 1;
+}
+
 /* paleta de sintaxe própria — evita azul (seleção) e âmbar (execução),
    que no editor ficam reservados pro nome selecionado e pra linha do passo. */
 .tok-keyword {

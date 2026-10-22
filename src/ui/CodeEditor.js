@@ -294,6 +294,8 @@ export class CodeEditor {
     textarea.autocapitalize = 'off';
     textarea.autocomplete = 'off';
     textarea.wrap = 'off';
+    // dica do editor vazio (some ao digitar)
+    textarea.placeholder = '# A ferramenta aceita apenas código Python.\n# Escreva seu programa aqui.';
 
     body.appendChild(lineBg);
     body.appendChild(lineMark);

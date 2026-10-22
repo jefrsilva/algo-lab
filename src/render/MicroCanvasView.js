@@ -1,7 +1,9 @@
 import { svgEl } from './svgUtils.js';
+import { numText } from '../core/numText.js';
 import { ARRAY_CELL_H } from '../core/micro/MicroModel.js';
 import { labelLayout, LABEL_PAD_X, LABEL_CODE_PAD } from './labelMarkdown.js';
 import { measureText, textMeasureGeneration } from './textMeasure.js';
+import { arrowHeadPoints, rulerTicks } from '../app/microLines.js';
 
 // ---- geometria dos nós de estrutura (caixa prev | data | next) ----
 export const STRUCT_W = 138;
@@ -458,7 +460,7 @@ export function matrixCellRect(node, row, col) {
 /** Texto de um valor de célula (array/matriz/variável): booleano no estilo
  * Python ("True"/"False"), o resto como está. */
 function cellText(v) {
-  return typeof v === 'boolean' ? (v ? 'True' : 'False') : String(v);
+  return typeof v === 'boolean' ? (v ? 'True' : 'False') : numText(v);
 }
 
 /** Layout puro das células de um dict, conforme orientação — mesma ideia de
@@ -1410,8 +1412,11 @@ export class MicroCanvasView {
     this.linkSourceLayer = svgEl('g', { class: 'link-source-layer' });
     this.pointersLayer = svgEl('g', { class: 'pointers-layer' });
     this.variablesLayer = svgEl('g', { class: 'variables-layer' });
+    // setas e réguas (anotações): por cima dos elementos do modelo, abaixo dos textos
+    this.linesLayer = svgEl('g', { class: 'lines-layer' });
     this.labelsLayer = svgEl('g', { class: 'labels-layer' });
     this.areaHandlesLayer = svgEl('g', { class: 'area-handles-layer' });
+    this.lineHandlesLayer = svgEl('g', { class: 'line-handles-layer' });
 
     this.viewport.appendChild(this.gridRect);
     this.viewport.appendChild(this.areasLayer);
@@ -1425,8 +1430,10 @@ export class MicroCanvasView {
     this.viewport.appendChild(this.linkSourceLayer);
     this.viewport.appendChild(this.pointersLayer);
     this.viewport.appendChild(this.variablesLayer);
+    this.viewport.appendChild(this.linesLayer);
     this.viewport.appendChild(this.labelsLayer);
     this.viewport.appendChild(this.areaHandlesLayer);
+    this.viewport.appendChild(this.lineHandlesLayer);
     // rótulo da operação da ligação em andamento, por cima de tudo (ver
     // `_renderLinkHint`)
     this.linkHintLayer = svgEl('g', { class: 'link-hint-layer' });
@@ -1443,8 +1450,11 @@ export class MicroCanvasView {
     this.variableEls = new Map();
     this.labelEls = new Map();
     this.areaEls = new Map();
+    this.lineEls = new Map();
     this.chartEls = new Map();
     this.edgeEls = new Map();
+    this.edgeHitEls = new Map();
+    this.edgeMarkerIds = new Map(); // cor CSS -> id do <marker> da ponta
     this._lastSelectedId = null;
   }
 
@@ -1521,6 +1531,9 @@ export class MicroCanvasView {
    * @param labels [{id,x,y,text,color,fontSize,selected,dragging}] labels de texto soltas (modo "Texto")
    * @param selectionRect {x0,y0,x1,y1}|null retângulo de seleção em área em andamento (modo Selecionar)
    * @param areas [{id,x,y,width,height,color,selected,dragging}] áreas hachuradas (modo "Área")
+   * @param lines [{id,kind:'arrow'|'ruler',x1,y1,x2,y2,color,selected,dragging}] setas e réguas
+   *   (ferramentas "Seta" e "Régua"), ver `_renderLines`
+   * @param lineHandles {x1,y1,x2,y2,size}|null extremidades arrastáveis da seta/régua selecionada
    * @param areaHandles {x,y,width,height,size}|null retângulo da área (ou do gráfico) com
    *   alças de redimensionamento visíveis (só quando exatamente uma área/gráfico está selecionado)
    * @param charts [{id,x,y,width,height,xLabel,yLabel,functions,selected,dragging,editingAxis}]
@@ -1543,6 +1556,8 @@ export class MicroCanvasView {
     labels = [],
     areas = [],
     areaHandles = null,
+    lines = [],
+    lineHandles = null,
     charts = [],
     edges,
     previewEdge = null,
@@ -1562,6 +1577,8 @@ export class MicroCanvasView {
     this._renderAreas(areas);
     this._renderCharts(charts);
     this._renderAreaHandles(areaHandles);
+    this._renderLines(lines);
+    this._renderLineHandles(lineHandles);
     this._renderArrays(arrays, edges);
     this._renderDicts(dicts);
     this._renderMatrices(matrices);
@@ -1778,6 +1795,83 @@ export class MicroCanvasView {
       });
       el.querySelector('.area-fill').style.fill = node.color;
       el.querySelector('.area-border').style.stroke = node.color;
+    });
+  }
+
+  /** Setas e réguas — linha de 2px na cor do elemento; a seta ganha uma ponta
+   * triangular no fim, a régua uma travessa perpendicular em cada ponta.
+   * Selecionada, ganha um halo largo na cor de seleção atrás. Os filhos
+   * são criados uma vez e depois só têm os atributos atualizados (ver
+   * `_renderAreas`). */
+  _renderLines(lines) {
+    const ids = new Set(lines.map((n) => n.id));
+    for (const [id, el] of this.lineEls) {
+      if (!ids.has(id)) {
+        el.remove();
+        this.lineEls.delete(id);
+      }
+    }
+    lines.forEach((node) => {
+      let el = this.lineEls.get(node.id);
+      if (!el || el.dataset.kind !== node.kind) {
+        el?.remove();
+        el = svgEl('g', { class: `line-node line-${node.kind}`, 'data-id': node.id, 'data-kind': node.kind });
+        el.appendChild(svgEl('line', { class: 'line-halo' }));
+        el.appendChild(svgEl('line', { class: 'line-main' }));
+        if (node.kind === 'arrow') el.appendChild(svgEl('polygon', { class: 'line-head' }));
+        else {
+          el.appendChild(svgEl('line', { class: 'line-tick' }));
+          el.appendChild(svgEl('line', { class: 'line-tick' }));
+        }
+        this.linesLayer.appendChild(el);
+        this.lineEls.set(node.id, el);
+      }
+      el.classList.toggle('selected', !!node.selected);
+      el.classList.toggle('dragging', !!node.dragging);
+      const setLine = (l, x1, y1, x2, y2) => {
+        l.setAttribute('x1', x1);
+        l.setAttribute('y1', y1);
+        l.setAttribute('x2', x2);
+        l.setAttribute('y2', y2);
+      };
+      let { x1, y1, x2, y2 } = node;
+      if (node.kind === 'arrow') {
+        // a haste termina na base da ponta, pra não aparecer na frente dela
+        const head = arrowHeadPoints(x1, y1, x2, y2);
+        const len = Math.hypot(x2 - x1, y2 - y1);
+        const back = Math.min(10, len);
+        const ux = len ? (x2 - x1) / len : 0;
+        const uy = len ? (y2 - y1) / len : 0;
+        setLine(el.querySelector('.line-main'), x1, y1, x2 - ux * back, y2 - uy * back);
+        const poly = el.querySelector('.line-head');
+        poly.setAttribute('points', head.map((p) => `${p.x},${p.y}`).join(' '));
+        poly.style.fill = node.color;
+        poly.style.stroke = node.color;
+      } else {
+        setLine(el.querySelector('.line-main'), x1, y1, x2, y2);
+        const ticks = rulerTicks(x1, y1, x2, y2);
+        el.querySelectorAll('.line-tick').forEach((t, i) => {
+          setLine(t, ticks[i].x1, ticks[i].y1, ticks[i].x2, ticks[i].y2);
+          t.style.stroke = node.color;
+        });
+      }
+      setLine(el.querySelector('.line-halo'), x1, y1, x2, y2);
+      el.querySelector('.line-main').style.stroke = node.color;
+    });
+  }
+
+  /** Extremidades arrastáveis da seta/régua selecionada (por cima de tudo,
+   * como as alças das áreas). */
+  _renderLineHandles(h) {
+    this.lineHandlesLayer.innerHTML = '';
+    if (!h) return;
+    [
+      ['a', h.x1, h.y1],
+      ['b', h.x2, h.y2],
+    ].forEach(([end, cx, cy]) => {
+      this.lineHandlesLayer.appendChild(
+        svgEl('circle', { class: 'line-handle', 'data-end': end, cx, cy, r: h.size / 2, 'stroke-width': h.size * 0.18 }),
+      );
     });
   }
 
@@ -2057,6 +2151,7 @@ export class MicroCanvasView {
       if (!ids.has(id)) {
         el.remove();
         this.edgeEls.delete(id);
+        this._removeEdgeHit(id);
       }
     }
 
@@ -2186,6 +2281,7 @@ export class MicroCanvasView {
             el.remove();
             this.edgeEls.delete(r.edge.id);
           }
+          this._removeEdgeHit(r.edge.id);
         });
         resolved = resolved.filter((r) => !merged.has(r));
       }
@@ -2239,16 +2335,66 @@ export class MicroCanvasView {
         cx = curveOffset ? mx + perp.x * curveOffset : mx;
         cy = curveOffset ? my + perp.y * curveOffset : my;
       }
-      el.setAttribute('d', `M ${edge.x1} ${edge.y1} Q ${cx} ${cy} ${end.x} ${end.y}`);
+      const d = `M ${edge.x1} ${edge.y1} Q ${cx} ${cy} ${end.x} ${end.y}`;
+      el.setAttribute('d', d);
       el.classList.toggle('selected', !!edge.selected);
       el.classList.toggle('micro-dimmed', !!edge.dimmed);
-      const markerUrl = edge.selected ? 'url(#micro-arrowhead-selected)' : 'url(#micro-arrowhead)';
+      // cor manual (Alt+1…Alt+9): traço e ponta na cor escolhida, também
+      // selecionada (o destaque fica por conta da largura e do halo)
+      el.classList.toggle('micro-edge-colored', !!edge.color);
+      if (edge.color) el.style.stroke = edge.color;
+      else el.style.removeProperty('stroke');
+      const markerUrl = edge.color
+        ? `url(#${this._edgeMarkerFor(edge.color)})`
+        : edge.selected
+          ? 'url(#micro-arrowhead-selected)'
+          : 'url(#micro-arrowhead)';
       el.setAttribute('marker-end', markerUrl);
+      // alvo de clique invisível e mais largo que o traço — a aresta é
+      // selecionável (e pintável), nunca arrastável nem removível
+      let hit = this.edgeHitEls.get(edge.id);
+      if (!hit) {
+        hit = svgEl('path', { class: 'micro-edge-hit', 'data-edge-id': edge.id });
+        this.edgesLayer.insertBefore(hit, el); // halo por baixo do traço
+        this.edgeHitEls.set(edge.id, hit);
+      }
+      hit.setAttribute('d', d);
+      hit.classList.toggle('picked', !!edge.picked);
+      hit.classList.toggle('micro-dimmed', !!edge.dimmed);
       // ligação bidirecional fundida em uma só seta (ver passo 1.5, modo
       // simplificado) — ponta nas duas pontas do traço, não só na de chegada.
       if (bidirectional) el.setAttribute('marker-start', markerUrl);
       else el.removeAttribute('marker-start');
     });
+  }
+
+  _removeEdgeHit(id) {
+    const hit = this.edgeHitEls.get(id);
+    if (!hit) return;
+    hit.remove();
+    this.edgeHitEls.delete(id);
+  }
+
+  /** Id do <marker> da ponta de seta na cor `color` (criado na primeira vez). */
+  _edgeMarkerFor(color) {
+    let id = this.edgeMarkerIds.get(color);
+    if (!id) {
+      id = `micro-arrowhead-c${this.edgeMarkerIds.size}`;
+      const marker = svgEl('marker', {
+        id,
+        viewBox: '0 0 10 10',
+        refX: 9,
+        refY: 5,
+        markerWidth: ARROW_SIZE,
+        markerHeight: ARROW_SIZE,
+        markerUnits: 'userSpaceOnUse',
+        orient: 'auto-start-reverse',
+      });
+      marker.appendChild(svgEl('path', { d: 'M 0 0 L 10 5 L 0 10 z', fill: color }));
+      this.defs.appendChild(marker);
+      this.edgeMarkerIds.set(color, id);
+    }
+    return id;
   }
 
   /** `simplified` (Ctrl+A global, ver App#_toggleMicroSimplifiedNodes) troca a
@@ -2445,7 +2591,7 @@ export class MicroCanvasView {
       el.classList.toggle('linked', !!node.linked);
       el.classList.toggle('dragging', !!node.dragging);
       const dataLabel = el.querySelector('.struct-data-label');
-      const text = String(node.data);
+      const text = numText(node.data);
       if (dataLabel.textContent !== text) dataLabel.textContent = text;
       // modo simplificado não tem pino desenhado (ver criação acima) — a
       // linha/seta em si (ver App.js, _renderEdges) já sai direto da borda
@@ -2594,7 +2740,7 @@ export class MicroCanvasView {
       // "True"/"False" (estilo Python), não o "true"/"false" cru do JS —
       // mesma grafia que o resto da ferramenta usa pra booleano (ver
       // evaluator.js#exprLabel).
-      const text = typeof node.value === 'boolean' ? (node.value ? 'True' : 'False') : String(node.value);
+      const text = typeof node.value === 'boolean' ? (node.value ? 'True' : 'False') : numText(node.value);
       if (valueLabel.textContent !== text) valueLabel.textContent = text;
     });
   }
@@ -2640,6 +2786,16 @@ export class MicroCanvasView {
       el.querySelector(':scope > .array-cell-outlines')?.remove();
       const outlines = host.querySelector(':scope > .array-cell-outlines');
       if (outlines) el.appendChild(outlines.cloneNode(true));
+      // célula destacada dentro de uma linha: a linha de baixo (e a célula
+      // vizinha) cobririam a borda do contorno, então ele também sobe pra cá
+      arrays.forEach((row) => {
+        if (row.gridRow?.hostId !== node.id) return;
+        const rowOutlines = this.arrayEls.get(row.id)?.querySelector(':scope > .array-cell-outlines');
+        if (!rowOutlines) return;
+        const copy = rowOutlines.cloneNode(true);
+        copy.setAttribute('transform', `translate(${row.x - node.x}, ${row.y - node.y})`);
+        el.appendChild(copy);
+      });
     });
   }
 
@@ -2680,7 +2836,29 @@ export class MicroCanvasView {
       this._renderWindowBrackets(el, node, pointerEdges);
       // linha embutida numa grade vai pra cima da moldura (que pode ter sido
       // criada depois dela, ex: "list(d.values())")
-      if (node.gridRow) this.arraysLayer.appendChild(el);
+      // só move quando algo que não é linha vem depois: reinserir o elemento
+      // a cada render (mesmo já no lugar) o desanexa durante o clique e o
+      // navegador deixa de disparar click/dblclick nele (a edição por duplo
+      // clique da célula não abria)
+      const next = el.nextElementSibling;
+      if (node.gridRow && next && !next.classList.contains('grid-row-node')) this.arraysLayer.appendChild(el);
+    });
+    // grade: o índice da linha e o da coluna de cada célula destacada nas
+    // linhas acendem na cor de "alvo", como na matriz antiga (`_renderMatrices`)
+    arrays.forEach((host) => {
+      if (!host.gridGeom) return;
+      const hostEl = this.arrayEls.get(host.id);
+      if (!hostEl) return;
+      const activeRows = new Set();
+      const activeCols = new Set();
+      host.cells.forEach((rowId, r) => {
+        const row = arrays.find((a) => a.id === rowId);
+        if (row?.gridRow?.hostId !== host.id || !row.targetCellIndexes?.size) return;
+        activeRows.add(String(r));
+        row.targetCellIndexes.forEach((c) => activeCols.add(String(c)));
+      });
+      hostEl.querySelectorAll('.matrix-row-label').forEach((l) => l.classList.toggle('matrix-index-active', activeRows.has(l.dataset.row)));
+      hostEl.querySelectorAll('.matrix-col-label').forEach((l) => l.classList.toggle('matrix-index-active', activeCols.has(l.dataset.col)));
     });
   }
 
@@ -2782,7 +2960,7 @@ export class MicroCanvasView {
     const layout = arrayLayout(node);
     // set (ver MicroModel#addArray, `isSet`): mesma geometria de array (hit-
     // tests/pinos não mudam), mas sem índices — elemento de set não tem
-    // posição — com caixa mais arredondada, células em "pílula" e o rótulo
+    // posição — com caixa mais arredondada, células retangulares (em "pílula" só no set de nós) e o rótulo
     // "set" na faixa onde ficariam os índices (só na horizontal, a vertical
     // não tem largura pra isso).
     // linha embutida numa grade: só a fileira de células, sem puxador nem
@@ -2812,6 +2990,9 @@ export class MicroCanvasView {
 
     layout.cells.forEach((c, i) => {
       const inset = node.isSet ? 3 : 0;
+      // set de valores (números, textos, bools): caixa retangular; só o set de
+      // nós mantém a "pílula" (os nós são círculos)
+      const pill = node.isSet && node.kind !== 'value';
       el.appendChild(
         svgEl('rect', {
           class: `array-cell ${node.kind === 'value' ? 'array-cell-value' : 'array-cell-ref'}`,
@@ -2819,8 +3000,8 @@ export class MicroCanvasView {
           y: c.y + inset,
           width: c.w - 2 * inset,
           height: c.h - 2 * inset,
-          rx: node.isSet ? (c.h - 2 * inset) / 2 : 4,
-          ry: node.isSet ? (c.h - 2 * inset) / 2 : 4,
+          rx: pill ? (c.h - 2 * inset) / 2 : 4,
+          ry: pill ? (c.h - 2 * inset) / 2 : 4,
         }),
       );
       if (!node.isSet && !node.gridRow) {
@@ -2957,7 +3138,7 @@ export class MicroCanvasView {
         });
         // "True"/"False" estilo Python, mesma grafia usada no resto da
         // ferramenta pra booleano (ver `_renderVariables`).
-        val.textContent = typeof cellModel.value === 'boolean' ? (cellModel.value ? 'True' : 'False') : String(cellModel.value);
+        val.textContent = typeof cellModel.value === 'boolean' ? (cellModel.value ? 'True' : 'False') : numText(cellModel.value);
         el.appendChild(val);
       } else {
         if (!cellModel.value) {

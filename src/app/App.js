@@ -1,4 +1,5 @@
 import { nextId } from '../core/id.js';
+import { jsonNumReplacer, jsonNumReviver } from '../core/numText.js';
 import { MicroModel, MAX_ARRAY_SIZE } from '../core/micro/MicroModel.js';
 
 import {
@@ -60,6 +61,7 @@ import { MicroRuntimeAdapter } from './MicroRuntimeAdapter.js';
 import { microLayoutKey } from './microLayoutKey.js';
 import { MicroProgramRunner } from './MicroProgramRunner.js';
 import { alignRects, distributeRects } from './microAlign.js';
+import { frameScope } from './frameScope.js';
 import { TREE_GAPS, treeLayout } from './microTreeLayout.js';
 
 import { PlaybackControls } from '../ui/PlaybackControls.js';
@@ -73,6 +75,8 @@ import { CodeEditor } from '../ui/CodeEditor.js';
 import { CallTree } from '../ui/CallTree.js';
 import { CanvasTitle } from '../ui/CanvasTitle.js';
 import { LabelSettingsPopup } from '../ui/LabelSettingsPopup.js';
+import { VisibilityPopup } from '../ui/VisibilityPopup.js';
+import { collectIdentifiers, identifierKey } from './microVisibility.js';
 import { ChartSettingsPopup } from '../ui/ChartSettingsPopup.js';
 import { AppMenu } from '../ui/AppMenu.js';
 import { Tutorial } from '../ui/Tutorial.js';
@@ -84,13 +88,18 @@ import { SettingsDialog } from '../ui/SettingsDialog.js';
 import { applyTheme } from './theme.js';
 import { onTextMeasureChange } from '../render/textMeasure.js';
 import { getSetting, setSetting, SETTINGS_DEFAULTS } from './settings.js';
+import { defaultLine, distToSegment, lineBounds, lineEnds, lineFromDrag, moveLineEnd } from './microLines.js';
 
 /** Modos da barra de ferramentas inferior do canvas (ver
  * App#_buildLayout/_setMicroMode). */
 const MICRO_MODES = [
   { id: 'select', label: 'Selecionar / Mover', shortcut: '1 / V' },
   { id: 'text', label: 'Texto (cor: Alt+1…Alt+0)', shortcut: '2 / T' },
-  { id: 'area', label: 'Área hachurada (cor: Alt+1…Alt+0, grid: G)', shortcut: '3 / R' },
+  // area, arrow e ruler formam UM botão da barra (`group`): clicar e segurar
+  // abre a escolha entre eles (ver ModeToolbar)
+  { id: 'area', group: 'draw', label: 'Área hachurada (cor: Alt+1…Alt+0, grid: G)', shortcut: '3 / R' },
+  { id: 'arrow', group: 'draw', label: 'Seta (Shift: horizontal/vertical; cor: Alt+1…Alt+0)', shortcut: '6 / A' },
+  { id: 'ruler', group: 'draw', label: 'Régua (Shift: horizontal/vertical; cor: Alt+1…Alt+0)', shortcut: '7 / M' },
   { id: 'chart', label: 'Gráfico Big-O (botão direito: funções exibidas; mouse sobre ele: lê f(n))', shortcut: '4 / B' },
   {
     id: 'link',
@@ -119,6 +128,10 @@ const AREA_COLORS = [
 const AREA_DEFAULT_CELLS = { w: 6, h: 4 };
 /** Lado das alças de redimensionamento, em px de TELA (não muda com o zoom). */
 const AREA_HANDLE_PX = 10;
+/** Setas e réguas: folga de pega em volta da linha e diâmetro das extremidades
+ * arrastáveis, em px de TELA. */
+const LINE_HIT_PX = 7;
+const LINE_HANDLE_PX = 12;
 
 /** Gráfico de complexidade (modo "Gráfico", ver `_createMicroChart`): tamanho
  * de um criado com clique simples, e os títulos com que nasce — sem nenhuma
@@ -165,7 +178,7 @@ export class App {
     // o app abre com canvas e código vazios
     this.micro = new MicroModel();
     this.microViewport = { tx: 0, ty: 0, scale: 1 };
-    this.microMode = 'select'; // 'select' | 'text' | 'area' | 'chart' | 'link' — modos da barra inferior (ver MICRO_MODES)
+    this.microMode = 'select'; // 'select' | 'text' | 'area' | 'arrow' | 'ruler' | 'chart' | 'link' — modos da barra inferior (ver MICRO_MODES)
     // preferências de tela (ver settings.js / _applySetting) — salvas no
     // navegador, editáveis pela janela de Configurações e pelos atalhos
     this.codePanelHidden = getSetting('codePanelHidden'); // Ctrl+H, ver _toggleCodePanel
@@ -183,6 +196,7 @@ export class App {
     this.microAreas = new Map(); // id -> {id,x,y,width,height,color}
     // gráficos de complexidade Big-O (modo "Gráfico") — mesmo status das
     // áreas: só canvas, fora do MicroModel e da reprodução do modo Executar.
+    this.microLines = new Map(); // id -> {id,kind:'arrow'|'ruler',x,y,dx,dy,color} — início em (x,y), fim em (x+dx,y+dy), ver microLines.js
     this.microCharts = new Map(); // id -> {id,x,y,width,height,xLabel,yLabel,functions:string[],nMax,yMode:'manual'|'auto',yMax}
     this._microEditingChartAxis = null; // {id, axis:'x'|'y'} título de eixo em edição in place
     // cor manual dos elementos do modelo (Alt+1…Alt+0 com o elemento
@@ -192,6 +206,10 @@ export class App {
     // cada passo (MicroProgramRunner#_restore), mas preserva os ids — então
     // um mapa por id sobrevive a avançar/voltar passos sem ser desfeito.
     this.microColors = new Map(); // id -> cor CSS
+    // cor manual por id de aresta/seta (`<id do dono>-next`, `-cell3`…): ids
+    // de aresta também entram na seleção (só pintar — nunca mover/remover)
+    this.microEdgeColors = new Map();
+    this._microEdgeIds = new Set(); // arestas desenhadas no último render
     // janelas deslizantes ("new sliding window", ver `_quickNewSlidingWindow`):
     // pares de cursores agrupados — selecionar um seleciona o outro, e as
     // células do array entre os dois acendem. Também fora do MicroModel, e
@@ -216,6 +234,10 @@ export class App {
     // apagar um elemento e rodar a linha de novo (ou rodar o programa inteiro
     // de novo) reproduzir a MESMA posição que o usuário já tinha ajustado.
     this.microLayout = new Map(); // key -> {x,y}
+    // preferências visuais de listas/sets/deques por NOME (mesma ideia do
+    // `microLayout`): key -> {orientation, nodeCircles, highlightNodes, color}. Sobrevivem a
+    // rodar a Simulação de novo, quando os ids mudam.
+    this.microArrayPrefs = new Map();
     // ids destacados por uma instrução do editor de código (leituras via
     // cursor de array + a escrita final de um passo) — além, não em vez, de
     // `microSelectedId` (que continua sendo o clique manual do usuário).
@@ -342,14 +364,20 @@ export class App {
     codeEditorPanel.appendChild(codeBottomReserved);
     this.codeBottomReserved = codeBottomReserved;
     this._setupCodeBottomResizer(codeEditorPanel, codeBottomResizer);
+    const callTreeResizer = document.createElement('div');
+    callTreeResizer.className = 'split-resizer call-tree-resizer';
+    callTreeResizer.title = 'Arraste para redimensionar a pilha de chamadas (duplo clique: tamanho padrão)';
+    callTreeContainer.style.setProperty('--call-tree-width', `${getSetting('callTreeWidth')}px`);
     const splitResizer = document.createElement('div');
     splitResizer.className = 'split-resizer';
-    splitResizer.title = 'Arraste para redimensionar';
+    splitResizer.title = 'Arraste para redimensionar o código (duplo clique: tamanho padrão)';
     microSplit.appendChild(microMain);
+    microSplit.appendChild(callTreeResizer);
     microSplit.appendChild(callTreeContainer);
     microSplit.appendChild(splitResizer);
     microSplit.appendChild(codeEditorPanel);
-    this._setupSplitResizer(microSplit, microMain, splitResizer);
+    this._setupSplitResizer(microSplit, codeEditorPanel, splitResizer);
+    this._setupCallTreeResizer(callTreeContainer, callTreeResizer);
     canvasArea.appendChild(microSplit);
 
     main.appendChild(canvasArea);
@@ -365,6 +393,8 @@ export class App {
     this.callTreeContainer = callTreeContainer;
     this.callTree = new CallTree(callTreeContainer, {
       onSelectFrame: (frameId) => this._onSelectCallFrame(frameId),
+      onDimChange: (value) => this._applySetting('dimOutOfScope', value),
+      getScope: (frameId) => frameScope(this.micro, frameId),
       onModeChange: () => {
         this._syncCallTreeButton();
         this.settingsDialog?.refresh();
@@ -377,6 +407,7 @@ export class App {
     this.microDictSettingsPopup = new ArraySettingsPopup(microContainer);
     this.microMatrixSettingsPopup = new ArraySettingsPopup(microContainer);
     this.microLabelSettingsPopup = new LabelSettingsPopup(microContainer);
+    this.visibilityPopup = new VisibilityPopup(document.body);
     // labels com markdown medem o texto nas fontes do app (textMeasure.js):
     // quando uma fonte termina de carregar as medidas mudam — redesenha
     onTextMeasureChange(() => this._renderMicroOnly());
@@ -387,8 +418,14 @@ export class App {
       createPosition: (kind, size, layoutKey, near) => this._microCreatePosition(kind, size, layoutKey, near),
       onChange: () => this._renderMicroOnly(),
       onStructCreated: (node) => this._microTidyOwned(node.id),
-      onArrayCreated: (node, opts) => this._createArrayLabelPointer(node, opts),
-      onDictCreated: (node, opts) => this._createDictLabelPointer(node, opts),
+      onArrayCreated: (node, opts) => {
+        this._applyRememberedArrayPrefs(node);
+        return this._createArrayLabelPointer(node, opts);
+      },
+      onDictCreated: (node, opts) => {
+        this._applyRememberedDictPrefs(node);
+        return this._createDictLabelPointer(node, opts);
+      },
       onMatrixCreated: (node, opts) => this._createMatrixLabelPointer(node, opts),
     });
     this.microRunBarContainer = microRunBarContainer;
@@ -451,6 +488,20 @@ export class App {
       onClick: () => this.callTree.toggleHidden(),
     });
     this._syncCallTreeButton();
+    // esquecer posições e quadros-chave lembrados (ver _resetMicroVisualState)
+    this.resetLayoutButton = this.codeEditor.addToolbarButton({
+      className: 'reset-layout-btn',
+      title: 'Resetar o estado visual: esquece posições e passos de criação lembrados dos elementos',
+      html: '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 8a5.5 5.5 0 1 0 1.8-4.1"/><path d="M2.5 2.5v3h3"/></svg>',
+      onClick: () => this._resetMicroVisualState(),
+    });
+    // gerenciar a visibilidade de ponteiros/variáveis (ver VisibilityPopup)
+    this.visibilityButton = this.codeEditor.addToolbarButton({
+      className: 'visibility-open-btn',
+      title: 'Visibilidade de ponteiros e variáveis',
+      html: '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 8s2.3-4.5 6.5-4.5S14.5 8 14.5 8 12.2 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg>',
+      onClick: () => this._toggleVisibilityPopup(),
+    });
 
     // um gesto (clique/arrasto) começando esconde a leitura do gráfico
     this.microView.svg.addEventListener('pointerdown', () => this._setMicroChartReadout(null));
@@ -748,6 +799,8 @@ export class App {
     else if (key === '3' || key === 'r') this._setMicroMode('area');
     else if (key === '4' || key === 'b') this._setMicroMode('chart');
     else if (key === '5' || key === 'l') this._setMicroMode('link');
+    else if (key === '6' || key === 'a') this._setMicroMode('arrow');
+    else if (key === '7' || key === 'm') this._setMicroMode('ruler');
     else if (key === 'g') this._toggleMicroAreaSnap();
     else if (key === 'n') this._toggleMicroFullNames();
     else if (key === 'c') this._applySetting('consoleHidden', !this.microConsole.userHidden);
@@ -821,6 +874,11 @@ export class App {
       case 'callTreeMode':
         this.callTree.setMode(value); // grava sozinho (CallTree#setMode)
         break;
+      case 'dimOutOfScope':
+        setSetting(key, value);
+        this.callTree.render(this.callTree._last);
+        this._renderMicroOnly();
+        break;
       case 'playbackSpeed':
         this.microRunner.setSpeed(setSetting(key, value));
         this._renderMicroRunBar();
@@ -872,10 +930,19 @@ export class App {
         area.color = areaColor;
         hadArea = true;
       }
+      const line = this.microLines.get(id);
+      if (line) {
+        line.color = areaColor;
+        hadArea = true;
+      }
       const label = this.microLabels.get(id);
       if (label) {
         label.color = textColor;
         hadLabel = true;
+      }
+      if (this._isMicroEdgeId(id)) {
+        if (elementColor) this.microEdgeColors.set(id, elementColor);
+        else this.microEdgeColors.delete(id);
       }
       if (this._isMicroModelElement(id)) {
         // cursor de uma janela deslizante: a cor é da janela (os dois
@@ -884,12 +951,22 @@ export class App {
         if (win) win.color = elementColor;
         else if (elementColor) this.microColors.set(id, elementColor);
         else this.microColors.delete(id);
+        const arr = this.micro.arrays.get(id);
+        if (arr) this._rememberArrayPrefs(arr);
+        const dict = this.micro.dicts.get(id);
+        if (dict) this._rememberDictPrefs(dict);
       }
     });
     const noSelection = this.microMode === 'select' && ids.length === 0;
-    if (this.microMode === 'area' || hadArea || noSelection) this.microAreaColor = areaColor;
+    if (['area', 'arrow', 'ruler'].includes(this.microMode) || hadArea || noSelection) this.microAreaColor = areaColor;
     if (this.microMode === 'text' || hadLabel || noSelection) this.microLabelColor = textColor;
     this._renderMicroOnly();
+  }
+
+  /** `id` é de uma aresta/seta desenhada (selecionável e pintável, mas não
+   * movível nem removível)? */
+  _isMicroEdgeId(id) {
+    return this._microEdgeIds.has(id);
   }
 
   /** `id` é de um elemento do MicroModel (os que aceitam cor manual)? */
@@ -909,7 +986,10 @@ export class App {
     const colors = new Map(this.microColors);
     // lista/set/deque de nós selecionada com "Destacar nós": os nós dela
     // ganham a cor da coleção (sem cor própria, só o destaque padrão)
-    hosts.forEach((a) => {
+    // os "Selecionado" pintam por último: selecionar é uma ação intencional,
+    // então sua cor se sobrepõe à de uma coleção que destaca "Sempre"
+    const byPriority = [...hosts].sort((a, b) => (b.highlightNodes === 'always') - (a.highlightNodes === 'always'));
+    byPriority.forEach((a) => {
       const color = this.microColors.get(a.id);
       if (color) a.cells.forEach((id) => id && colors.set(id, color));
     });
@@ -924,10 +1004,10 @@ export class App {
     return colors;
   }
 
-  /** Listas/sets/deques de nós com "Destacar nós" ligado que estão
-   * selecionadas agora (clique, área ou toque do passo da Simulação). */
+  /** Listas/sets/deques de nós com "Destacar nós" em "Sempre", ou em
+   * "Selecionado" e selecionadas agora (clique, área ou toque do passo da Simulação). */
   _microNodeHighlightHosts() {
-    return [...this.micro.arrays.values()].filter((a) => a.highlightNodes && a.kind === 'ref' && this._isMicroHighlighted(a.id));
+    return [...this.micro.arrays.values()].filter((a) => a.kind === 'ref' && (a.highlightNodes === 'always' || (a.highlightNodes && this._isMicroHighlighted(a.id))));
   }
 
   /** A label selecionada, quando a seleção inteira é exatamente UMA label. */
@@ -1070,6 +1150,7 @@ export class App {
       rects.push({ x: n.x, y: n.y, w: width, h: height });
     });
     this.microAreas.forEach((n) => rects.push({ x: n.x, y: n.y, w: n.width, h: n.height }));
+    this.microLines.forEach((n) => rects.push(lineBounds(n)));
     this.microCharts.forEach((n) => rects.push({ x: n.x, y: n.y, w: n.width, h: n.height }));
 
     const size = this.microView.getSize();
@@ -1107,6 +1188,7 @@ export class App {
       this.micro.variables.size > 0 ||
       this.microLabels.size > 0 ||
       this.microAreas.size > 0 ||
+      this.microLines.size > 0 ||
       this.microCharts.size > 0 ||
       this.codeEditor.getValue().trim() !== ''
     );
@@ -1129,13 +1211,17 @@ export class App {
 
     this.microRunner.stop();
     this.microRunner.clearStepLayout();
+    this.visibilityPopup.close();
     this.micro.clear();
     this.microLabels.clear();
     this.microAreas.clear();
+    this.microLines.clear();
     this.microCharts.clear();
     this.microColors.clear();
+    this.microEdgeColors.clear();
     this.microWindows = [];
     this.microLayout.clear();
+    this.microArrayPrefs.clear();
     this.microSelectedId = null;
     this.microSelectedIds = new Set();
     this.microRunHighlightIds = new Set();
@@ -1167,21 +1253,25 @@ export class App {
       micro: this.micro.toJSON(),
       labels: Array.from(this.microLabels.values()).map((l) => ({ ...l })),
       areas: Array.from(this.microAreas.values()).map((a) => ({ ...a })),
+      lines: Array.from(this.microLines.values()).map((l) => ({ ...l })),
       charts: Array.from(this.microCharts.values()).map((c) => ({ ...c, functions: [...c.functions] })),
       windows: this.microWindows.map((w) => ({ ...w })),
       // cor manual por id (ids do `micro` acima são preservados no load) —
       // só de elementos que existem no modelo salvo
       colors: Array.from(this.microColors.entries()).filter(([id]) => this._isMicroModelElement(id)),
+      edgeColors: Array.from(this.microEdgeColors.entries()),
       // posições memorizadas por NOME, não por id (ver microLayoutKey.js) —
       // é o que faz apagar um elemento e rodar a linha de novo (já no
       // projeto recarregado) reproduzir a posição escolhida à mão, mesmo com
       // esse elemento especificamente ausente do `micro` acima no momento do
       // save (ex: apagado antes de salvar).
       layout: Array.from(this.microLayout.entries()),
+      // modo círculos / destacar nós / cor das listas, por nome
+      arrayPrefs: Array.from(this.microArrayPrefs.entries()),
       // posições por passo da reprodução (ver MicroProgramRunner#stepLayout)
       stepLayout: this.microRunner.exportStepLayout(),
     };
-    const blob = new Blob([JSON.stringify(project, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(project, jsonNumReplacer, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -1220,7 +1310,7 @@ export class App {
     reader.onload = () => {
       let project;
       try {
-        project = JSON.parse(String(reader.result));
+        project = JSON.parse(String(reader.result), jsonNumReviver);
       } catch {
         this.dialog.alert('Arquivo inválido: não é um JSON válido.', { title: 'Não foi possível carregar' });
         return;
@@ -1258,6 +1348,13 @@ export class App {
     (project.labels || []).forEach((l) => l && l.id && this.microLabels.set(l.id, { ...l }));
     this.microAreas.clear();
     (project.areas || []).forEach((a) => a && a.id && this.microAreas.set(a.id, { ...a }));
+    this.microLines.clear();
+    (project.lines || []).forEach((l) => {
+      if (!l || !l.id || (l.kind !== 'arrow' && l.kind !== 'ruler')) return;
+      const [x, y, dx, dy] = [l.x, l.y, l.dx, l.dy].map(Number);
+      if (![x, y, dx, dy].every(Number.isFinite)) return;
+      this.microLines.set(l.id, { id: l.id, kind: l.kind, x, y, dx, dy, color: typeof l.color === 'string' ? l.color : AREA_COLORS[0] });
+    });
     this.microCharts.clear();
     (project.charts || []).forEach((c) => {
       if (!c || !c.id) return;
@@ -1281,8 +1378,18 @@ export class App {
     this.microColors = new Map(
       Array.isArray(project.colors) ? project.colors.filter((e) => Array.isArray(e) && typeof e[1] === 'string') : [],
     );
+    this.microEdgeColors = new Map(
+      Array.isArray(project.edgeColors)
+        ? project.edgeColors.filter((e) => Array.isArray(e) && typeof e[0] === 'string' && typeof e[1] === 'string')
+        : [],
+    );
     this.microLayout = new Map(
       Array.isArray(project.layout) ? project.layout.filter((e) => Array.isArray(e) && typeof e[0] === 'string') : [],
+    );
+    this.microArrayPrefs = new Map(
+      Array.isArray(project.arrayPrefs)
+        ? project.arrayPrefs.filter((e) => Array.isArray(e) && typeof e[0] === 'string' && e[1] && typeof e[1] === 'object')
+        : [],
     );
     this.microSelectedId = null;
     this.microSelectedIds = new Set();
@@ -1351,6 +1458,53 @@ export class App {
       },
       { type: 'value', returnFocusTo: this.microView.svg }, // número, texto ou bool
     );
+  }
+
+  /** Guarda (por nome) as preferências visuais atuais do array — orientação, modo
+   * "nós como círculos", "destacar nós" e cor manual — pra reaplicar quando
+   * ele nascer de novo numa próxima execução (ver `_applyRememberedArrayPrefs`). */
+  _rememberArrayPrefs(node) {
+    const key = microLayoutKey('array', { name: node.name, frameId: node.frameId });
+    if (!key) return;
+    const prefs = {};
+    if (node.orientation && node.orientation !== 'horizontal') prefs.orientation = node.orientation;
+    if (node.nodeCircles) prefs.nodeCircles = true;
+    if (node.highlightNodes) prefs.highlightNodes = node.highlightNodes;
+    const color = this.microColors.get(node.id);
+    if (color) prefs.color = color;
+    if (Object.keys(prefs).length) this.microArrayPrefs.set(key, prefs);
+    else this.microArrayPrefs.delete(key);
+  }
+
+  /** Idem `_rememberArrayPrefs`, pro dict (orientação e cor). */
+  _rememberDictPrefs(node) {
+    const key = microLayoutKey('dict', { name: node.name, frameId: node.frameId });
+    if (!key) return;
+    const prefs = {};
+    if (node.orientation && node.orientation !== 'horizontal') prefs.orientation = node.orientation;
+    const color = this.microColors.get(node.id);
+    if (color) prefs.color = color;
+    if (Object.keys(prefs).length) this.microArrayPrefs.set(key, prefs);
+    else this.microArrayPrefs.delete(key);
+  }
+
+  _applyRememberedDictPrefs(node) {
+    const key = microLayoutKey('dict', { name: node.name, frameId: node.frameId });
+    const prefs = key ? this.microArrayPrefs.get(key) : null;
+    if (!prefs) return;
+    if (prefs.orientation) this.micro.setDictOrientation(node.id, prefs.orientation);
+    if (prefs.color) this.microColors.set(node.id, prefs.color);
+  }
+
+  _applyRememberedArrayPrefs(node) {
+    const key = microLayoutKey('array', { name: node.name, frameId: node.frameId });
+    const prefs = key ? this.microArrayPrefs.get(key) : null;
+    if (!prefs) return;
+    // lista de listas que já nasceu em grade fica como está
+    if (prefs.orientation && node.orientation !== 'grid') this.micro.setArrayOrientation(node.id, prefs.orientation);
+    if (prefs.nodeCircles) this.micro.setArrayNodeCircles(node.id, true);
+    if (prefs.highlightNodes) this.micro.setArrayHighlightNodes(node.id, prefs.highlightNodes);
+    if (prefs.color) this.microColors.set(node.id, prefs.color);
   }
 
   /** Todo array nasce com um ponteiro dedicado, rotulado com o nome do array
@@ -1772,6 +1926,28 @@ export class App {
    * inteiro (com if/while/for) e roda contra o modelo real via
    * MicroProgramRunner, que devolve pronto pra reprodução (um passo por
    * atribuição/condição avaliada, com snapshot do modelo). */
+  /** Botão "resetar" da barra do código: esquece o que foi lembrado dos
+   * elementos por NOME — posições (`microLayout`), preferências visuais de
+   * listas (`microArrayPrefs`) e quadros-chave por passo (`stepLayout`) —,
+   * pra uma solução nova não herdar o layout/criação de uma anterior. Não
+   * mexe no código, em cores nem na visibilidade de identificadores. Na
+   * Simulação com passos, roda o programa de novo pra posições refletirem
+   * o reset. */
+  async _resetMicroVisualState() {
+    if (
+      !(await this.dialog.confirm('Resetar posições e passos de criação lembrados de todos os elementos?', {
+        confirmLabel: 'Resetar',
+        danger: true,
+      }))
+    )
+      return;
+    this.microLayout.clear();
+    this.microArrayPrefs.clear();
+    this.microRunner.importStepLayout([]);
+    if (this.codeEditor.mode === 'run' && this.microRunner.hasSteps) this._runMicroProgram(this.codeEditor.getValue());
+    else this.renderAll();
+  }
+
   _runMicroProgram(source) {
     this.microConsoleClearedLines = 0; // limpeza do console vale só pra reprodução anterior
     this.microRunner.run(source, this.microRuntime);
@@ -1864,6 +2040,7 @@ export class App {
           this.microRunner.updateHighlightNodes(node.id, highlightNodes);
         }
         if (wasGrid && node.orientation !== 'grid') this._microUnstackGridRows(node);
+        this._rememberArrayPrefs(this.micro.arrays.get(node.id) ?? node);
         if (size !== undefined) this.micro.resizeArray(node.id, size);
         if (this.microSelectedId === node.id) this._syncCodeEditorSelection('array', node.id);
         this._renderMicroOnly();
@@ -1974,6 +2151,7 @@ export class App {
         this.micro.renameDict(node.id, name);
         this.micro.setDictOrientation(node.id, orientation);
         this.microRunner.updateOrientation(node.id, orientation);
+        this._rememberDictPrefs(this.micro.dicts.get(node.id) ?? node);
         if (this.microSelectedId === node.id) this._syncCodeEditorSelection('dict', node.id);
         this._renderMicroOnly();
       },
@@ -2126,6 +2304,7 @@ export class App {
       this.micro.variables,
       this.microLabels,
       this.microAreas,
+      this.microLines,
       this.microCharts,
     ];
   }
@@ -2149,6 +2328,7 @@ export class App {
     else if (this.micro.matrices.has(id)) this.micro.removeMatrix(id);
     else if (this.micro.variables.has(id)) this.micro.removeVariable(id);
     else if (this.microAreas.has(id)) this.microAreas.delete(id);
+    else if (this.microLines.has(id)) this.microLines.delete(id);
     else if (this.microCharts.has(id)) this.microCharts.delete(id);
     else this.microLabels.delete(id);
   }
@@ -2158,7 +2338,8 @@ export class App {
    * único de sempre (`microSelectedId`), o que estiver ativo. Não faz nada
    * sem seleção. */
   _deleteMicroSelection() {
-    const ids = this.microSelectedIds.size ? Array.from(this.microSelectedIds) : this.microSelectedId ? [this.microSelectedId] : [];
+    // arestas selecionadas só podem ser pintadas, não removidas
+    const ids = this._microSelectionIds().filter((id) => !this._isMicroEdgeId(id));
     if (!ids.length) return;
     ids.forEach((id) => this._microRemoveById(id));
     this.microSelectedIds = new Set();
@@ -2214,7 +2395,7 @@ export class App {
     if (!node) return;
     node.x = x;
     node.y = y;
-    if (this.microLabels.has(id) || this.microAreas.has(id) || this.microCharts.has(id)) return;
+    if (this.microLabels.has(id) || this.microAreas.has(id) || this.microLines.has(id) || this.microCharts.has(id)) return;
     this.microRunner.updatePosition(id, x, y);
     // durante a reprodução a posição vira quadro-chave DAQUELE passo (ver
     // MicroProgramRunner#updatePosition) — não mexe na posição de nascimento
@@ -2271,6 +2452,10 @@ export class App {
       if (hits(n.x, n.y, width, height, n.id)) ids.push(n.id);
     });
     this.microCharts.forEach((n) => { if (hits(n.x, n.y, n.width, n.height, n.id)) ids.push(n.id); });
+    this.microLines.forEach((n) => {
+      const b = lineBounds(n);
+      if (hits(b.x, b.y, b.w, b.h, n.id)) ids.push(n.id);
+    });
     // áreas só entram se couberem INTEIRAS no retângulo — costumam envolver
     // outros elementos, e selecionar (e depois arrastar) esses elementos com
     // um retângulo por dentro da área não deveria levar a área junto.
@@ -2310,8 +2495,49 @@ export class App {
       (p) => p.label === name && !p.isArrayLabel && !p.isDictLabel && !p.isMatrixLabel && !p.readCursorKey,
     );
     if (!pointer) return;
-    pointer.hidden = !pointer.hidden;
+    this._setMicroIdentifiersHidden([name], !pointer.hidden);
+  }
+
+  /** Oculta/mostra identificadores (chaves de `identifierKey`: ponteiro,
+   * cursor de leitura ou variável) no modelo ao vivo E em todos os passos da
+   * Simulação — durante ela o modelo é refeito a cada passo a partir do
+   * snapshot, então a escolha também vai pro runner (ver
+   * MicroProgramRunner#setHidden). Não apaga nada do modelo. */
+  _setMicroIdentifiersHidden(keys, hidden) {
+    const set = new Set(keys);
+    this.micro.pointers.forEach((p) => {
+      if (!set.has(identifierKey(p))) return;
+      if (p.readCursorKey) p.readCursorHidden = hidden;
+      else if (hidden) p.hidden = true;
+      else delete p.hidden;
+    });
+    this.micro.variables.forEach((v) => {
+      if (!set.has(identifierKey(v))) return;
+      if (hidden) v.hidden = true;
+      else delete v.hidden;
+    });
+    this.microRunner.setHidden(keys, hidden);
     this._renderMicroOnly();
+  }
+
+  /** Identificadores do modelo atual e de todos os passos da Simulação, com a
+   * visibilidade em vigor (ver collectIdentifiers). */
+  _microIdentifiers() {
+    const models = [this.micro, ...this.microRunner.steps.map((s) => s.snapshot)];
+    return collectIdentifiers(models, this.microRunner.pointerVisibility);
+  }
+
+  _toggleVisibilityPopup() {
+    if (this.visibilityPopup.isOpen) {
+      this.visibilityPopup.close();
+      return;
+    }
+    const r = this.visibilityButton.getBoundingClientRect();
+    this.visibilityPopup.open(r.right, r.bottom + 6, {
+      getItems: () => this._microIdentifiers(),
+      onChange: (keys, hidden) => this._setMicroIdentifiersHidden(keys, hidden),
+      onReset: () => this._setMicroIdentifiersHidden(this._microIdentifiers().map((i) => i.key), false),
+    });
   }
 
   /** Sincroniza o destaque de identificador do editor de código com a seleção do
@@ -2382,25 +2608,25 @@ export class App {
 
   // ---- divisória arrastável entre visualização e código ----
 
-  /** Arraste na divisória entre o canvas (+ árvore de chamadas) e o painel
-   * de código (`.micro-split`, ver _buildLayout): define uma largura FIXA em
-   * px pro lado esquerdo (`leftEl`, normalmente `microMain`) via
-   * `style.flex`, sobrepondo o `flex-basis: 67%` inicial do CSS — o painel de código
-   * continua com `flex-grow: 1` e absorve o espaço restante sozinho, então
-   * não precisa de nenhum cálculo pro lado direito aqui. */
-  _setupSplitResizer(splitEl, leftEl, resizerEl) {
+  /** Arraste na divisória entre a visualização (canvas + árvore de chamadas)
+   * e o painel de código (`.micro-split`, ver _buildLayout): define uma largura
+   * FIXA em px pro painel de código (`rightEl`) via `style.flex`, sobrepondo o
+   * `flex-basis: 33%` inicial do CSS — o canvas (`.micro-main`) tem `flex-grow: 1`
+   * e absorve o resto, então abrir/redimensionar a pilha de chamadas não mexe no
+   * código. Duplo clique volta ao tamanho padrão. */
+  _setupSplitResizer(splitEl, rightEl, resizerEl) {
     const MIN_WIDTH = 240;
     resizerEl.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       resizerEl.classList.add('dragging');
       const startX = e.clientX;
-      const startWidth = leftEl.getBoundingClientRect().width;
+      const startWidth = rightEl.getBoundingClientRect().width;
 
       const onMove = (ev) => {
         const totalWidth = splitEl.getBoundingClientRect().width;
         const maxWidth = Math.max(MIN_WIDTH, totalWidth - MIN_WIDTH - resizerEl.getBoundingClientRect().width);
-        const newWidth = Math.max(MIN_WIDTH, Math.min(maxWidth, startWidth + (ev.clientX - startX)));
-        leftEl.style.flex = `0 0 ${newWidth}px`;
+        const newWidth = Math.max(MIN_WIDTH, Math.min(maxWidth, startWidth - (ev.clientX - startX)));
+        rightEl.style.flex = `0 0 ${newWidth}px`;
       };
       const onUp = () => {
         resizerEl.classList.remove('dragging');
@@ -2409,6 +2635,38 @@ export class App {
       };
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', onUp);
+    });
+    resizerEl.addEventListener('dblclick', () => {
+      rightEl.style.flex = '';
+    });
+  }
+
+  /** Arraste na borda esquerda do painel da pilha de chamadas: muda a largura
+   * (modo completo), guardada em `callTreeWidth`; o canvas cede/ganha o espaço
+   * e o painel de código não muda. Duplo clique restaura o padrão. */
+  _setupCallTreeResizer(panelEl, resizerEl) {
+    resizerEl.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      resizerEl.classList.add('dragging');
+      const startX = e.clientX;
+      const startWidth = panelEl.getBoundingClientRect().width;
+      let width = startWidth;
+      const onMove = (ev) => {
+        width = Math.round(Math.max(140, Math.min(800, startWidth - (ev.clientX - startX))));
+        panelEl.style.setProperty('--call-tree-width', `${width}px`);
+      };
+      const onUp = () => {
+        resizerEl.classList.remove('dragging');
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        setSetting('callTreeWidth', width);
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+    });
+    resizerEl.addEventListener('dblclick', () => {
+      panelEl.style.setProperty('--call-tree-width', '220px');
+      setSetting('callTreeWidth', 220);
     });
   }
 
@@ -2474,6 +2732,8 @@ export class App {
     this._microSelectionPreview = null;
     this._microAreaDraft = null;
     this._microChartDraft = null;
+    this._microLineDraft = null;
+    this._microLineEdit = null;
     this._microAreaResize = null;
     this._microLinkDraft = null;
     this._microLinkHover = null;
@@ -2532,7 +2792,7 @@ export class App {
 
   _findMicroVariableAt(worldPt) {
     for (const node of this.micro.variables.values()) {
-      if (!this._microPickable(node)) continue;
+      if (!this._microPickable(node) || node.hidden) continue;
       if (worldPt.x >= node.x && worldPt.x <= node.x + variableWidth(node, this.microFullNames) && worldPt.y >= node.y && worldPt.y <= node.y + VAR_H) return node;
     }
     return null;
@@ -2540,7 +2800,7 @@ export class App {
 
   _findMicroVariableValueAt(worldPt) {
     for (const node of this.micro.variables.values()) {
-      if (!this._microPickable(node)) continue;
+      if (!this._microPickable(node) || node.hidden) continue;
       const r = variableValueRect(node, this.microFullNames);
       if (worldPt.x >= r.x && worldPt.x <= r.x + r.width && worldPt.y >= r.y && worldPt.y <= r.y + r.height) return node;
     }
@@ -2765,6 +3025,49 @@ export class App {
       if (worldPt.x >= n.x && worldPt.x <= n.x + n.width && worldPt.y >= n.y && worldPt.y <= n.y + n.height) return n;
     }
     return null;
+  }
+
+  /** Seta/régua sob o ponto (a menos de LINE_HIT_PX px de tela da linha) —
+   * de trás pra frente. A mais recente fica por cima no render. */
+  _findMicroLineAt(worldPt) {
+    const tol = LINE_HIT_PX / this.microViewport.scale;
+    const lines = Array.from(this.microLines.values());
+    for (let i = lines.length - 1; i >= 0; i -= 1) {
+      const { x1, y1, x2, y2 } = lineEnds(lines[i]);
+      if (distToSegment(worldPt, { x: x1, y: y1 }, { x: x2, y: y2 }) <= tol) return lines[i];
+    }
+    return null;
+  }
+
+  /** Id da seta/régua que mostra as extremidades arrastáveis: só no modo
+   * Selecionar e com exatamente ela selecionada. */
+  _microSingleSelectedLineId() {
+    if (this.microMode !== 'select') return null;
+    const ids = this.microSelectedIds.size ? Array.from(this.microSelectedIds) : this.microSelectedId ? [this.microSelectedId] : [];
+    return ids.length === 1 && this.microLines.has(ids[0]) ? ids[0] : null;
+  }
+
+  /** Extremidade ('a' | 'b') da seta/régua selecionada sob o ponto, ou null. */
+  _findMicroLineHandleAt(worldPt) {
+    const id = this._microSingleSelectedLineId();
+    if (!id) return null;
+    const { x1, y1, x2, y2 } = lineEnds(this.microLines.get(id));
+    const r = (LINE_HANDLE_PX * 0.7) / this.microViewport.scale;
+    if (Math.hypot(worldPt.x - x1, worldPt.y - y1) <= r) return { id, end: 'a' };
+    if (Math.hypot(worldPt.x - x2, worldPt.y - y2) <= r) return { id, end: 'b' };
+    return null;
+  }
+
+  /** Ferramentas "Seta"/"Régua": cria a linha ao soltar o arraste (clique
+   * simples = uma horizontal de tamanho padrão) na cor atual e volta pro
+   * modo Selecionar com ela selecionada, como `_createMicroArea`. */
+  _createMicroLine(kind, geometry) {
+    const id = nextId(kind);
+    this.microLines.set(id, { id, kind, ...geometry, color: this.microAreaColor });
+    this._setMicroMode('select');
+    this.microSelectedIds = new Set();
+    this.microSelectedId = id;
+    this._syncCodeEditorSelection(null, null);
   }
 
   /** Gráfico de complexidade sob o ponto — de trás pra frente, como as áreas. */
@@ -3218,8 +3521,19 @@ export class App {
       disabled: treeBlocked,
       run: () => this._runMicroTreeLayout(orientation),
     }));
+    const graphNodes = this._microSelectedGraphNodes();
+    const adjBlocked = !graphNodes.length
+      ? 'selecione GraphNodes'
+      : graphNodes.length > MAX_ARRAY_SIZE
+        ? `no máximo ${MAX_ARRAY_SIZE} nós`
+        : null;
+    const selectedStructs = this._microSelectedStructs();
     const commands = [
       model('new pointer', ['new ptr'], 'ponteiro solto — pede o nome', () => this._quickNewPointer()),
+      {
+        ...model('new pointers', ['new node pointers', 'pointers for nodes'], 'um ponteiro para cada nó selecionado, nomeado pelo dado do nó', () => this._quickNewPointersForNodes(selectedStructs)),
+        disabled: busy ?? (selectedStructs.length ? null : 'selecione nós'),
+      },
       model('new variable', ['new var'], 'variável — pede o nome', () => this._quickNewVariable()),
       model('new node', [], 'nó de lista, Node(v) — pede o dado', () => this._quickNewNode('list')),
       model('new list node', [], 'nó de lista simples, ListNode(v) — pede o dado', () => this._quickNewNode('slist')),
@@ -3230,6 +3544,10 @@ export class App {
       model('new deque', ['new queue'], 'deque vazio, deque() — pede o nome', () => this._quickNewCollection('deque')),
       model('new dict', ['new dictionary'], 'dicionário vazio — pede o nome', () => this._quickNewCollection('dict')),
       model('new matrix', [], 'matriz 3×3 — pede o nome', () => this._quickNewCollection('matrix')),
+      {
+        ...model('new adjacency matrix', ['new adj matrix', 'adjacency matrix'], 'matriz de adjacência + index_to_id/id_to_index dos GraphNodes selecionados', () => this._quickNewAdjacencyMatrix(graphNodes)),
+        disabled: busy ?? adjBlocked,
+      },
       { name: 'new label', aliases: ['new text'], description: 'texto livre no canvas', run: () => this._quickNewLabel() },
       { name: 'new area', aliases: [], description: 'área retangular pra agrupar elementos', run: () => this._quickNewArea() },
       {
@@ -3616,6 +3934,76 @@ export class App {
       },
       remove: () => this._quickDiscard(node.id),
     });
+  }
+
+  /** Nós (Node, ListNode, TreeNode, GraphNode) da seleção atual, na ordem em que foram selecionados. */
+  _microSelectedStructs() {
+    return this._microSelectionIds().map((id) => this.micro.structs.get(id)).filter(Boolean);
+  }
+
+  /** "new pointers": um ponteiro apontando pra cada nó selecionado, com o
+   * nome do `data` do nó em minúsculas (se começa por letra) ou `p{data}` (número etc.);
+   * nome repetido ganha número no fim (`_microFreeName`). Nasce perto do nó
+   * (`_microPointerSpotNear`, sem mover o nó), sem cair em cima de outro
+   * elemento — nem dos ponteiros criados antes, já que entram no modelo um a
+   * um. Vale só fora da Simulação (cria elementos do modelo). */
+  _quickNewPointersForNodes(nodes) {
+    const created = nodes.map((node) => {
+      const text = String(node.data ?? '').trim();
+      const name = this._microFreeName(/^[A-Za-z_]/.test(text) ? text.toLowerCase() : `p${text}`);
+      const pos = this._microPointerSpotNear(node.id, name);
+      const pointer = this.micro.addPointer(pos.x, pos.y, name);
+      this.micro.setPointerTarget(pointer.id, { kind: 'struct', id: node.id });
+      return pointer;
+    });
+    this.microSelectedIds = new Set(created.map((p) => p.id));
+    this.microSelectedId = created.length === 1 ? created[0].id : null;
+    this._renderMicroOnly();
+  }
+
+  /** Nós de grafo (GraphNode) da seleção atual, na ordem em que foram selecionados. */
+  _microSelectedGraphNodes() {
+    return this._microSelectionIds().map((id) => this.micro.structs.get(id)).filter((s) => s?.type === 'graph');
+  }
+
+  /** "new adjacency matrix": a partir dos GraphNode selecionados, cria a matriz
+   * de adjacência (grade n×n, `adj[i][j] = 1` se o nó i tem o nó j em
+   * `neighbors` — só arestas entre nós selecionados) e os dicts `index_to_id`
+   * (índice da matriz -> `no.data`) e `id_to_index` (`no.data` -> índice). O
+   * índice segue a ordem da seleção. Nomes livres via `_microFreeName`; os três
+   * ganham o ponteiro-rótulo de sempre. Vale só fora da Simulação (cria
+   * elementos do modelo). */
+  _quickNewAdjacencyMatrix(nodes) {
+    const n = nodes.length;
+    const addLabel = (node, modelKind) => {
+      const labelPos = this._microPointerSpotNear(node.id, node.name, { movable: true });
+      const label = this.micro.addPointer(labelPos.x, labelPos.y, node.name);
+      if (modelKind === 'dict') this.micro.linkDictLabelPointer(node.id, label.id);
+      else this.micro.linkArrayLabelPointer(node.id, label.id);
+    };
+    const matrixName = this._microFreeName('adj');
+    const pos = this._microCreatePosition('array', n);
+    const matrix = this.micro.addArray(pos.x, pos.y, { kind: 'arrayref', orientation: 'grid', size: 0, name: matrixName });
+    const index = new Map(nodes.map((s, i) => [s.id, i]));
+    const rows = nodes.map((s, i) => {
+      const row = this.micro.addArray(matrix.x + GRID_ROW_BAND_W, matrix.y + GRID_COL_BAND_H + i * ARRAY_CELL, { size: n, name: `${matrixName}[${i}]` });
+      const neighbors = this.micro.arrays.get(s.neighborsArrayId)?.cells ?? [];
+      neighbors.forEach((id) => {
+        if (index.has(id)) this.micro.setArrayCellValue(row.id, index.get(id), 1);
+      });
+      return row.id;
+    });
+    this.micro.setArrayContents(matrix.id, 'arrayref', rows);
+    addLabel(matrix, 'array');
+    const dictNames = [this._microFreeName('index_to_id'), this._microFreeName('id_to_index')];
+    dictNames.forEach((name, k) => {
+      const dpos = this._microCreatePosition('dict', n);
+      const dict = this.micro.addDict(dpos.x, dpos.y, { name });
+      nodes.forEach((s, i) => this.micro.setDictCellValue(dict.id, k === 0 ? i : s.data, k === 0 ? s.data : i));
+      addLabel(dict, 'dict');
+    });
+    this._selectMicroElement('array', matrix.id);
+    this._renderMicroOnly();
   }
 
   _quickNewLabel() {
@@ -4077,6 +4465,7 @@ export class App {
       this._findMicroDictAt(worldPt) ||
       this._findMicroMatrixAt(worldPt) ||
       this._findMicroLabelAt(worldPt) ||
+      this._findMicroLineAt(worldPt) ||
       this._findMicroChartAt(worldPt) ||
       (!ignoreAreas && this._findMicroAreaAt(worldPt))
     );
@@ -4364,6 +4753,14 @@ export class App {
       return;
     }
 
+    // modos seta/régua: mesmo gesto do modo área (Shift encaixa no eixo)
+    if (this.microMode === 'arrow' || this.microMode === 'ruler') {
+      this._microPointer = { downScreen: screenPt, lastScreen: screenPt, moved: false, hit: 'line-create', worldPtDown: worldPt };
+      window.addEventListener('pointermove', this._microBoundMove);
+      window.addEventListener('pointerup', this._microBoundUp);
+      return;
+    }
+
     // modo gráfico: mesmo gesto do modo área — arrastar desenha o gráfico
     // novo, clique simples cria um de tamanho padrão com o canto ali.
     if (this.microMode === 'chart') {
@@ -4400,6 +4797,23 @@ export class App {
       return;
     }
 
+    // extremidades da seta/régua selecionada: arrastar move só aquela ponta
+    const lineHandle = this._findMicroLineHandleAt(worldPt);
+    if (lineHandle) {
+      this._microPointer = {
+        downScreen: screenPt,
+        lastScreen: screenPt,
+        moved: false,
+        hit: 'line-end',
+        id: lineHandle.id,
+        end: lineHandle.end,
+        worldPtDown: worldPt,
+      };
+      window.addEventListener('pointermove', this._microBoundMove);
+      window.addEventListener('pointerup', this._microBoundUp);
+      return;
+    }
+
     const port = this._findMicroPortAt(worldPt);
     // Shift no pino prev/next de um nó (na borda dele): o mesmo Shift +
     // arraste de ligação do corpo do nó (ver abaixo), por esse ponteiro —
@@ -4408,25 +4822,27 @@ export class App {
       this._startMicroLinkDrag(this.micro.structs.get(port.ownerId), port.field, screenPt, worldPt);
       return;
     }
-    const structNode = !port ? this._findMicroStructAt(worldPt) : null;
-    const arrayNode = !port && !structNode ? this._findMicroArrayAt(worldPt) : null;
-    const dictNode = !port && !structNode && !arrayNode ? this._findMicroDictAt(worldPt) : null;
-    const matrixNode = !port && !structNode && !arrayNode && !dictNode ? this._findMicroMatrixAt(worldPt) : null;
-    const pointerNode = !port && !structNode && !arrayNode && !dictNode && !matrixNode ? this._findMicroPointerAt(worldPt) : null;
+    // a linha fina de uma seta/régua vence o que está debaixo dela
+    const lineNode = !port ? this._findMicroLineAt(worldPt) : null;
+    const structNode = !port && !lineNode ? this._findMicroStructAt(worldPt) : null;
+    const arrayNode = !port && !lineNode && !structNode ? this._findMicroArrayAt(worldPt) : null;
+    const dictNode = !port && !lineNode && !structNode && !arrayNode ? this._findMicroDictAt(worldPt) : null;
+    const matrixNode = !port && !lineNode && !structNode && !arrayNode && !dictNode ? this._findMicroMatrixAt(worldPt) : null;
+    const pointerNode = !port && !lineNode && !structNode && !arrayNode && !dictNode && !matrixNode ? this._findMicroPointerAt(worldPt) : null;
     const variableNode =
-      !port && !structNode && !arrayNode && !dictNode && !matrixNode && !pointerNode ? this._findMicroVariableAt(worldPt) : null;
+      !port && !lineNode && !structNode && !arrayNode && !dictNode && !matrixNode && !pointerNode ? this._findMicroVariableAt(worldPt) : null;
     const labelNode =
-      !port && !structNode && !arrayNode && !dictNode && !matrixNode && !pointerNode && !variableNode
+      !port && !lineNode && !structNode && !arrayNode && !dictNode && !matrixNode && !pointerNode && !variableNode
         ? this._findMicroLabelAt(worldPt)
         : null;
     // gráficos e áreas por último: ficam atrás de tudo, então qualquer
     // elemento em cima deles tem prioridade (e o gráfico, acima das áreas).
     const chartNode =
-      !port && !structNode && !arrayNode && !dictNode && !matrixNode && !pointerNode && !variableNode && !labelNode
+      !port && !lineNode && !structNode && !arrayNode && !dictNode && !matrixNode && !pointerNode && !variableNode && !labelNode
         ? this._findMicroChartAt(worldPt)
         : null;
     const areaNode =
-      !port && !structNode && !arrayNode && !dictNode && !matrixNode && !pointerNode && !variableNode && !labelNode && !chartNode
+      !port && !lineNode && !structNode && !arrayNode && !dictNode && !matrixNode && !pointerNode && !variableNode && !labelNode && !chartNode
         ? this._findMicroAreaAt(worldPt)
         : null;
 
@@ -4466,6 +4882,10 @@ export class App {
       hit = 'label';
       id = labelNode.id;
       grabOffset = { x: worldPt.x - labelNode.x, y: worldPt.y - labelNode.y };
+    } else if (lineNode) {
+      hit = 'line';
+      id = lineNode.id;
+      grabOffset = { x: worldPt.x - lineNode.x, y: worldPt.y - lineNode.y };
     } else if (chartNode) {
       hit = 'chart';
       id = chartNode.id;
@@ -4474,6 +4894,15 @@ export class App {
       hit = 'area';
       id = areaNode.id;
       grabOffset = { x: worldPt.x - areaNode.x, y: worldPt.y - areaNode.y };
+    }
+
+    // seta/aresta sob o cursor (alvo invisível de MicroCanvasView): fica acima
+    // de áreas e gráficos, abaixo de qualquer elemento — só seleciona e pinta
+    const edgeId = e.target?.getAttribute?.('data-edge-id');
+    if (edgeId && (hit === 'canvas' || hit === 'area' || hit === 'chart')) {
+      hit = 'edge';
+      id = edgeId;
+      grabOffset = null;
     }
 
     // Shift + arraste num nó (modo Selecionar): atalho da ferramenta "Ligar
@@ -4512,7 +4941,7 @@ export class App {
     const cursorCell = e.ctrlKey || e.metaKey ? null : this._findMicroCursorCellAt(arrayNode ?? matrixNode, worldPt, e.shiftKey);
 
     let groupStart = null;
-    if (cursorCell == null && this.microSelectedIds.size > 1 && this.microSelectedIds.has(id)) {
+    if (hit !== 'edge' && cursorCell == null && this.microSelectedIds.size > 1 && this.microSelectedIds.has(id)) {
       groupStart = new Map();
       this.microSelectedIds.forEach((gid) => {
         const node = this._microFindById(gid);
@@ -4583,6 +5012,15 @@ export class App {
     } else if (this._microPointer.hit === 'chart-create') {
       this._microChartDraft = this._microChartRectFromDrag(this._microPointer.worldPtDown, worldPt);
       this._renderMicroOnly();
+    } else if (this._microPointer.hit === 'line-create') {
+      const { kind } = { kind: this.microMode };
+      const draft = lineFromDrag(this._microPointer.worldPtDown, worldPt, e.shiftKey);
+      this._microLineDraft = draft ? { kind, ...draft } : null;
+      this._renderMicroOnly();
+    } else if (this._microPointer.hit === 'line-end') {
+      const line = this.microLines.get(this._microPointer.id);
+      this._microLineEdit = line ? { id: line.id, ...moveLineEnd(line, this._microPointer.end, worldPt, e.shiftKey) } : null;
+      this._renderMicroOnly();
     } else if (this._microPointer.hit === 'area-resize') {
       // gráfico: redimensiona livre (sem grid), com um tamanho mínimo legível
       const isChart = this.microCharts.has(this._microPointer.id);
@@ -4625,7 +5063,7 @@ export class App {
         this._microGroupDragPositions.set(gid, { x: start.x + gdx, y: start.y + gdy });
       });
       this._renderMicroOnly();
-    } else if (['struct', 'pointer', 'array', 'dict', 'matrix', 'variable', 'label', 'chart'].includes(this._microPointer.hit)) {
+    } else if (['struct', 'pointer', 'array', 'dict', 'matrix', 'variable', 'label', 'chart', 'line'].includes(this._microPointer.hit)) {
       const offset = this._microPointer.grabOffset;
       this._microDragId = this._microPointer.id;
       this._microDragPos = { x: worldPt.x - offset.x, y: worldPt.y - offset.y };
@@ -4672,6 +5110,15 @@ export class App {
         this._createMicroChart({ x: worldPtDown.x, y: worldPtDown.y, ...CHART_DEFAULT_SIZE });
       }
       this._microChartDraft = null;
+    } else if (hit === 'line-create') {
+      const draft = this._microLineDraft;
+      this._createMicroLine(this.microMode, draft ? { x: draft.x, y: draft.y, dx: draft.dx, dy: draft.dy } : defaultLine(worldPtDown));
+      this._microLineDraft = null;
+    } else if (hit === 'line-end') {
+      const line = this.microLines.get(id);
+      const edit = this._microLineEdit;
+      if (moved && line && edit?.id === id) Object.assign(line, { x: edit.x, y: edit.y, dx: edit.dx, dy: edit.dy });
+      this._microLineEdit = null;
     } else if (hit === 'area-resize') {
       const area = this._microResizableById(id);
       if (moved && area && this._microAreaResize?.id === id) Object.assign(area, this._microAreaResize.rect);
@@ -4789,13 +5236,20 @@ export class App {
           node.y = this._microDragPos.y;
         }
       }
-    } else if (hit === 'area' || hit === 'chart') {
+    } else if (hit === 'area' || hit === 'chart' || hit === 'line') {
       if (!moved) {
         this.microSelectedIds = new Set();
         this.microSelectedId = id;
         this._syncCodeEditorSelection(null, null);
       } else if (this._microDragPos) {
         this._microSetNodePos(id, this._microDragPos.x, this._microDragPos.y);
+      }
+    } else if (hit === 'edge') {
+      // arestas só selecionam (para pintar); arrastar não faz nada
+      if (!moved) {
+        this.microSelectedIds = new Set();
+        this.microSelectedId = id;
+        this._syncCodeEditorSelection(null, null);
       }
     }
 
@@ -5062,7 +5516,7 @@ export class App {
     this.microContainer.classList.toggle('dragging-elements', !!(this._microDragId || this._microGroupDragPositions));
     this.microModeToolbar.render({
       mode: this.microMode,
-      swatches: { area: this.microAreaColor, text: labelCssColor(this.microLabelColor) },
+      swatches: { area: this.microAreaColor, arrow: this.microAreaColor, ruler: this.microAreaColor, text: labelCssColor(this.microLabelColor) },
     });
     this.microAlignToolbar.render({ count: this._microAlignableIds().length });
     this.microTreeToolbar.render({ enabled: !!this._microSelectedTreeRoot() });
@@ -5358,6 +5812,7 @@ export class App {
     });
 
     const variables = Array.from(this.micro.variables.values())
+      .filter((n) => !n.hidden)
       .filter(inActiveFrame)
       .map((n) => {
       const { pos, dragging } = this._microNodePos(n);
@@ -5404,6 +5859,28 @@ export class App {
     if (this._microAreaDraft) {
       areas.push({ id: '__area-draft', ...this._microAreaDraft, color: this.microAreaColor, selected: false, dragging: true });
     }
+    const lines = Array.from(this.microLines.values()).map((n) => {
+      const { pos, dragging } = this._microNodePos(n);
+      const edited = this._microLineEdit?.id === n.id ? this._microLineEdit : null;
+      const geo = edited ?? { x: pos.x, y: pos.y, dx: n.dx, dy: n.dy };
+      return {
+        id: n.id,
+        kind: n.kind,
+        ...lineEnds(geo),
+        color: n.color,
+        selected: this._isMicroHighlighted(n.id),
+        dragging: dragging || !!edited,
+      };
+    });
+    if (this._microLineDraft) {
+      const d = this._microLineDraft;
+      lines.push({ id: '__line-draft', kind: d.kind, ...lineEnds(d), color: this.microAreaColor, selected: false, dragging: true });
+    }
+    const handlesLineId = this._microSingleSelectedLineId();
+    const handlesLine = handlesLineId ? lines.find((l) => l.id === handlesLineId) : null;
+    const lineHandlesRect = handlesLine
+      ? { x1: handlesLine.x1, y1: handlesLine.y1, x2: handlesLine.x2, y2: handlesLine.y2, size: LINE_HANDLE_PX / this.microViewport.scale }
+      : null;
     const charts = Array.from(this.microCharts.values()).map((n) => {
       const { pos, dragging } = this._microNodePos(n);
       const resized = this._microAreaResize?.id === n.id ? this._microAreaResize.rect : null;
@@ -5676,7 +6153,8 @@ export class App {
 
     // o que não está no escopo da chamada ativa fica mais transparente (ver
     // _microOutOfScopeIds) — a seta some junto com quem ela sai
-    const dimmedIds = this._microOutOfScopeIds(activeFrameId, highlightedIds);
+    // (a preferência "dimOutOfScope" desligada mostra tudo normal e clicável)
+    const dimmedIds = getSetting('dimOutOfScope') ? this._microOutOfScopeIds(activeFrameId, highlightedIds) : new Set();
     // o que não foi desenhado (filtrado acima) ou está apagado não recebe
     // mouse — ver _microPickable
     const drawnIds = new Set([...structs, ...pointers, ...arrays, ...dicts, ...matrices, ...variables].map((n) => n.id));
@@ -5686,8 +6164,14 @@ export class App {
         if (!drawnIds.has(id) && !this.microLabels.has(id) && !this.microAreas.has(id)) this._microInertIds.add(id);
       }),
     );
+    this._microEdgeIds = new Set(edges.map((e) => e.id));
     edges.forEach((e) => {
       e.dimmed = dimmedIds.has(e.sourceKey.split(':')[1]);
+      // aresta escolhida diretamente (clique/Ctrl+clique), à parte do destaque
+      // que ela já ganha quando o dono está selecionado
+      e.picked = e.id === this.microSelectedId || this.microSelectedIds.has(e.id);
+      if (e.picked) e.selected = true;
+      e.color = this.microEdgeColors.get(e.id) ?? null;
     });
 
     let previewEdge = null;
@@ -5755,6 +6239,8 @@ export class App {
       labels,
       areas,
       areaHandles: areaHandlesRect,
+      lines,
+      lineHandles: lineHandlesRect,
       charts,
       edges,
       previewEdge,

@@ -64,7 +64,7 @@ class Parser {
   parseListCompTail(element) {
     this.advance(); // "for"
     const varNames = [this.expect(TokenType.IDENT, 'Esperado nome de variável depois de "for"').value];
-    if (this.at(TokenType.COMMA)) {
+    while (this.at(TokenType.COMMA)) {
       this.advance();
       varNames.push(this.expect(TokenType.IDENT, 'Esperado nome de variável depois de ","').value);
     }
@@ -596,7 +596,7 @@ function parseFStringParts(parts) {
 
 // o que a ferramenta já tem embutido, por módulo — importar outra coisa é
 // erro (melhor que fingir que "import heapq" funcionou)
-const IMPORTABLE = { collections: ['deque'] };
+const IMPORTABLE = { collections: ['deque', 'defaultdict'] };
 const FROM_IMPORT_RE = /^from\s+([A-Za-z_][\w.]*)\s+import\s+(.+)$/;
 const IMPORT_RE = /^import\s+([A-Za-z_][\w.]*)$/;
 
@@ -610,7 +610,7 @@ function parseImport(source) {
   if (!from && !plain) return null;
   const module = (from ?? plain)[1];
   const known = IMPORTABLE[module];
-  if (!known) throw new ParseError(`Módulo "${module}" não disponível — só "from collections import deque"`, 0);
+  if (!known) throw new ParseError(`Módulo "${module}" não disponível — só "from collections import deque, defaultdict"`, 0);
   if (plain) return Import(module, []);
   const names = from[2].replace(/^\(|\)$/g, '').split(',').map((n) => n.trim());
   const unknown = names.find((n) => !known.includes(n));

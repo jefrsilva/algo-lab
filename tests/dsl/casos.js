@@ -18,6 +18,21 @@ export const normalizar = (texto) => texto.replace(/^\n/, '').replace(/\n$/, '')
 
 export const CASOS = [
   {
+    nome: "for com desempacotamento de listas internas (pares [a, b])",
+    codigo: `
+prerequisites = [[1, 0], [2, 1], [3, 2]]
+graph = [[] for _ in range(4)]
+indeg = [0] * 4
+for course, prerequisite in prerequisites:
+    graph[prerequisite].append(course)
+    indeg[course] += 1
+print(graph, indeg)
+`,
+    saida: `
+[[1], [2], [3], []] [0, 1, 1, 1]
+`,
+  },
+  {
     nome: "aritmética, atribuição composta, comparação encadeada e lógica",
     codigo: `
 a = 7
@@ -762,6 +777,75 @@ dict_values([[1], [2, 3]]) dict_keys(['a', 'b']) dict_items([('a', [1]), ('b', [
 [[0], [1, 1], [2, 2, 2]]
 [[1], [2, 3]]
 [[7, 8, 0], [7, 8, 0]]
+`,
+  },
+  {
+    nome: "float('inf') e float('-inf') como sentinelas",
+    codigo: `
+menor = float('inf')
+maior = float('-inf')
+for x in [5, 2, 9]:
+    if x < menor:
+        menor = x
+    if x > maior:
+        maior = x
+print(menor, maior)
+print(float('inf'), float('-inf'), -float('inf'))
+print(float('inf') > 10**9, float('-inf') < -5, float('inf') == float('inf'))
+print(min(float('inf'), 3), max(float('-inf'), -3))
+nums = [1, float('inf'), float('-inf')]
+print(nums)
+print(f"{float('inf')}", float('inf') + 1, float('inf') - float('inf'))
+print(float(' -Infinity '), float('3.5'))
+`,
+    saida: `
+2 9
+inf -inf -inf
+True True True
+3 -3
+[1, inf, -inf]
+inf inf nan
+-inf 3.5
+`,
+  },
+  {
+    nome: "zip: pares, três iteráveis e parada no menor",
+    codigo: `
+a = [1, 2, 3]
+b = ['x', 'y', 'z', 'w']
+for n, c in zip(a, b):
+    print(n, c)
+for p, q, r in zip(a, b, [10, 20]):
+    print(p, q, r)
+print(list(zip(a, 'ab')))
+`,
+    saida: `
+1 x
+2 y
+3 z
+1 x 10
+2 y 20
+[(1, 'a'), (2, 'b')]
+`,
+  },
+  {
+    nome: "defaultdict: int, list e leitura de chave ausente",
+    codigo: `
+from collections import defaultdict
+cont = defaultdict(int)
+for ch in "banana":
+    cont[ch] += 1
+print(cont['a'], cont['n'], cont['z'], len(cont))
+grupos = defaultdict(list)
+for w in ["ab", "cd", "ae", "cf"]:
+    grupos[w[0]].append(w)
+print(grupos['a'], grupos['c'], 'x' in grupos)
+print(grupos)
+`,
+    saida: `
+3 2 0 4
+['ab', 'ae'] ['cd', 'cf'] False
+defaultdict(<class 'list'>, {'a': ['ab', 'ae'], 'c': ['cd', 'cf']})
 `,
   },
 ];

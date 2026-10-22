@@ -172,6 +172,24 @@ describe('posições (layout do usuário)', () => {
   });
 });
 
+describe('ocultar ponteiro pelo código', () => {
+  const ponteiro = (micro) => [...micro.pointers.values()].find((p) => p.label === 'p');
+
+  test('é preferência do usuário: vale para todos os passos', () => {
+    const { micro, env, runner } = novo();
+    runner.run(linhas('p = Node(1)', 'p = Node(2)', 'x = 3'), env);
+    runner.goToStep(1);
+    runner.setHidden('p', true);
+    expect(ponteiro(micro).hidden).toBe(true);
+    runner.goToStep(2);
+    expect(ponteiro(micro).hidden).toBe(true);
+    runner.goToStep(1);
+    runner.setHidden('p', false);
+    runner.goToStep(2);
+    expect(ponteiro(micro).hidden).toBeUndefined();
+  });
+});
+
 describe('nós como círculos', () => {
   const FILA = linhas('a = Node(1)', 'fila = [a]', 'fila.append(a)', 'fila.pop()');
 
@@ -197,10 +215,10 @@ describe('destacar nós ao selecionar', () => {
     runner.goToStep(2);
     const id = [...micro.arrays.values()][0].id;
     micro.setArrayHighlightNodes(id, true);
-    runner.updateHighlightNodes(id, true);
+    runner.updateHighlightNodes(id, 'always');
     runner.goToStep(1);
-    expect(micro.arrays.get(id).highlightNodes).toBe(true);
-    runner.updateHighlightNodes(id, false);
+    expect(micro.arrays.get(id).highlightNodes).toBe('always');
+    runner.updateHighlightNodes(id, null);
     runner.goToStep(3);
     expect(micro.arrays.get(id).highlightNodes).toBeUndefined();
   });
@@ -332,5 +350,19 @@ describe('autoplay', () => {
     vi.advanceTimersByTime(5000);
     expect(runner.steps).toEqual([]);
     expect(runner.stepIndex).toBe(-1);
+  });
+});
+
+describe('ocultar variável pelo gerenciador', () => {
+  test('vale para todos os passos e o reset volta a mostrar', () => {
+    const { micro, env, runner } = novo();
+    runner.run(linhas('x = 1', 'x = 2', 'y = 3'), env);
+    runner.setHidden(['x'], true);
+    runner.goToStep(2);
+    expect(varPorNome(micro, 'x').hidden).toBe(true);
+    expect(varPorNome(micro, 'y').hidden).toBeUndefined();
+    runner.setHidden(['x'], false);
+    runner.goToStep(1);
+    expect(varPorNome(micro, 'x').hidden).toBeUndefined();
   });
 });

@@ -233,11 +233,13 @@ Ids (`nextId`) nunca se repetem: cada "Rodar" recria os elementos com ids novos.
 
 Já `App#microColors` (cor manual) é por **id**, e funciona porque os snapshots preservam os ids dentro de uma execução. O canvas recebe `App#_microEffectiveColors()`, que é `microColors` com a cor de cada janela aplicada aos seus cursores; Alt+1…Alt+0 num cursor de janela muda a cor da janela, não a do id.
 
+**Arestas/setas** (next/prev/left/right, vizinhos de grafo, setas de ponteiro e de célula) também são selecionáveis e pintáveis: `MicroCanvasView#_renderEdges` desenha, por aresta, um alvo de clique invisível (`.micro-edge-hit`, `data-edge-id`), e `App#_onMicroPointerDown` o trata como `hit: 'edge'` — acima de áreas/gráficos, abaixo de qualquer elemento. O id da aresta (`<id do dono>-next`, `-cell3`…) entra em `microSelectedId(s)`, mas só serve pra pintar (Alt+1…Alt+0 / roda de cores → `App#microEdgeColors`, salvo no projeto como `edgeColors`): arrastar não move nada e Delete as ignora (`_isMicroEdgeId`). A cor vira `stroke` inline na linha e um `<marker>` por cor (`_edgeMarkerFor`).
+
 ### 5.6 Elementos do modelo × elementos de anotação
 
 | | Elementos do modelo | Elementos de anotação |
 |---|---|---|
-| Onde ficam | `MicroModel` | `App#microLabels`, `App#microAreas`, `App#microCharts` |
+| Onde ficam | `MicroModel` | `App#microLabels`, `App#microAreas`, `App#microLines` (setas e réguas), `App#microCharts` |
 | Afetados pela reprodução | sim (snapshots) | não |
 | Acessíveis pelo código | sim | não |
 | Criáveis durante a Simulação | não (sumiriam no próximo passo) | sim |
@@ -276,7 +278,7 @@ CodeEditor (modo 'run': ▶, Ctrl+Enter; ou Ctrl+Shift+Enter de qualquer modo �
 PlaybackControls / Ctrl+, / Ctrl+.  → MicroProgramRunner#goToStep(i) → _restore(snapshot) → onSelect(touched) + onChange
 ```
 
-Durante `runProgram`, uma chamada a uma função do usuário passa por `callFunction`: `env.pushFrame(label)`, bind dos parâmetros via `env.assignName`, `yield* execBlock(corpo)`, `env.popFrame()` e `env.releaseDeadArrays(...)`, que remove as listas locais que não foram devolvidas. A árvore de chamadas (`callTree`) só cresce e vai junto em cada passo. O `App` usa `activeFrameId` pra decidir quais ponteiros e variáveis mostrar, e o `CallTree` permite trocar a aba manualmente (`App#manualFrameId`).
+Durante `runProgram`, uma chamada a uma função do usuário passa por `callFunction`: `env.pushFrame(label)`, bind dos parâmetros via `env.assignName`, `yield* execBlock(corpo)`, `env.popFrame()` e `env.releaseDeadArrays(...)`, que remove as listas locais que não foram devolvidas. A árvore de chamadas (`callTree`) só cresce e vai junto em cada passo; ao retornar, o nó é substituído por uma cópia com `returned`, `returnText` e `scope` (foto dos parâmetros/locais do frame, via `env.frameScope` → `frameScope.js`), que o `CallTree` mostra como `→ valor` e no pop-up do hover (chamadas ainda na pilha usam `frameScope` sobre o modelo do passo atual). A largura do painel é arrastável (`callTreeWidth`). O `App` usa `activeFrameId` pra decidir quais ponteiros e variáveis mostrar, e o `CallTree` permite trocar a aba manualmente (`App#manualFrameId`).
 
 ### 6.3 Interação no canvas (gestos)
 
@@ -400,6 +402,7 @@ Grade no App: `_layoutMicroGrids` (ver `layoutGrids` em 7.5) roda no começo de 
 - Lista de listas: `_listSpec` devolve `{kind:'arrayref', items}`, e `_fillArray` cria cada lista de dentro com `_listCellId` (lista viva = a mesma, por referência; lista nova = array sem nome embaixo da de fora, via `createPosition(..., {belowArrayId})`; recusa ciclos com `_arrayContains`). `assignName` segura os itens (`heldValues`) até a lista existir, então `res = [res]` não reescreve a `res` antiga. Uma lista repetida como o MESMO item (`[[0] * 3] * 3`, ver `evaluator.js#evalBinOp`) vira uma lista só em várias células. `removeArray` (público) apaga uma lista à mão levando as de dentro que ficam sem ninguém. Uma lista que sai de uma célula por `pop`/`remove` vai pra `pendingOrphans` e só some no fim da instrução, se ninguém a guardou (`collectOrphans`, chamado por `interpreter.js#tick` e pelo Sandbox). `releaseDeadArrays` segue as células das listas de listas em cadeia, e `stableRef` troca por id os itens de uma `nestedlist`.
 - Sets: `setAdd`/`setRemove`/`setPop`/`_writeSet`, sempre substituindo `hashTable` por um objeto novo (os snapshots compartilham o antigo).
 - Deques: `isDeque`, `dequeMaxlen`, `dequeSetItems`.
+- `defaultdict(int|float|str|bool|list)`: o dict guarda o nome da fábrica em `defaultFactory` (`MicroModel#addDict`/`setDictDefaultFactory`, salvo no projeto e validado contra `DEFAULT_FACTORIES` no `loadFrom`); ler `d[k]` ausente cria a célula com o valor padrão (`evaluate`, caso `Index`, via `assignDictKey`). `zip(a, b, ...)` é um `pairs` (como `enumerate`) e o `for` aceita qualquer quantidade de nomes.
 - Recursão: `pushFrame`, `popFrame`, `stableRef` (troca a referência por nome por uma por id ao cruzar a fronteira da chamada), `releaseDeadArrays`.
 
 **`MicroProgramRunner.js`**: motor da Simulação. API: `run(source, env)`, `stop()`, `goToStep(i)`, `togglePlay()`, `setSpeed(speed)`, `hasSteps`, `steps`, `stepIndex`, `error`, `updatePosition(id, x, y)` (chamado pelo App ao arrastar), `updateOrientation`, `exportStepLayout`/`importStepLayout`/`clearStepLayout`. Internos: `_snapshot`, `_restore`, `_capturePositions`, `_assignKeys`, `_positionAt`.
@@ -462,10 +465,10 @@ Cada widget é uma classe independente, sem classe base. Recebe um container e c
 | Arquivo | O que é | Ligado no App em |
 |---|---|---|
 | `CodeEditor.js` | Editor próprio: `<textarea>` + camada de realce sincronizada, gutter de números, linha marcada ("breakpoint" de aula, Ctrl+Setas), indentação inteligente, tamanho de fonte. Modos Sandbox/Simulação. Clique num nome destaca o elemento correspondente (`onSelectName`); botão direito em `nums[i]` liga ou desliga o cursor (`onToggleCursor`) e num nome oculta ou mostra o ponteiro (`onTogglePointer`). A validação acontece no Ctrl+Enter (`_handleGenerateFromLine`, com flash verde ou vermelho). | `_buildLayout` (`this.codeEditor`) |
-| `CallTree.js` | Árvore de chamadas da Simulação. Modos `full`/`compact`/`hidden`. Clique troca a aba exibida. | `this.callTree` |
+| `CallTree.js` | Árvore de chamadas da Simulação. Modos `full`/`compact`/`hidden`. Clique troca a aba exibida. Mostra o retorno das chamadas finalizadas e, no hover, o escopo do frame. | `this.callTree` |
 | `PlaybackControls.js` | Barra de passo, play/pause e velocidade. | `this.microPlayback` |
 | `ConsoleWindow.js` | Console de `print`, encaixado sob o canvas ou flutuante (arrastável e redimensionável). Persiste o modo e a geometria nas configurações. | `this.microConsole` |
-| `ModeToolbar.js` | Barra de modos do canvas (ícones em `ICONS`, lista de modos vinda de `MICRO_MODES`). Sem estado. | `this.microModeToolbar` |
+| `ModeToolbar.js` | Barra de modos do canvas (ícones em `ICONS`, lista de modos vinda de `MICRO_MODES`). Modos com o mesmo `group` (Área, Seta e Régua) dividem um botão: segurar (ou botão direito) abre a lista de escolha; só lembra o último do grupo. | `this.microModeToolbar` |
 | `AlignToolbar.js` | Botões de alinhar (2+ selecionados) e distribuir (3+), acima da barra de modos; some sem seleção suficiente (`ALIGN_BUTTONS[].min`). Sem estado: recebe `count` e chama `actions.run(id)`. | `this.microAlignToolbar` |
 | `TreeLayoutToolbar.js` | Botões "Árvore ↕"/"Árvore ↔" (`TREE_LAYOUT_BUTTONS`), ao lado do lugar da `AlignToolbar`, só com um TreeNode selecionado. Sem estado: recebe `enabled` e chama `actions.run(orientation)`. | `this.microTreeToolbar` |
 | `QuickActionPalette.js` | Caixa Ctrl+Espaço: casamento abreviado (`scoreName`), sugestão em cinza, ↑/↓/Tab/Enter/Esc. Os comandos vêm de quem abre. | `this.microQuickActions` |
@@ -475,7 +478,7 @@ Cada widget é uma classe independente, sem classe base. Recebe um container e c
 | `Dialog.js` | `confirm`/`alert` modais baseados em Promise (substituem os nativos). | `this.dialog` |
 | `CanvasTitle.js` | Título editável no topo do canvas. | `this.microCanvasTitle` |
 | `NodePopup.js` | Popup pra digitar o valor de um nó. | `this.microPopup` |
-| `ArraySettingsPopup.js` | Configurações de array, dict ou matriz (nome, tamanho, orientação — com "Pilha" pra lista/deque e "Grade" pra lista de listas, `showGrid` —, remover), aberto pelo botão direito no puxador da coleção. Três instâncias. Lista/deque têm uma terceira orientação, "Pilha" (`showStack`). Lista/set/deque de nós (ou ainda vazia) têm também a alternância "Nós · Como círculos" (`showNodeCircles` → `nodeCircles` no array, `MicroModel#setArrayNodeCircles`; e "Destacar nós" → `highlightNodes`, `MicroModel#setArrayHighlightNodes`: coleção de nós selecionada acende todos os nós dela, na cor da coleção — `App#_microNodeHighlightHosts`, `_microEffectiveColors`, `.micro-colored.linked` em canvas.css): os nós aparecem como círculos com o `data` dentro das células, sem seta nem pino (`MicroCanvasView#_buildArrayContent`, `cellNodes` montado por `App`), útil pra fila de uma BFS; é preferência visual guardada em `MicroProgramRunner.nodeCircles` (como a orientação) e no arquivo do projeto. Set não tem campo de tamanho e deque com `maxlen` não passa dele (ver `App#_openMicroArraySettingsPopup`). | `this.micro{Array,Dict,Matrix}SettingsPopup` |
+| `ArraySettingsPopup.js` | Configurações de array, dict ou matriz (nome, tamanho, orientação — com "Pilha" pra lista/deque e "Grade" pra lista de listas, `showGrid` —, remover), aberto pelo botão direito no puxador da coleção. Três instâncias. Lista/deque têm uma terceira orientação, "Pilha" (`showStack`). Lista/set/deque de nós (ou ainda vazia) têm também a alternância "Nós · Como círculos" (`showNodeCircles` → `nodeCircles` no array, `MicroModel#setArrayNodeCircles`; e "Destacar nós" → `highlightNodes`, `MicroModel#setArrayHighlightNodes`: 3 estados — Nunca, Selecionado (`'selected'`) ou Sempre (`'always'`; `true` antigo vale `selected`, `normalizeHighlightMode`): a coleção de nós acende todos os nós dela, na cor da coleção, sempre ou só selecionada — `App#_microNodeHighlightHosts`, `_microEffectiveColors`, `.micro-colored.linked` em canvas.css): os nós aparecem como círculos com o `data` dentro das células, sem seta nem pino (`MicroCanvasView#_buildArrayContent`, `cellNodes` montado por `App`), útil pra fila de uma BFS; é preferência visual guardada em `MicroProgramRunner.nodeCircles` (como a orientação) e no arquivo do projeto. Set não tem campo de tamanho e deque com `maxlen` não passa dele (ver `App#_openMicroArraySettingsPopup`). | `this.micro{Array,Dict,Matrix}SettingsPopup` |
 | `LabelSettingsPopup.js` | Texto (markdown cru, com um lembrete da sintaxe), cor e tamanho de uma label. | `this.microLabelSettingsPopup` |
 | `ChartSettingsPopup.js` | Funções exibidas, escala e títulos dos eixos de um gráfico Big-O (aplica a cada mudança). | `this.microChartSettingsPopup` |
 | `InlineValueEditor.js` | Editor in place sobre o canvas (valor ou nome). `parseEditedValue` converte texto em número, string ou bool. | `this.microInlineEditor` |
@@ -657,6 +660,14 @@ Inclua em `_saveProject`, leia com validação defensiva em `_applyLoadedProject
 - **Popups e diálogos:** use `Dialog` (nunca `window.confirm`/`alert`) e `fitPopupInContainer`.
 
 ---
+
+### Detalhes que não estão em outro lugar
+
+- Uma instrução continua nas linhas seguintes enquanto há `(`/`[`/`{` aberto ou a linha termina em `\` (`blockParser.js#joinLogicalLine`; mantém a linha onde começa, e `logicalLineAt` deixa o Ctrl+Enter do Sandbox rodá-la inteira).
+- `float('inf')`/`float('-inf')` aparecem como `inf`/`-inf` via `core/numText.js`.
+- `CallTree`: o botão ◐ do cabeçalho alterna a configuração `dimOutOfScope` (elementos fora do escopo da chamada ativa ficam com opacidade reduzida ou normais, sempre clicáveis; também em Configurações).
+- Preferências visuais de lista/set/deque/dict (orientação, `nodeCircles`, `highlightNodes`, cor manual) também são lembradas POR NOME em `App#microArrayPrefs` (salvas como `arrayPrefs`) e reaplicadas por `_applyRememberedArrayPrefs` quando o array nasce numa nova execução — os ids mudam entre execuções, os nomes não.
+- Quick action `new pointers` (com nós selecionados): um ponteiro por nó, nomeado pelo `data` em minúsculas se começar com letra, senão `p{data}` (`App#_quickNewPointersForNodes`, desativada na Simulação).
 
 ## 10. Como verificar uma mudança
 

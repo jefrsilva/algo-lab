@@ -35,6 +35,7 @@ const SECTIONS = [
       { key: 'consoleHidden', label: 'Console', shortcut: 'C', type: 'choice', options: [[false, 'Visível'], [true, 'Oculto']] },
       { key: 'consoleFloating', label: 'Posição do console', shortcut: 'Alt+C', type: 'choice', options: [[false, 'Barra inferior'], [true, 'Janela flutuante']] },
       { key: 'callTreeMode', label: 'Pilha de chamadas', type: 'choice', options: [['full', 'Completa'], ['compact', 'Reduzida'], ['hidden', 'Oculta']] },
+      { key: 'dimOutOfScope', label: 'Elementos fora do escopo da chamada', type: 'choice', options: [[true, 'Opacidade reduzida'], [false, 'Normais']] },
     ],
   },
   {

@@ -29,10 +29,15 @@ const COMPACT_STEP = 6;
 const COMPACT_MAX_INDENT = 36;
 
 export class CallTree {
-  constructor(container, { onSelectFrame, onModeChange } = {}) {
+  constructor(container, { onSelectFrame, onModeChange, onDimChange, getScope } = {}) {
     this.container = container;
+    this.onDimChange = onDimChange || (() => {});
     this.onSelectFrame = onSelectFrame || (() => {});
     this.onModeChange = onModeChange || (() => {});
+    // escopo (parâmetros e locais) de uma chamada AINDA na pilha, calculado do
+    // modelo do passo atual — o das já retornadas vem no próprio nó (`scope`)
+    this.getScope = getScope || (() => []);
+    this._tip = null;
     this.mode = getSetting('callTreeMode');
     this._last = { nodes: null, activeFrameId: 'global' };
   }
@@ -52,6 +57,7 @@ export class CallTree {
 
   render({ nodes, activeFrameId }) {
     this._last = { nodes, activeFrameId };
+    this._hideScopeTip();
     const hasCalls = !!nodes && nodes.length > 0;
     this.container.hidden = !hasCalls || this.mode === 'hidden';
     if (this.container.hidden) {
@@ -78,12 +84,16 @@ export class CallTree {
 
     const maxDepth = Math.max(1, ...nodes.map((n) => n.depth));
     const step = Math.min(COMPACT_STEP, COMPACT_MAX_INDENT / maxDepth);
-    const makeNode = (frameId, label, depth) =>
-      compact
+    const makeNode = (frameId, label, depth, node) => {
+      const btn = compact
         ? this._makeDot(frameId, label, depth * step, activeFrameId, onPath)
         : this._makeNode(frameId, label, depth, activeFrameId, onPath);
+      btn.addEventListener('mouseenter', () => this._showScopeTip(btn, frameId, label, node));
+      btn.addEventListener('mouseleave', () => this._hideScopeTip());
+      return btn;
+    };
 
-    list.appendChild(makeNode('global', 'global (topo)', 0));
+    list.appendChild(makeNode('global', 'global (topo)', 0, null));
     const byParent = new Map();
     nodes.forEach((n) => {
       const key = n.parentId ?? 'global';
@@ -92,7 +102,8 @@ export class CallTree {
     });
     const appendChildren = (parentId) => {
       (byParent.get(parentId) || []).forEach((n) => {
-        list.appendChild(makeNode(n.id, n.label, n.depth));
+        const shown = n.returned ? `${n.label} → ${n.returnText}` : n.label;
+        list.appendChild(makeNode(n.id, shown, n.depth, n));
         appendChildren(n.id);
       });
     };
@@ -116,6 +127,17 @@ export class CallTree {
         ? this._makeHeaderButton('⇥', 'Expandir a pilha de chamadas', () => this.setMode('full'))
         : this._makeHeaderButton('⇤', 'Visualização reduzida', () => this.setMode('compact')),
     );
+    const dim = getSetting('dimOutOfScope');
+    const dimBtn = this._makeHeaderButton(
+      '◐',
+      dim
+        ? 'Elementos fora do escopo da chamada com opacidade reduzida (clique para mostrá-los normais)'
+        : 'Elementos fora do escopo da chamada normais (clique para reduzir a opacidade)',
+      () => this.onDimChange(!getSetting('dimOutOfScope')),
+    );
+    dimBtn.classList.toggle('toggled', dim);
+    dimBtn.setAttribute('aria-pressed', String(dim));
+    header.appendChild(dimBtn);
     header.appendChild(
       this._makeHeaderButton('✕', 'Ocultar a pilha de chamadas (reabrir pelo menu ☰)', () => this.setMode('hidden')),
     );
@@ -159,6 +181,45 @@ export class CallTree {
     btn.appendChild(dot);
     btn.addEventListener('click', () => this.onSelectFrame(frameId));
     return btn;
+  }
+
+  /** Pop-up ao lado da chamada com o que o frame guarda implicitamente
+   * (parâmetros e locais) — a memória que a pilha segura. */
+  _showScopeTip(anchor, frameId, label, node) {
+    const scope = node?.returned ? node.scope : this.getScope(frameId);
+    if (!scope) return;
+    this._hideScopeTip();
+    const tip = document.createElement('div');
+    tip.className = 'call-tree-tip';
+    const title = document.createElement('div');
+    title.className = 'call-tree-tip-title';
+    title.textContent = label;
+    tip.appendChild(title);
+    if (scope.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'call-tree-tip-empty';
+      empty.textContent = 'Nenhum valor guardado';
+      tip.appendChild(empty);
+    }
+    scope.forEach(({ name, text }) => {
+      const row = document.createElement('div');
+      row.className = 'call-tree-tip-row';
+      row.textContent = `${name} = ${text}`;
+      tip.appendChild(row);
+    });
+    document.body.appendChild(tip);
+    const r = anchor.getBoundingClientRect();
+    const panel = this.container.getBoundingClientRect();
+    const x = Math.min(panel.right + 6, window.innerWidth - tip.offsetWidth - 6);
+    const y = Math.max(6, Math.min(r.top, window.innerHeight - tip.offsetHeight - 6));
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+    this._tip = tip;
+  }
+
+  _hideScopeTip() {
+    this._tip?.remove();
+    this._tip = null;
   }
 
   /** Rola o painel (só ele, nunca a página) até a chamada ativa, se ela

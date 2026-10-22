@@ -51,6 +51,15 @@ describe('settings', () => {
     expect(s.getSetting('codeFontSize')).toBe(s.SETTINGS_DEFAULTS.codeFontSize);
   });
 
+  test('dimOutOfScope: padrão ligado, só `false` desliga e persiste', async () => {
+    let s = await carregar();
+    expect(s.getSetting('dimOutOfScope')).toBe(true);
+    expect(s.setSetting('dimOutOfScope', 'talvez')).toBe(true);
+    expect(s.setSetting('dimOutOfScope', false)).toBe(false);
+    s = await carregar();
+    expect(s.getSetting('dimOutOfScope')).toBe(false);
+  });
+
   test('JSON inválido no storage não quebra', async () => {
     localStorage.setItem(KEY, '{nao é json');
     const s = await carregar();

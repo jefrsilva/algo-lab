@@ -358,6 +358,7 @@
   fill: none;
   stroke: var(--edge-color);
   stroke-width: 2.75;
+  pointer-events: none; /* o clique é do `.micro-edge-hit` */
   transition: d 0.35s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease, stroke-width 0.2s ease;
 }
 
@@ -374,6 +375,31 @@
 .micro-edge-line.selected {
   stroke: var(--sel);
   stroke-width: 3.5;
+}
+
+/* aresta com cor manual: o `stroke` inline vence a cor de seleção, só a
+   largura marca o destaque */
+.micro-edge-line.micro-edge-colored.selected {
+  stroke-width: 3.5;
+}
+
+/* alvo de clique da aresta (selecionar/pintar): invisível e mais largo que
+   o traço; fica sob os elementos, que têm prioridade no clique */
+.micro-edge-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 12;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.micro-edge-hit.picked {
+  stroke: var(--sel);
+  stroke-opacity: 0.28;
+}
+
+.micro-edge-hit.micro-dimmed {
+  pointer-events: none;
 }
 
 /* ---- modo micro: arrays ---- */
@@ -584,12 +610,13 @@
 
 .label-text {
   /* markdown das labels (ver labelMarkdown.js): texto corrido na fonte da
-     interface, regular — negrito/itálico/tamanho de título vêm como
+     interface, em semibold (600, mais legível em tamanho pequeno; LABEL_BASE_WEIGHT
+     em textMeasure.js) — negrito/itálico/tamanho de título vêm como
      atributos de cada <tspan> (MicroCanvasView#_fillLabelText). A geometria
      é medida com estas mesmas fontes (textMeasure.js). O editor in place
      mostra o markdown cru, em mono (.inline-value-editor.multiline). */
   font-family: var(--font-sans);
-  font-weight: 400;
+  font-weight: 600;
   text-anchor: start;
   dominant-baseline: middle;
   white-space: pre;
@@ -994,4 +1021,51 @@
   paint-order: stroke;
   stroke: rgba(0, 0, 0, 0.55);
   stroke-width: 2.5px;
+}
+
+/* ---- modo micro: setas e réguas (ferramentas "Seta" e "Régua") ---- */
+
+.line-node {
+  cursor: grab;
+}
+
+.line-node.dragging {
+  cursor: grabbing;
+}
+
+.line-main,
+.line-tick {
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.line-head {
+  stroke-width: 1;
+  stroke-linejoin: round;
+}
+
+.line-halo {
+  stroke: transparent;
+  stroke-width: 8;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+
+.line-node.selected .line-halo {
+  stroke: var(--sel);
+  stroke-opacity: 0.35;
+}
+
+.line-handle {
+  fill: var(--bg-0);
+  stroke: var(--sel);
+  cursor: move;
+}
+
+.micro-container[data-mode='arrow'] .micro-canvas,
+.micro-container[data-mode='arrow'] .line-node,
+.micro-container[data-mode='ruler'] .micro-canvas,
+.micro-container[data-mode='ruler'] .line-node {
+  cursor: crosshair;
 }

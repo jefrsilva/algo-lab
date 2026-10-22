@@ -1,5 +1,6 @@
 import { nextId } from '../id.js';
 import { reviveRaw } from '../../interpreter/pytuple.js';
+import { DEFAULT_FACTORIES } from '../../interpreter/evaluator.js';
 
 // 32 cobre o contador de letras "[0] * 26" (anagramas, frequência)
 export const MAX_ARRAY_SIZE = 32;
@@ -8,6 +9,14 @@ export const MAX_DICT_SIZE = 24;
 /** Tipos de struct: 'list' (Node: prev/next), 'slist' (ListNode: só next, lista
  * simplesmente ligada), 'tree' (TreeNode: left/right) e 'graph' (GraphNode:
  * neighbors). Qualquer outro valor vira 'list'. */
+/** Modo de "Destacar nós" de uma lista/set/deque de nós: 'always' (sempre),
+ * 'selected' (só selecionada) ou null (nunca). `true` (projetos antigos,
+ * quando era um liga/desliga) vale 'selected'. */
+export function normalizeHighlightMode(v) {
+  if (v === 'always') return 'always';
+  return v === true || v === 'selected' ? 'selected' : null;
+}
+
 export function normalizeStructType(type) {
   return type === 'tree' || type === 'graph' || type === 'slist' ? type : 'list';
 }
@@ -272,10 +281,19 @@ export class MicroModel {
 
   /** `frameId`: igual o de array, só diz a qual frame pertence o NOME do
    * dict (ele é "heap", aparece em qualquer aba). */
-  addDict(x, y, { orientation = 'horizontal', name = 'dict', cells = [], frameId = 'global' } = {}) {
-    const node = { id: nextId('dict'), x, y, orientation, cells: cells.slice(0, MAX_DICT_SIZE), name, frameId };
+  addDict(x, y, { orientation = 'horizontal', name = 'dict', cells = [], frameId = 'global', defaultFactory = null } = {}) {
+    const node = { id: nextId('dict'), x, y, orientation, cells: cells.slice(0, MAX_DICT_SIZE), name, frameId, ...(defaultFactory ? { defaultFactory } : {}) };
     this.dicts.set(node.id, node);
     return node;
+  }
+
+  /** `defaultdict(fábrica)`: nome da fábrica ('int', 'list'...) ou `null`
+   * pra um dict comum (ver evaluator.js#DEFAULT_FACTORIES). */
+  setDictDefaultFactory(dictId, defaultFactory) {
+    const node = this.dicts.get(dictId);
+    if (!node) return;
+    if (defaultFactory) node.defaultFactory = defaultFactory;
+    else delete node.defaultFactory;
   }
 
   renameDict(dictId, name) {
@@ -488,8 +506,21 @@ export class MicroModel {
     for (const p of this.pointers.values()) {
       if (p.target?.kind === 'struct' && p.target.id === id) p.target = null;
     }
+    // lista de vizinhos de um GraphNode: a aresta some (a célula é removida),
+    // em vez de sobrar uma referência nula
+    const neighborLists = new Set();
+    for (const s of this.structs.values()) {
+      if (s.neighborsArrayId) neighborLists.add(s.neighborsArrayId);
+    }
     for (const arr of this.arrays.values()) {
-      if (arr.kind === 'ref') arr.cells = arr.cells.map((c) => (c === id ? null : c));
+      if (arr.kind !== 'ref') continue;
+      if (neighborLists.has(arr.id)) {
+        for (let i = arr.cells.length - 1; i >= 0; i -= 1) {
+          if (arr.cells[i] === id) this.removeArrayCell(arr.id, i);
+        }
+      } else {
+        arr.cells = arr.cells.map((c) => (c === id ? null : c));
+      }
     }
     for (const dict of this.dicts.values()) {
       dict.cells.forEach((c) => {
@@ -654,7 +685,8 @@ export class MicroModel {
   setArrayHighlightNodes(arrayId, on) {
     const node = this.arrays.get(arrayId);
     if (!node || node.kind === 'arrayref') return;
-    if (on) node.highlightNodes = true;
+    const mode = normalizeHighlightMode(on);
+    if (mode) node.highlightNodes = mode;
     else delete node.highlightNodes;
   }
 
@@ -815,7 +847,7 @@ export class MicroModel {
       ...(n.hashTable ? { hashTable: n.hashTable } : {}),
       ...(n.isDeque ? { isDeque: true, maxlen: n.maxlen ?? null } : {}),
       ...(n.nodeCircles ? { nodeCircles: true } : {}),
-      ...(n.highlightNodes ? { highlightNodes: true } : {}),
+      ...(n.highlightNodes ? { highlightNodes: n.highlightNodes } : {}),
     });
     const dict = (n) => ({
       id: n.id,
@@ -825,8 +857,9 @@ export class MicroModel {
       cells: n.cells.map((c) => ({ ...c })),
       name: n.name,
       ...(n.labelPointerId ? { labelPointerId: n.labelPointerId } : {}),
+      ...(n.defaultFactory ? { defaultFactory: n.defaultFactory } : {}),
     });
-    const variable = (n) => ({ id: n.id, x: n.x, y: n.y, name: n.name, value: n.value, frameId: n.frameId });
+    const variable = (n) => ({ id: n.id, x: n.x, y: n.y, name: n.name, value: n.value, frameId: n.frameId, ...(n.hidden ? { hidden: true } : {}) });
     const matrix = (n) => ({
       id: n.id,
       x: n.x,
@@ -902,7 +935,7 @@ export class MicroModel {
         // hash (texto/nó), é refeita (ver MicroRuntimeAdapter#_setTableOf)
         ...(n.isSet && n.hashTable && typeof n.hashTable === 'object' ? { hashTable: n.hashTable } : {}),
         ...(n.nodeCircles && arrayKind(n.kind) !== 'arrayref' ? { nodeCircles: true } : {}),
-        ...(n.highlightNodes && arrayKind(n.kind) !== 'arrayref' ? { highlightNodes: true } : {}),
+        ...(normalizeHighlightMode(n.highlightNodes) && arrayKind(n.kind) !== 'arrayref' ? { highlightNodes: normalizeHighlightMode(n.highlightNodes) } : {}),
       });
     });
     (data.dicts || []).forEach((n) => {
@@ -917,10 +950,11 @@ export class MicroModel {
           : [],
         name: n.name,
         ...(n.labelPointerId ? { labelPointerId: n.labelPointerId } : {}),
+        ...(Object.hasOwn(DEFAULT_FACTORIES, n.defaultFactory) ? { defaultFactory: n.defaultFactory } : {}),
       });
     });
     (data.variables || []).forEach((n) => {
-      this.variables.set(n.id, { id: n.id, x: n.x || 0, y: n.y || 0, name: n.name, value: reviveRaw(n.value), frameId: n.frameId || 'global' });
+      this.variables.set(n.id, { id: n.id, x: n.x || 0, y: n.y || 0, name: n.name, value: reviveRaw(n.value), frameId: n.frameId || 'global', ...(n.hidden ? { hidden: true } : {}) });
     });
     (data.matrices || []).forEach((n) => {
       // linhas irregulares (arquivo editado à mão) são completadas com 0 até

@@ -28,7 +28,7 @@ describe('Sobre o Algo-Lab', () => {
     const dialogo = document.querySelector('.app-dialog');
     expect(dialogo.querySelector('.app-dialog-title').textContent).toBe('Sobre o Algo-Lab');
     expect(dialogo.textContent).toContain(`Versão ${APP_VERSION}`);
-    expect(dialogo.textContent).toContain('Jeferson Silva');
+    expect(dialogo.textContent).toContain('Desenvolvida e mantida por Jeferson Silva');
     expect(dialogo.textContent).toContain('apoio de IA');
     expect(dialogo.textContent).toContain('está em beta');
     expect(dialogo.textContent).toContain('não replica 100%');

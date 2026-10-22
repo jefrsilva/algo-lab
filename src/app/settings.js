@@ -31,6 +31,7 @@ export const SETTINGS_DEFAULTS = Object.freeze({
   codePanelHidden: false, // Ctrl+H
   codePanelBottomInset: 0, // px reservados embaixo do painel de código (ver App#_setupCodeBottomResizer)
   playbackSpeed: 1,
+  tutorialSeen: false, // o tutorial de primeiros passos já foi concluído ou pulado
 });
 
 const clampNumber = (v, min, max, fallback) => (Number.isFinite(v) ? Math.max(min, Math.min(max, v)) : fallback);
@@ -50,6 +51,7 @@ const VALIDATORS = {
   codePanelHidden: (v) => v === true,
   codePanelBottomInset: (v) => Math.round(clampNumber(v, 0, 10000, 0)),
   playbackSpeed: (v) => clampNumber(v, SPEED_MIN, SPEED_MAX, SETTINGS_DEFAULTS.playbackSpeed),
+  tutorialSeen: (v) => v === true,
 };
 
 function readLegacy() {

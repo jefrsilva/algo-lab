@@ -1096,3 +1096,70 @@ select {
   font-size: 0.9rem;
   color: var(--text-2);
 }
+
+
+/* Tutorial guiado (ver src/ui/Tutorial.js) — popups ao lado da parte da tela
+   que o passo explica, com um contorno no alvo. Não é modal: nada escurece
+   nem bloqueia cliques (o destaque tem pointer-events: none). */
+.tutorial-highlight {
+  position: fixed;
+  z-index: 110;
+  border: 2px solid var(--accent);
+  border-radius: var(--radius-md);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 25%, transparent);
+  pointer-events: none;
+}
+
+.tutorial-popup {
+  position: fixed;
+  z-index: 111;
+  width: min(92vw, 380px);
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+  box-sizing: border-box;
+  background: var(--bg-2);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-lg);
+  padding: 18px 20px;
+  box-shadow: 0 20px 50px var(--shadow-color);
+}
+
+.tutorial-title {
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-0);
+}
+
+.tutorial-text {
+  margin: 0 0 10px;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: var(--text-1);
+}
+
+.tutorial-code {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-0);
+  overflow-x: auto;
+}
+
+.tutorial-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.tutorial-progress {
+  margin-right: auto;
+  font-size: 0.85rem;
+  color: var(--text-2);
+}

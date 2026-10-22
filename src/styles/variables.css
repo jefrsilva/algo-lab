@@ -58,8 +58,6 @@
   --tok-number: #f4a283;
   --tok-comment: #8793ab;
 
-  --logo: #eeeff1;
-
   --shadow-color: rgba(0, 0, 0, 0.5);
   --backdrop: rgba(6, 10, 18, 0.6);
 
@@ -114,9 +112,6 @@
   --tok-string: #1f7a3a;
   --tok-number: #b8481c;
   --tok-comment: #5f6b82;
-
-  /* a cor original da logo (#eeeff1) some no fundo claro */
-  --logo: #111827;
 
   --shadow-color: rgba(30, 41, 59, 0.18);
   --backdrop: rgba(15, 23, 42, 0.35);

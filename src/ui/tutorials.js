@@ -44,7 +44,7 @@ const COMO_COMECAR = [
     target: '.code-editor-toolbar',
     placement: 'left',
     body: [
-      'Troque para Simulação para rodar o programa inteiro. Escreva o código e clique em ▶ Rodar (ou use Ctrl+Shift+Enter).',
+      'Troque para Simulação para rodar o programa inteiro. Escreva o código e clique no botão verde de rodar, o triângulo ▶ da barra do código (ou use Ctrl+Shift+Enter).',
       'Aparece uma barra de reprodução: avance e volte passo a passo, ou dê play. A cada passo o canvas mostra o estado da memória naquele ponto — e o painel de chamadas acompanha a recursão.',
     ],
   },
@@ -83,7 +83,7 @@ const SOMAR_LISTA = [
     placement: 'left',
     body: [
       'No Sandbox, Ctrl+Enter executa uma linha por vez. Para rodar o programa inteiro e poder acompanhá-lo, clique em Simulação, no alto do painel de código.',
-      'Aparece um botão ▶ ao lado dele: clique para rodar (ou use Ctrl+Enter, que na Simulação roda tudo).',
+      'Aparece um botão verde ▶ ao lado dele: clique para rodar o programa (ou use Ctrl+Enter, que na Simulação roda tudo).',
     ],
   },
   {
@@ -91,7 +91,7 @@ const SOMAR_LISTA = [
     target: '.micro-run-bar',
     placement: 'left',
     body: [
-      'Agora há uma barra de reprodução. Use ▶ para dar play, ◀ e o passo seguinte para andar um passo por vez (atalhos Ctrl+, e Ctrl+.), ou ⏮/⏭ para ir ao começo/fim. A velocidade também é ajustável.',
+      'Agora há uma barra de reprodução. O botão azul ▶ dá play (reproduz sozinho; vira ⏸ para pausar). Os botões com uma barra andam UM passo: |◀ volta e ▶| avança (atalhos Ctrl+, e Ctrl+.). Os de duas setas pulam para o começo (|◀◀) ou o fim (▶▶|). A velocidade também é ajustável.',
       'A cada passo a linha atual fica destacada no código, a lista aparece no canvas, a variável total vai crescendo e o resultado (14) sai no console.',
     ],
   },
@@ -187,7 +187,7 @@ const SIMULACAO_POSICOES = [
     target: '.code-editor-panel',
     placement: 'left',
     body: [
-      'Clique em Simulação, escreva o código abaixo (ele monta uma lista de 3 nós) e rode com ▶.',
+      'Clique em Simulação, escreva o código abaixo (ele monta uma lista de 3 nós) e rode com o botão verde ▶ da barra do código.',
       { code: 'a = Node(1)\nb = Node(2)\na.next = b\nc = Node(3)\nb.next = c' },
     ],
   },
@@ -196,7 +196,7 @@ const SIMULACAO_POSICOES = [
     target: '.micro-run-bar',
     placement: 'left',
     body: [
-      'Volte ao primeiro passo (⏮). Com o nó a na tela, arraste-o para onde quiser. Avance um passo (▶ ou Ctrl+.): o nó b aparece — arraste-o para o lado de a. Continue, posicionando c quando ele surgir.',
+      'Volte ao primeiro passo (|◀◀). Com o nó a na tela, arraste-o para onde quiser. Avance um passo (▶| ou Ctrl+.): o nó b aparece — arraste-o para o lado de a. Continue, posicionando c quando ele surgir.',
       'Arrastar durante a Simulação grava a posição daquele elemento a partir do passo atual.',
     ],
   },

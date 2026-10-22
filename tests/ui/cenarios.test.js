@@ -86,4 +86,25 @@ describe('cenários guiados', () => {
     // o que o "Salvar projeto" grava: um quadro-chave no passo 2 (índice 1)
     expect(app.microRunner.exportStepLayout()).toEqual([['struct#1', [{ step: 1, x: 500, y: 300 }]]]);
   });
+
+  test('cenário 4: o painel de chamadas mostra a árvore, os retornos e o escopo de cada chamada', () => {
+    botao('.code-editor-mode-btn', 'Simulação').click();
+    escrever(codigoDe('recursao', 0));
+    $('.code-editor-run-btn').click();
+    $('.playback-btn[data-acao="ultimo"]').click();
+
+    const nos = () => [...document.querySelectorAll('.call-tree-node')].map((n) => n.textContent);
+    expect(nos()).toEqual(['global (topo)', 'fib(3) → 2', 'fib(2) → 1', 'fib(1) → 1', 'fib(0) → 0', 'fib(1) → 1']);
+    expect($('.micro-console .console-body').textContent).toContain('2');
+
+    // recuo = quem chamou quem: fib(2) e o 2º fib(1) são filhos de fib(3)
+    const recuo = [...document.querySelectorAll('.call-tree-node')].map((n) => parseInt(n.style.paddingLeft, 10));
+    expect(recuo[2]).toBe(recuo[5]);
+    expect(recuo[3]).toBeGreaterThan(recuo[2]);
+
+    // balão com o escopo de uma chamada que já retornou
+    const fib2 = [...document.querySelectorAll('.call-tree-node')].find((n) => n.textContent.startsWith('fib(2)'));
+    fib2.dispatchEvent(new MouseEvent('mouseenter'));
+    expect($('.call-tree-tip').textContent).toContain('n = 2');
+  });
 });

@@ -225,9 +225,69 @@ const SIMULACAO_POSICOES = [
   },
 ];
 
+const RECURSAO = [
+  {
+    title: 'Recursão e o painel de chamadas',
+    target: '.canvas-top-left-controls',
+    placement: 'right',
+    body: [
+      'Neste cenário você roda uma função recursiva pequena — o Fibonacci de 3 — e usa o painel de chamadas para ver a árvore de recursão, o que cada chamada guarda e o que ela retornou.',
+      'Para começar de um canvas limpo, use ☰ → Novo projeto. Depois clique em Próximo.',
+    ],
+  },
+  {
+    title: '1. Escreva a função',
+    target: '.code-editor-panel',
+    placement: 'left',
+    body: [
+      'Clique em Simulação (o painel de chamadas só existe nela) e escreva o código abaixo. fib(n) devolve n quando n < 2 (caso base); senão soma o resultado de duas chamadas a si mesma.',
+      { code: 'def fib(n):\n    if n < 2:\n        return n\n    return fib(n - 1) + fib(n - 2)\n\nprint(fib(3))' },
+      'Rode com o botão verde ▶ da barra do código.',
+    ],
+  },
+  {
+    title: '2. A árvore de recursão',
+    target: '.call-tree-panel',
+    placement: 'left',
+    body: [
+      'Surgiu o painel "Chamadas", entre o canvas e o código. Cada linha é uma chamada de função; as que estão recuadas foram feitas pela linha de cima — por isso ele desenha a árvore de recursão.',
+      'Avance passo a passo (▶| ou Ctrl+.) e veja a árvore crescer: fib(3) chama fib(2), que chama fib(1) e fib(0); depois fib(3) chama fib(1). Ela só cresce: voltar um passo não apaga chamadas já feitas.',
+      'A chamada ativa naquele passo e as que a chamaram (a pilha de verdade) ficam destacadas.',
+    ],
+  },
+  {
+    title: '3. O que cada chamada retornou',
+    target: '.call-tree-panel',
+    placement: 'left',
+    body: [
+      'Quando uma chamada termina, o painel mostra o valor devolvido ao lado dela: fib(1) → 1, fib(0) → 0, fib(2) → 1 e, no fim, fib(3) → 2. Vá para o último passo (▶▶|) para ver todos de uma vez.',
+      'O 2 final é o que o print escreve no console.',
+    ],
+  },
+  {
+    title: '4. O escopo de cada chamada',
+    target: '.call-tree-panel',
+    placement: 'left',
+    body: [
+      'Passe o mouse sobre uma chamada: um balão mostra os parâmetros e as variáveis locais dela (por exemplo, n = 2 em fib(2)) — mesmo as que já retornaram.',
+      'Clique em uma chamada para ver o escopo dela no canvas: aparecem as variáveis daquela chamada, e o que está fora do escopo fica esmaecido (o botão ◐ do painel liga e desliga esse esmaecimento).',
+    ],
+  },
+  {
+    title: 'Cenário concluído',
+    target: '.call-tree-panel',
+    placement: 'left',
+    body: [
+      'O botão ⇤ do painel o deixa reduzido (uma bolinha por chamada, útil em recursões fundas) e ✕ o oculta; para reabri-lo, use o botão de pilha na barra do código.',
+      'Experimente trocar para fib(4) e veja a árvore crescer — ou um fatorial, que gera uma árvore em fila.',
+    ],
+  },
+];
+
 export const TUTORIALS = [
   { id: 'como-comecar', label: 'Como começar', steps: COMO_COMECAR },
   { id: 'somar-lista', label: 'Cenário 1: somar os números de uma lista', steps: SOMAR_LISTA },
   { id: 'lista-ligada', label: 'Cenário 2: lista ligada no canvas e no código', steps: LISTA_LIGADA },
   { id: 'simulacao-posicoes', label: 'Cenário 3: simulação e posição dos elementos', steps: SIMULACAO_POSICOES },
+  { id: 'recursao', label: 'Cenário 4: recursão e o painel de chamadas', steps: RECURSAO },
 ];

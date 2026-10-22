@@ -8,7 +8,7 @@ Guidance for Claude Code (claude.ai/code) in this repository.
 
 ## Language (always pt-BR)
 
-Everything written for this repository is in **Brazilian Portuguese**, even if the conversation is in English: commit messages (title and body), merge messages, PR titles/descriptions, GitHub comments and issues, code comments, UI strings, error/warning messages, test names, docs and project skills. Only identifiers, commands, paths and required trailers (`Co-Authored-By:`, the Claude Code attribution line) stay as they are. This file stays in English.
+Everything written for this repository is in **Brazilian Portuguese**, even if the conversation is in English: commit messages (title and body), merge messages, PR titles/descriptions, GitHub comments and issues, code comments, UI strings, error/warning messages, test names, docs and project skills. Only identifiers, commands, paths and required trailers (`Co-Authored-By:`, the Claude Code attribution line) stay as they are. This file stays in English. Exception: `README.en.md` is the English version of `README.md` — keep both in sync.
 
 ## Commands
 

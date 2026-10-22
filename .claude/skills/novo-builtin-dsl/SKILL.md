@@ -1,6 +1,6 @@
 ---
 name: novo-builtin-dsl
-description: Adiciona uma função built-in (ex. round, reversed, float) ou um método de lista/string/dict/set/deque (ex. lista.reverse(), s.split()) à linguagem Python-like do visualizador. Use quando pedirem para a DSL suportar uma função ou método novo do Python, ou para corrigir o comportamento de um existente.
+description: Adiciona uma função built-in (ex. round, reversed, float) ou um método de lista/string/dict/set/deque (ex. lista.reverse(), s.split()) à linguagem Python-like do Algo-Lab. Use quando pedirem para a DSL suportar uma função ou método novo do Python, ou para corrigir o comportamento de um existente.
 ---
 
 # Novo built-in ou método da DSL

@@ -67,13 +67,13 @@ describe('Simulação', () => {
     expect(contador()).toBe('1 / 4');
     expect(variaveis()[0].value).toBe(1);
 
-    botao('.playback-btn', '⏭').click();
+    $('.playback-btn[data-acao="ultimo"]').click();
     expect(contador()).toBe('4 / 4');
     expect(consoleTexto()).toContain('1');
     expect(consoleTexto()).toContain('2');
     expect(variaveis()[0].value).toBe(2);
 
-    botao('.playback-btn', '◀').click();
+    $('.playback-btn[data-acao="anterior"]').click();
     expect(contador()).toBe('3 / 4');
     expect(consoleTexto()).not.toContain('2');
   });
@@ -89,7 +89,7 @@ describe('Simulação', () => {
 
   test('o passo atual destaca a linha do código', () => {
     rodarNaSimulacao(linhas('a = 1', 'b = 2'));
-    botao('.playback-btn', '▶|').click();
+    $('.playback-btn[data-acao="proximo"]').click();
     expect(app.codeEditor.markedLine).toBe(1);
   });
 
@@ -106,7 +106,7 @@ describe('Simulação', () => {
 
   test('o canvas desenha os elementos criados pelo programa', () => {
     rodarNaSimulacao(linhas('nums = [7, 8, 9]', 'a = Node(42)'));
-    botao('.playback-btn', '⏭').click();
+    $('.playback-btn[data-acao="ultimo"]').click();
     const textoSvg = $('.micro-container svg').textContent;
     expect(textoSvg).toContain('nums');
     expect(textoSvg).toContain('42');
@@ -117,7 +117,7 @@ describe('Simulação', () => {
 
   test('"x = x + [2]" com outro nome na lista antiga leva o rótulo "x" pra lista nova', () => {
     rodarNaSimulacao(linhas('x = [0]', 'y = x', 'x = x + [2]'));
-    botao('.playback-btn', '⏭').click();
+    $('.playback-btn[data-acao="ultimo"]').click();
     const arrays = [...app.micro.arrays.values()];
     const nova = arrays.find((a) => a.name === 'x');
     const antiga = arrays.find((a) => a !== nova);
@@ -130,7 +130,7 @@ describe('Simulação', () => {
 
   test('lista de listas: as listas de dentro nascem embaixo da de fora, sem sobrepor, e cada célula tem seta pra sua lista', () => {
     rodarNaSimulacao(linhas('m = [[1], [2, 3], [4, 5, 6]]'));
-    botao('.playback-btn', '⏭').click();
+    $('.playback-btn[data-acao="ultimo"]').click();
     const arrays = [...app.micro.arrays.values()];
     const m = arrays.find((a) => a.name === 'm');
     const dentro = m.cells.map((id) => app.micro.arrays.get(id));
@@ -153,7 +153,7 @@ describe('Simulação', () => {
 
   test('dict reatribuído com alias leva o rótulo; dict local tem rótulo no frame da chamada', () => {
     rodarNaSimulacao(linhas('d = {"a": 1}', 'e = d', 'd = {"b": 2}', 'def f():', '    t = {}', '    return t', 'r = f()'));
-    botao('.playback-btn', '⏭').click();
+    $('.playback-btn[data-acao="ultimo"]').click();
     const dicts = [...app.micro.dicts.values()];
     const d = dicts.find((x) => x.name === 'd');
     expect(app.micro.pointers.get(d.labelPointerId)).toMatchObject({ label: 'd', target: { kind: 'dict', id: d.id } });
@@ -213,7 +213,7 @@ describe('Simulação', () => {
     escreverCodigo(linhas('x = 1', 'x = 2'));
     tecla(document.body, 'Enter', { ctrlKey: true, shiftKey: true });
     expect(contador()).toBe('1 / 2');
-    botao('.playback-btn', '⏭').click();
+    $('.playback-btn[data-acao="ultimo"]').click();
     escreverCodigo(linhas('x = 1', 'x = 2', 'x = 3'));
     tecla($('.micro-container svg'), 'Enter', { ctrlKey: true, shiftKey: true });
     expect(contador()).toBe('1 / 3');
@@ -430,7 +430,7 @@ describe('ponteiro de um elemento recém-criado nasce longe o bastante pra seta 
   test('rodar de novo na Simulação repete o par nó + ponteiro', () => {
     const codigo = linhas('nums = [1, 2, 3]', 'd = {"a": 1}', 'p = Node(1)');
     const posicoes = () => {
-      botao('.playback-btn', '⏭').click();
+      $('.playback-btn[data-acao="ultimo"]').click();
       const no = [...app.micro.structs.values()][0];
       const p = ponteiroDe('p');
       expect(p.y + PTR_H).toBeLessThanOrEqual(no.y - FOLGA);
@@ -617,7 +617,7 @@ describe('arestas: selecionar e pintar, sem mover nem remover', () => {
   let aresta;
   beforeEach(() => {
     rodarNaSimulacao(linhas('a = Node(1)', 'b = Node(2)', 'a.next = b'));
-    botao('.playback-btn', '⏭').click();
+    $('.playback-btn[data-acao="ultimo"]').click();
     aresta = [...app._microEdgeIds].find((id) => id.endsWith('-next'));
   });
 
@@ -877,7 +877,7 @@ describe('organizar uma árvore por níveis', () => {
         '    raiz = inserir(raiz, v)',
       ),
     );
-    botao('.playback-btn', '⏭').click();
+    $('.playback-btn[data-acao="ultimo"]').click();
     return Object.fromEntries([...app.micro.structs.values()].map((n) => [n.data, n]));
   }
 
@@ -2139,7 +2139,7 @@ describe('halo de seleção colado no elemento', () => {
 describe('contorno da célula destacada por um cursor', () => {
   test('fica num grupo por cima de todas as células (a vizinha não cobre o lado direito)', () => {
     rodarNaSimulacao(linhas('nums = [3, 1, 4, 1, 5]', 'i = 2', 'x = nums[i]'));
-    botao('.playback-btn', '⏭').click();
+    $('.playback-btn[data-acao="ultimo"]').click();
     const arr = [...app.micro.arrays.values()].find((a) => a.name === 'nums');
     const cursor = [...app.micro.pointers.values()].find((p) => p.label === 'nums[i]');
     app._toggleMicroSelection(cursor.id);
@@ -2264,7 +2264,7 @@ describe('lista de listas em grade', () => {
 describe('halo de uma grade por cima das linhas embutidas', () => {
   test('a cópia do halo fica numa camada acima das listas, com o estado e a posição da moldura', () => {
     rodarNaSimulacao(linhas('m = [[0] * 3 for _ in range(2)]', 'i = 1', 'x = m[i]'));
-    botao('.playback-btn', '⏭').click();
+    $('.playback-btn[data-acao="ultimo"]').click();
     const grade = [...app.micro.arrays.values()].find((a) => a.name === 'm');
     expect(grade.orientation).toBe('grid');
     app._toggleMicroSelection(grade.id);

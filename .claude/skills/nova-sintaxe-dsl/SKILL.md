@@ -1,6 +1,6 @@
 ---
 name: nova-sintaxe-dsl
-description: Adiciona sintaxe nova à linguagem Python-like do visualizador — operador (ex. **, %, is, not in), statement de uma linha (ex. pass, del x, assert) ou de bloco (ex. try/except, with) — passando por lexer, parser, blockParser, ast, interpreter e evaluator. Use quando pedirem para a DSL aceitar uma construção do Python que hoje dá erro de sintaxe.
+description: Adiciona sintaxe nova à linguagem Python-like do Algo-Lab — operador (ex. **, %, is, not in), statement de uma linha (ex. pass, del x, assert) ou de bloco (ex. try/except, with) — passando por lexer, parser, blockParser, ast, interpreter e evaluator. Use quando pedirem para a DSL aceitar uma construção do Python que hoje dá erro de sintaxe.
 ---
 
 # Nova sintaxe na DSL

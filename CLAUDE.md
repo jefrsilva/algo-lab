@@ -4,7 +4,7 @@ Guidance for Claude Code (claude.ai/code) in this repository.
 
 ## What this is
 
-"Visualizador de Estruturas de Dados & Algoritmos" — a browser-based, vanilla-JS (no framework) tool for visualizing pointer/memory-model programs written in a small Python-like DSL. No backend; everything runs client-side. Code comments and UI strings are in Portuguese (pt-BR); match that when editing existing files.
+**Algo-Lab** (formerly "Visualizador de Estruturas de Dados & Algoritmos") — a browser-based, vanilla-JS (no framework) tool for visualizing pointer/memory-model programs written in a small Python-like DSL. No backend; everything runs client-side. Code comments and UI strings are in Portuguese (pt-BR); match that when editing existing files.
 
 ## Language (always pt-BR)
 

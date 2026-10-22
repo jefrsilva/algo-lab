@@ -32,6 +32,7 @@ export class Tutorial {
     this.el = null;
     this.highlightEl = null;
     this._current = null;
+    this._dragged = null; // {left, top} se a pessoa moveu o popup — vale até o fim do roteiro
     this._reposition = () => this._place();
     this._onKey = (e) => {
       if (e.key === 'Escape' && this.isOpen) {
@@ -52,6 +53,7 @@ export class Tutorial {
     this.steps = steps;
     this.onClose = onClose || (() => {});
     this.skipNotice = skipNotice;
+    this._dragged = null;
     window.addEventListener('resize', this._reposition);
     window.addEventListener('keydown', this._onKey);
     this.index = 0;
@@ -116,6 +118,8 @@ export class Tutorial {
     title.className = 'tutorial-title';
     title.id = 'tutorial-title';
     title.textContent = step.title;
+    title.title = 'Arraste para mover';
+    this._enableDrag(title);
     box.appendChild(title);
 
     step.body.forEach((part) => {
@@ -154,6 +158,31 @@ export class Tutorial {
     box.querySelector('.btn.primary')?.focus();
   }
 
+  /** O popup costuma cobrir o que o passo manda mexer: arrastar pelo título
+   * o leva pra outro lugar, e ele fica lá nos passos seguintes. */
+  _enableDrag(handle) {
+    handle.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || !this.el) return;
+      const startX = e.clientX;
+      const startY = e.clientY;
+      const rect = this.el.getBoundingClientRect();
+      handle.setPointerCapture?.(e.pointerId);
+      const move = (ev) => {
+        this._dragged = { left: rect.left + ev.clientX - startX, top: rect.top + ev.clientY - startY };
+        this._place();
+      };
+      const up = () => {
+        handle.removeEventListener('pointermove', move);
+        handle.removeEventListener('pointerup', up);
+        handle.removeEventListener('pointercancel', up);
+      };
+      handle.addEventListener('pointermove', move);
+      handle.addEventListener('pointerup', up);
+      handle.addEventListener('pointercancel', up);
+      e.preventDefault();
+    });
+  }
+
   _button(label, kind, onClick) {
     const btn = document.createElement('button');
     btn.type = 'button';
@@ -186,6 +215,7 @@ export class Tutorial {
       top = rect.top;
       if (left < MARGIN) left = Math.min(rect.left + GAP, vw - bw - MARGIN);
     }
+    if (this._dragged) ({ left, top } = this._dragged);
     left = Math.max(MARGIN, Math.min(left, vw - bw - MARGIN));
     top = Math.max(MARGIN, Math.min(top, vh - bh - MARGIN));
     box.style.left = `${left}px`;

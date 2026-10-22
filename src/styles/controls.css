@@ -70,7 +70,20 @@ select {
 
 .playback-btn {
   min-width: 34px;
-  text-align: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* play/pause em destaque: não se confunde com os botões de passo */
+.playback-btn-play:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+
+.playback-btn-play:hover:not(:disabled) {
+  background: var(--accent-strong);
 }
 
 .step-slider {
@@ -1158,6 +1171,9 @@ select {
 }
 
 .tutorial-title {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
   margin: 0 0 8px;
   font-size: 1.05rem;
   font-weight: 700;

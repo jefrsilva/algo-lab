@@ -80,6 +80,7 @@ import { collectIdentifiers, identifierKey } from './microVisibility.js';
 import { ChartSettingsPopup } from '../ui/ChartSettingsPopup.js';
 import { AppMenu } from '../ui/AppMenu.js';
 import { Tutorial } from '../ui/Tutorial.js';
+import { TUTORIALS } from '../ui/tutorials.js';
 import { Dialog } from '../ui/Dialog.js';
 import { ConsoleWindow } from '../ui/ConsoleWindow.js';
 import { ColorWheel } from '../ui/ColorWheel.js';
@@ -599,7 +600,7 @@ export class App {
         { separator: true },
         { id: 'quick-actions', label: 'Ações rápidas (Ctrl+Espaço)' },
         { separator: true },
-        { id: 'tutorial', label: 'Tutorial' },
+        { id: 'tutorial', label: 'Tutorial', children: TUTORIALS.map((t) => ({ id: `tutorial:${t.id}`, label: t.label })) },
         { id: 'settings', label: 'Configurações…' },
       ],
       onSelect: (id) => {
@@ -607,19 +608,31 @@ export class App {
         else if (id === 'save') this._saveProject();
         else if (id === 'load') this._loadProject();
         else if (id === 'quick-actions') this._openQuickActions({ showAll: true });
-        else if (id === 'tutorial') this._startTutorial();
+        else if (id.startsWith('tutorial:')) this._startTutorial(id.slice('tutorial:'.length));
         else if (id === 'settings') this.settingsDialog.open();
       },
     });
 
     // tutorial de primeiros passos: abre sozinho na primeira visita (até ser
     // concluído ou pulado) e a qualquer hora pelo menu ☰ → Tutorial
-    this.tutorial = new Tutorial({ onClose: () => setSetting('tutorialSeen', true) });
-    if (!getSetting('tutorialSeen')) this._startTutorial();
+    this.tutorial = new Tutorial();
+    if (!getSetting('tutorialSeen')) this._startTutorial('como-comecar');
   }
 
-  _startTutorial() {
-    this.tutorial.start();
+  /** Abre um roteiro de tutorials.js. Só "Como começar" marca o tutorial
+   * como visto (pra não abrir sozinho de novo) e avisa, ao ser pulado, onde
+   * revê-lo; os cenários só fecham. */
+  _startTutorial(id) {
+    const tutorial = TUTORIALS.find((t) => t.id === id);
+    if (!tutorial) return;
+    const onboarding = id === 'como-comecar';
+    this.tutorial.start({
+      steps: tutorial.steps,
+      skipNotice: onboarding,
+      onClose: () => {
+        if (onboarding) setSetting('tutorialSeen', true);
+      },
+    });
   }
 
   _seedMicroExample() {

@@ -1,64 +1,17 @@
 /**
- * Tutorial guiado de primeiros passos: uma sequência curta de popups, cada um
- * apontando (com um destaque) pra uma parte da tela, com "Próximo" e
- * "Pular tutorial". Pular mostra um último aviso dizendo que o tutorial
- * continua no menu ☰ → "Tutorial".
+ * Tutorial guiado: uma sequência de popups, cada um apontando (com um
+ * destaque) pra uma parte da tela, com "Próximo" e "Pular tutorial". Os
+ * roteiros (passos de "Como começar" e dos cenários) ficam em tutorials.js.
+ * Pular mostra um último aviso dizendo que os tutoriais continuam no menu
+ * ☰ → "Tutorial" (`skipNotice`; os cenários só fecham).
  *
  * Não é modal: o fundo não escurece nem bloqueia cliques, então dá pra
  * experimentar o que o passo pede sem fechar nada. Não conhece o App — só
  * recebe os passos (`target`: seletor CSS da parte destacada, ou null pra um
- * popup centralizado) e avisa `onClose(motivo)` ('concluido' | 'pulado')
- * quando termina; quem decide o que guardar é quem chama.
+ * popup centralizado; texto: string, ou `{code}` pra um trecho de código) e
+ * avisa `onClose(motivo)` ('concluido' | 'pulado') quando termina; quem
+ * decide o que guardar é quem chama.
  */
-export const TUTORIAL_STEPS = [
-  {
-    title: 'Bem-vindo(a)!',
-    target: null,
-    body: [
-      'Esta ferramenta mostra, passo a passo, o que acontece na memória quando um programa roda: nós, ponteiros, listas, dicionários e variáveis.',
-      'Em três passos rápidos você vê como criar elementos no canvas, escrever código no Sandbox e simular a execução.',
-    ],
-  },
-  {
-    title: '1. Criar elementos no canvas',
-    target: '.micro-container',
-    placement: 'center',
-    body: [
-      'Tudo aparece aqui no canvas. Para criar um elemento, aperte Ctrl+Espaço e digite um comando, como new node, new pointer ou new array — Enter cria no centro da vista.',
-      'Os mesmos comandos estão em ☰ → Ações rápidas. A barra de baixo traz as ferramentas: selecionar/mover (1), texto (2), área (3), gráfico Big-O (4) e ligar nós (5).',
-      'Dê um duplo clique num elemento para editar o valor ou o nome dele; Delete remove.',
-    ],
-  },
-  {
-    title: '2. Escrever e executar código no Sandbox',
-    target: '.code-editor-panel',
-    placement: 'left',
-    body: [
-      'Aqui fica o código. No modo Sandbox, Ctrl+Enter executa só a linha do cursor — e o canvas muda na hora. Experimente digitar:',
-      { code: 'p = Node(10)\nq = Node(20)\np.next = q' },
-      'Código e canvas estão ligados: o que o código cria aparece no canvas com o mesmo nome, e clicar num nome no código seleciona o elemento correspondente no canvas.',
-    ],
-  },
-  {
-    title: '3. Simular a execução',
-    target: '.code-editor-toolbar',
-    placement: 'left',
-    body: [
-      'Troque para Simulação para rodar o programa inteiro. Escreva o código e clique em ▶ Rodar (ou use Ctrl+Shift+Enter).',
-      'Aparece uma barra de reprodução: avance e volte passo a passo, ou dê play. A cada passo o canvas mostra o estado da memória naquele ponto — e o painel de chamadas acompanha a recursão.',
-    ],
-  },
-  {
-    title: 'Pronto!',
-    target: '.canvas-top-left-controls',
-    placement: 'right',
-    body: [
-      'É só isso para começar. Para rever este tutorial quando quiser, abra o menu ☰ e escolha "Tutorial".',
-    ],
-    last: true,
-  },
-];
-
 const SKIP_NOTICE = {
   title: 'Tutorial pulado',
   target: '.canvas-top-left-controls',
@@ -70,9 +23,10 @@ const GAP = 14;
 const MARGIN = 12;
 
 export class Tutorial {
-  constructor({ steps = TUTORIAL_STEPS, onClose, container = document.body } = {}) {
-    this.steps = steps;
-    this.onClose = onClose || (() => {});
+  constructor({ container = document.body } = {}) {
+    this.steps = [];
+    this.skipNotice = true;
+    this.onClose = () => {};
     this.container = container;
     this.index = -1;
     this.el = null;
@@ -92,8 +46,12 @@ export class Tutorial {
     return !!this.el;
   }
 
-  start() {
+  /** Começa um roteiro do primeiro passo (recomeça se já havia um aberto). */
+  start({ steps, onClose, skipNotice = true }) {
     this._teardown();
+    this.steps = steps;
+    this.onClose = onClose || (() => {});
+    this.skipNotice = skipNotice;
     window.addEventListener('resize', this._reposition);
     window.addEventListener('keydown', this._onKey);
     this.index = 0;
@@ -112,6 +70,10 @@ export class Tutorial {
 
   skip() {
     if (!this.isOpen || this._current === SKIP_NOTICE) return;
+    if (!this.skipNotice) {
+      this._finish('pulado');
+      return;
+    }
     this._show(SKIP_NOTICE);
     this.onClose('pulado');
   }
@@ -179,8 +141,8 @@ export class Tutorial {
       progress.className = 'tutorial-progress';
       progress.textContent = `${this.index + 1} / ${this.steps.length}`;
       actions.appendChild(progress);
-      if (!step.last) actions.appendChild(this._button('Pular tutorial', 'subtle', () => this.skip()));
-      actions.appendChild(this._button(step.last ? 'Concluir' : 'Próximo', 'primary', () => this.next()));
+      if (this.index < this.steps.length - 1) actions.appendChild(this._button('Pular tutorial', 'subtle', () => this.skip()));
+      actions.appendChild(this._button(this.index >= this.steps.length - 1 ? 'Concluir' : 'Próximo', 'primary', () => this.next()));
     }
     box.appendChild(actions);
 

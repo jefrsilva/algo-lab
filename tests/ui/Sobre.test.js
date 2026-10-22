@@ -30,6 +30,8 @@ describe('Sobre o Algo-Lab', () => {
     expect(dialogo.textContent).toContain(`Versão ${APP_VERSION}`);
     expect(dialogo.textContent).toContain('Desenvolvida e mantida por Jeferson Silva');
     expect(dialogo.textContent).toContain('apoio de IA');
+    expect(dialogo.textContent).toContain('cursos de Coding Interview da Alura');
+    expect(dialogo.textContent).toContain('contribuição para a comunidade');
     expect(dialogo.textContent).toContain('está em beta');
     expect(dialogo.textContent).toContain('não replica 100%');
     const links = [...dialogo.querySelectorAll('.about-link')];

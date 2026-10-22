@@ -39,17 +39,20 @@ export class Dialog {
   }
 
   /** Aviso com um botão só — resolve (sem valor útil) quando o usuário
-   * fecha. */
-  alert(message, { title = null, okLabel = 'OK' } = {}) {
+   * fecha. `extra` (opcional) é um elemento mostrado entre a mensagem e o
+   * botão (ex: os links do "Sobre"); links `<a href>` dentro dele entram no
+   * circuito do Tab. */
+  alert(message, { title = null, okLabel = 'OK', extra = null } = {}) {
     return this._open({
       title,
       message,
+      extra,
       defaultValue: undefined,
       buttons: [{ label: okLabel, variant: 'primary', value: undefined, primary: true }],
     });
   }
 
-  _open({ title, message, buttons, defaultValue }) {
+  _open({ title, message, extra = null, buttons, defaultValue }) {
     this._close(this._defaultValue); // fecha um diálogo anterior ainda aberto, se houver
 
     return new Promise((resolve) => {
@@ -77,6 +80,7 @@ export class Dialog {
       messageEl.className = 'app-dialog-message';
       messageEl.textContent = message;
       box.appendChild(messageEl);
+      if (extra) box.appendChild(extra);
 
       const actions = document.createElement('div');
       actions.className = 'app-dialog-actions';
@@ -101,7 +105,7 @@ export class Dialog {
         // modal: Tab/Shift+Tab circulam só pelos botões do diálogo — sem
         // isso o foco "escapava" pro canvas/editor por trás do fundo escuro
         else if (e.key === 'Tab') {
-          const btns = [...actions.querySelectorAll('button')];
+          const btns = [...box.querySelectorAll('a[href], button')];
           if (btns.length === 0) return;
           e.preventDefault();
           const i = btns.indexOf(document.activeElement);

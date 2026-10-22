@@ -32,6 +32,16 @@ describe('Sobre o Algo-Lab', () => {
     expect(dialogo.textContent).toContain('apoio de IA');
     expect(dialogo.textContent).toContain('está em beta');
     expect(dialogo.textContent).toContain('não replica 100%');
+    const links = [...dialogo.querySelectorAll('.about-link')];
+    expect(links.map((a) => a.getAttribute('href'))).toEqual([
+      'mailto:jefrsilva@gmail.com',
+      'https://github.com/jefrsilva',
+      'https://www.linkedin.com/in/jefrsilva/',
+    ]);
+    links.forEach((a) => {
+      expect(a.querySelector('svg')).not.toBeNull();
+      expect(a.getAttribute('rel')).toContain('noopener');
+    });
     dialogo.querySelector('.btn').click();
     expect(document.querySelector('.app-dialog')).toBeNull();
   });

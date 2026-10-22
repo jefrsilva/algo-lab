@@ -794,6 +794,30 @@ select {
   white-space: pre-line; /* "\n" na mensagem vira quebra de linha (parágrafos) */
 }
 
+/* links de contato do "Sobre" (App#_aboutLinks) */
+.about-links {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.about-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  align-self: flex-start;
+  font-size: 0.95rem;
+  color: var(--text-1);
+  text-decoration: none;
+}
+
+.about-link:hover,
+.about-link:focus-visible {
+  color: var(--text-0);
+  text-decoration: underline;
+}
+
 .app-dialog-actions {
   display: flex;
   justify-content: flex-end;

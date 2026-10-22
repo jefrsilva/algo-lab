@@ -34,6 +34,7 @@ describe('Sobre o Algo-Lab', () => {
     expect(dialogo.textContent).toContain('não replica 100%');
     const links = [...dialogo.querySelectorAll('.about-link')];
     expect(links.map((a) => a.getAttribute('href'))).toEqual([
+      'https://github.com/jefrsilva/algo-lab',
       'mailto:jefrsilva@gmail.com',
       'https://github.com/jefrsilva',
       'https://www.linkedin.com/in/jefrsilva/',

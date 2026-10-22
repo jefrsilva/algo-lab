@@ -109,3 +109,25 @@ describe('Tutorial', () => {
     }
   });
 });
+
+describe('popup arrastável', () => {
+  test('arrastar pelo título move o popup e a posição vale nos passos seguintes', async () => {
+    app = await montarApp({ tutorial: true });
+    Object.defineProperty(window, 'innerWidth', { value: 1200, configurable: true });
+    Object.defineProperty(window, 'innerHeight', { value: 800, configurable: true });
+    const popup = $('.tutorial-popup');
+    popup.style.left = '100px';
+    popup.style.top = '100px';
+    popup.getBoundingClientRect = () => ({ left: 100, top: 100, width: 380, height: 260 });
+    const ev = (tipo, x, y) => Object.assign(new MouseEvent(tipo, { bubbles: true, clientX: x, clientY: y, button: 0 }), { pointerId: 1 });
+    const titulo = $('.tutorial-title');
+    titulo.dispatchEvent(ev('pointerdown', 150, 120));
+    titulo.dispatchEvent(ev('pointermove', 250, 170));
+    titulo.dispatchEvent(ev('pointerup', 250, 170));
+    expect($('.tutorial-popup').style.left).toBe('200px');
+    expect($('.tutorial-popup').style.top).toBe('150px');
+    botao('Próximo').click();
+    expect($('.tutorial-popup').style.left).toBe('200px'); // continua onde foi deixado
+    expect($('.tutorial-popup').style.top).toBe('150px');
+  });
+});

@@ -38,7 +38,7 @@ describe('cenários guiados', () => {
     botao('.code-editor-mode-btn', 'Simulação').click();
     escrever(codigoDe('somar-lista', 0));
     $('.code-editor-run-btn').click();
-    botao('.playback-btn', '⏭').click();
+    $('.playback-btn[data-acao="ultimo"]').click();
     expect($('.micro-console .console-body').textContent).toContain('14');
     expect([...app.micro.variables.values()].find((v) => v.name === 'total').value).toBe(14);
     expect([...app.micro.arrays.values()].find((a) => a.name === 'nums').cells).toHaveLength(5);
